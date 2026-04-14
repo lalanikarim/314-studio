@@ -1,0 +1,17 @@
+{
+  "files": {
+    "sample-copilotkit-python/tests/test_copilotkit.py": {
+      "modifiedRanges": [
+        {
+          "start": 1,
+          "end": 103
+        }
+      ],
+      "importsChanged": true,
+      "lastEdit": "2026-04-14T00:07:31.089Z"
+    }
+  },
+  "turnCycles": 0,
+  "maxCycles": 3,
+  "lastUpdated": "2026-04-14T00:07:31.089Z"
+}

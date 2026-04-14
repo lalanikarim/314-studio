@@ -1,0 +1,75 @@
+{
+  "agents": [
+    {
+      "id": "weather",
+      "name": "Weather Information Agent",
+      "description": "Provides current weather information for any location",
+      "model": "gpt-4o-mini",
+      "capabilities": [
+        "fetch_weather_data",
+        "interpret_weather_codes",
+        "provide_forecast"
+      ],
+      "permissions": [
+        "read:location_data",
+        "read:weather_api"
+      ],
+      "metadata": {
+        "created_by": "python-sample-app",
+        "version": "1.0.0"
+      }
+    },
+    {
+      "id": "chat-assistant",
+      "name": "Chat Assistant",
+      "description": "General purpose conversational AI assistant",
+      "model": "gpt-4o-mini",
+      "capabilities": [
+        "text_completion",
+        "conversational_memory",
+        "context_understanding"
+      ],
+      "permissions": [
+        "read:conversation_history",
+        "write:conversation_messages"
+      ],
+      "metadata": {
+        "created_by": "python-sample-app",
+        "version": "1.0.0"
+      }
+    },
+    {
+      "id": "document-processor",
+      "name": "Document Processor",
+      "description": "Processes and analyzes documents using AI",
+      "model": "gpt-4o-mini",
+      "capabilities": [
+        "extract_text_from_pdf",
+        "summarize_text",
+        "answer_questions_from_text"
+      ],
+      "permissions": [
+        "read:document_storage",
+        "write:analysis_results"
+      ],
+      "metadata": {
+        "created_by": "python-sample-app",
+        "version": "1.0.0"
+      }
+    }
+  ],
+  "plugins": [
+    {
+      "name": "openai-provider",
+      "version": "1.0.0",
+      "description": "OpenAI LLM provider integration",
+      "enabled": true
+    }
+  ],
+  "metadata": {
+    "application": "CopilotKit Python Sample",
+    "application_version": "0.1.0",
+    "generated_by": "Python client",
+    "timestamp": "2024-01-01T00:00:00Z"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "files": {
+    "sample-copilotkit-python/mypyapp/main.py": {
+      "modifiedRanges": [
+        {
+          "start": 1,
+          "end": 302
+        }
+      ],
+      "importsChanged": true,
+      "lastEdit": "2026-04-14T00:37:00.006Z"
+    }
+  },
+  "turnCycles": 0,
+  "maxCycles": 3,
+  "lastUpdated": "2026-04-14T00:37:00.007Z"
+}

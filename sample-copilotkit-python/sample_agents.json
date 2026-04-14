@@ -1,0 +1,22 @@
+[
+  {
+    "id": "weather",
+    "name": "Weather Information Agent",
+    "description": "Provides weather information for locations",
+    "model": "gpt-4o-mini",
+    "capabilities": [
+      "fetch_weather_data",
+      "interpret_weather_codes"
+    ]
+  },
+  {
+    "id": "chat-assistant",
+    "name": "Chat Assistant",
+    "description": "General purpose chat assistant",
+    "model": "gpt-4o-mini",
+    "capabilities": [
+      "text_completion",
+      "conversational_memory"
+    ]
+  }
+]

@@ -1,0 +1,14 @@
+[project]
+name = "fastapi-react-pi"
+version = "0.1.0"
+description = "FastAPI server for Pi coding agent with React frontend"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "aiofiles>=24.1.0",
+    "pydantic>=2.8.0",
+    "httpx>=0.28.1",
+    "pytest>=9.0.3",
+]
