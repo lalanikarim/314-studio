@@ -2,9 +2,9 @@
 Utils for the backend application.
 """
 
+import asyncio
 from pathlib import Path
 from typing import Dict
-import asyncio
 
 # Track active Pi RPC processes
 active_rpc_processes: Dict[str, tuple] = {}

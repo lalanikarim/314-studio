@@ -2,9 +2,10 @@
 Project API endpoints for browsing existing projects (under $HOME).
 """
 
-from fastapi import APIRouter, HTTPException
 from pathlib import Path
 from typing import List
+
+from fastapi import APIRouter, HTTPException
 
 router = APIRouter()
 

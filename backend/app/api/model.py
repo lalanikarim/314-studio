@@ -2,8 +2,10 @@
 Model API endpoints for managing available models.
 """
 
-from fastapi import APIRouter
 from typing import List
+
+from fastapi import APIRouter
+
 from ..schemas import ModelConfig
 
 router = APIRouter()
@@ -17,9 +19,7 @@ AVAILABLE_MODELS: List[ModelConfig] = [
         maxTokens=16384,
     ),
     ModelConfig(id="gpt-4.1", provider="openai", contextWindow=131072, maxTokens=16384),
-    ModelConfig(
-        id="deepseek-coder", provider="deepseek", contextWindow=65536, maxTokens=16384
-    ),
+    ModelConfig(id="deepseek-coder", provider="deepseek", contextWindow=65536, maxTokens=16384),
 ]
 
 

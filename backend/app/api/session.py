@@ -3,9 +3,11 @@ Session API endpoints for managing coding sessions.
 These now work through WebSocket to Pi RPC, not direct files.
 """
 
-from fastapi import APIRouter, HTTPException
 from typing import List
-from ..schemas import Session, SessionBase, ModelConfig
+
+from fastapi import APIRouter, HTTPException
+
+from ..schemas import ModelConfig, Session, SessionBase
 
 router = APIRouter()
 

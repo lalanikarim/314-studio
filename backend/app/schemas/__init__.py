@@ -2,8 +2,9 @@
 Pydantic models for the API.
 """
 
+from typing import List, Optional
+
 from pydantic import BaseModel
-from typing import List, Dict, Optional
 
 
 class Message(BaseModel):

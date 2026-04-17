@@ -2,12 +2,14 @@
 Chat API endpoints for communicating with the Pi coding agent via WebSocket RPC.
 """
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+import asyncio
+import json
 from pathlib import Path
 from typing import List
-import json
-import asyncio
-from ..schemas import Message, ChatMessage
+
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+
+from ..schemas import ChatMessage, Message
 
 router = APIRouter()
 
@@ -35,9 +37,7 @@ async def launch_pi_rpc(project_path: str) -> tuple:
     return (proc, proc.stdin, proc.stdout)
 
 
-async def forward_rpc_messages(
-    session_id: str, websocket: WebSocket, project_path: str
-):
+async def forward_rpc_messages(session_id: str, websocket: WebSocket, project_path: str):
     """
     Forward messages between WebSocket and Pi RPC process.
     All interactions happen through this bidirectional channel.
@@ -56,9 +56,7 @@ async def forward_rpc_messages(
     write_task = asyncio.create_task(write_rpc_input(stdin, websocket, session_id))
 
     # Wait for either task to complete
-    done, pending = await asyncio.wait(
-        {read_task, write_task}, return_when=asyncio.FIRST_COMPLETED
-    )
+    done, pending = await asyncio.wait({read_task, write_task}, return_when=asyncio.FIRST_COMPLETED)
 
     # Cancel the other task
     for task in pending:
@@ -150,9 +148,7 @@ async def rpc_websocket_endpoint(websocket: WebSocket, project_name: str):
 
 
 @router.post("/sessions/{session_id}/chat")
-async def send_chat_message(
-    project_name: str, session_id: str, message: ChatMessage
-) -> dict:
+async def send_chat_message(project_name: str, session_id: str, message: ChatMessage) -> dict:
     """
     Send a chat message to the agent.
     This endpoint is kept for backward compatibility but should redirect to WebSocket.

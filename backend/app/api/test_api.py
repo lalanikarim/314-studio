@@ -2,9 +2,10 @@
 Test simple file API.
 """
 
-from fastapi import APIRouter, HTTPException
 from pathlib import Path
+
 import aiofiles
+from fastapi import APIRouter, HTTPException
 
 router = APIRouter()
 

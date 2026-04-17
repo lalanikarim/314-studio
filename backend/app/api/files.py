@@ -2,10 +2,12 @@
 File API endpoints for browsing and reading files.
 """
 
-from fastapi import APIRouter, HTTPException, Request
 from pathlib import Path
 from typing import List, Optional
+
 import aiofiles
+from fastapi import APIRouter, HTTPException, Request
+
 from ..schemas import FileInfo
 
 router = APIRouter()
@@ -26,9 +28,7 @@ async def list_files(project_name: str, path: Optional[str] = "/") -> List[FileI
 
     # Security check: ensure path is within project root
     if not target_path.is_relative_to(project_path):
-        raise HTTPException(
-            status_code=403, detail="Access denied: Path outside project root"
-        )
+        raise HTTPException(status_code=403, detail="Access denied: Path outside project root")
 
     # List files
     files = []
@@ -36,14 +36,14 @@ async def list_files(project_name: str, path: Optional[str] = "/") -> List[FileI
         if entry.name.startswith("."):
             continue
 
-        file_info = {
+        file_info: dict = {
             "path": str(entry.relative_to(project_path)),
             "isDirectory": entry.is_dir(),
         }
 
         if not entry.is_dir():
             try:
-                file_info["size"] = entry.stat().st_size
+                file_info["size"] = entry.stat().st_size  # type: ignore[literal-required]
             except OSError:
                 pass
 
@@ -72,9 +72,7 @@ async def read_file(request: Request, file_path: str) -> str:
 
     # Security check: ensure path is within project root
     if not target_path.is_relative_to(project_path):
-        raise HTTPException(
-            status_code=403, detail="Access denied: Path outside project root"
-        )
+        raise HTTPException(status_code=403, detail="Access denied: Path outside project root")
 
     if not target_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
