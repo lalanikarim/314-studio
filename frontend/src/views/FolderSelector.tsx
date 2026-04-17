@@ -80,7 +80,7 @@ function DirectoryTree({
           isExpanded={expandedPaths.has(item.path)}
           expandedPaths={expandedPaths}
           search={search}
-          onToggle={() => onToggle(item.path)}
+          onToggle={onToggle}
           onOpen={() => onOpen(item.path)}
         />
       ))}
@@ -112,7 +112,7 @@ function DirectoryTreeNode({
   isExpanded: boolean;
   expandedPaths: Set<string>;
   search: string;
-  onToggle: () => void;
+  onToggle: (path: string) => void;
   onOpen: () => void;
 }) {
   // Highlight matched text in search
@@ -140,7 +140,7 @@ function DirectoryTreeNode({
           className="folder-tree__toggle"
           onClick={(e) => {
             e.stopPropagation();
-            onToggle();
+            onToggle(item.path);
           }}
           aria-expanded={isExpanded}
           title={isExpanded ? 'Collapse' : 'Expand'}
@@ -150,10 +150,10 @@ function DirectoryTreeNode({
 
         <div
           className="folder-tree__folder-btn"
-          onClick={onToggle}
+          onClick={() => onToggle(item.path)}
           role="button"
           tabIndex={0}
-          onKeyDown={(e) => e.key === 'Enter' && onToggle()}
+          onKeyDown={(e) => e.key === 'Enter' && onToggle(item.path)}
         >
           <span className="folder-tree__icon" aria-hidden="true">
             {isExpanded ? '📂' : '📁'}
