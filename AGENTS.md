@@ -8,7 +8,7 @@ FastAPI backend + React (TypeScript) frontend for the Pi coding agent.
 |-------|------------|
 | **Backend** | Python 3.13 · FastAPI · Uvicorn · aiofiles · Pydantic |
 | **Frontend** | React 19 · TypeScript 6 · Vite · CSS Modules |
-| **Package mgr** | uv (Python) · npm (Node) |
+| **Package mgr** | uv (Python) · bun (Node) |
 
 ## Project Structure
 
@@ -40,7 +40,8 @@ FastAPI backend + React (TypeScript) frontend for the Pi coding agent.
 │       ├── FilePreview      # Center: syntax-highlighted viewer
 │       └── ChatPanel        # Right: chat + model dropdown
 ├── pyproject.toml           # Python deps
-├── uv.lock                  # Lockfile
+├── uv.lock                  # Python lockfile
+├── frontend/bun.lock        # Node lockfile
 └── main.py                  # Root shim
 ```
 
@@ -58,8 +59,8 @@ uv run python app/main.py        # Starts on :8000
 
 ```bash
 cd frontend
-npm run dev                      # Starts on :5173
-npm run build                    # Production build → dist/
+bun dev                          # Starts on :5173
+bun run build                    # Production build → dist/
 ```
 
 ### Run Both
