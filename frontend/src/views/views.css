@@ -1,21 +1,26 @@
 /* ===== Folder Selector View ===== */
 .view-folder {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
   min-height: 100vh;
   background: #0f172a;
-  padding: 60px 20px;
+  padding: 0 20px;
 }
 
 .view-folder__inner {
   width: 100%;
   max-width: 640px;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .view-folder__header {
   text-align: center;
   margin-bottom: 32px;
+  flex-shrink: 0;
 }
 
 .view-folder__header h1 {
@@ -33,6 +38,7 @@
 .view-folder__search {
   position: relative;
   margin-bottom: 24px;
+  flex-shrink: 0;
 }
 
 .view-folder__search input {
@@ -70,6 +76,28 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: #334155 #1e293b;
+}
+
+.view-folder__list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.view-folder__list::-webkit-scrollbar-track {
+  background: #1e293b;
+}
+
+.view-folder__list::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 4px;
+}
+
+.view-folder__list::-webkit-scrollbar-thumb:hover {
+  background: #475569;
 }
 
 .view-folder__expand-all {
@@ -83,6 +111,7 @@
   font-size: 14px;
   cursor: pointer;
   transition: all 0.15s;
+  flex-shrink: 0;
 }
 
 .view-folder__expand-all:hover {
@@ -96,6 +125,7 @@
   color: #64748b;
   font-size: 14px;
   padding: 32px;
+  flex-shrink: 0;
 }
 
 /* ===== Folder Tree ===== */
