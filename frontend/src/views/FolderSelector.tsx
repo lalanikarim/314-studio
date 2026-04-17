@@ -62,7 +62,7 @@ function DirectoryTree({
 
   if (error && items.length === 0) {
     return (
-      <div className="folder-tree__error" style={{ paddingLeft: depth * 20 + 8 }}>
+      <div className="folder-tree__error">
         <span className="folder-tree__error-text">{error}</span>
       </div>
     );
@@ -82,14 +82,12 @@ function DirectoryTree({
         />
       ))}
       {filteredItems.length === 0 && items.length > 0 && (
-        <div className="folder-tree__empty" style={{ paddingLeft: depth * 20 + 8 }}>
+        <div className="folder-tree__empty">
           {search ? 'No matching folders' : 'Empty directory'}
         </div>
       )}
       {items.length === 0 && !error && isExpanded && (
-        <div className="folder-tree__loading" style={{ paddingLeft: depth * 20 + 8 }}>
-          Loading…
-        </div>
+        <div className="folder-tree__loading">Loading…</div>
       )}
     </div>
   );
@@ -131,7 +129,7 @@ function DirectoryTreeNode({
     <div className="folder-tree__node">
       <div
         className={`folder-tree__row ${isExpanded ? 'folder-tree__row--expanded' : ''}`}
-        style={{ paddingLeft: depth * 20 + 8 }}
+        style={{ '--depth': depth } as React.CSSProperties}
       >
         <button
           className="folder-tree__toggle"
@@ -211,19 +209,6 @@ export default function FolderSelector() {
     });
   };
 
-  if (loading) {
-    return (
-      <div className="view-folder">
-        <div className="view-folder__inner">
-          <div className="view-folder__header">
-            <h1>Open Project</h1>
-            <p className="view-folder__subtitle">Loading folders…</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="view-folder">
       <div className="view-folder__inner">
@@ -246,8 +231,6 @@ export default function FolderSelector() {
         </div>
 
         <div className="view-folder__list">
-          {error && <p className="view-folder__empty" style={{ color: '#e85d75' }}>{error}</p>}
-
           <DirectoryTree
             path={ROOT_PATH}
             depth={0}
@@ -257,8 +240,11 @@ export default function FolderSelector() {
             onOpen={handleOpen}
           />
 
-          {expandedPaths.size === 0 && !error && (
-            <button className="view-folder__expand-all" onClick={() => setExpandedPaths(new Set([ROOT_PATH]))}>
+          {expandedPaths.size === 0 && (
+            <button
+              className="view-folder__expand-all"
+              onClick={() => setExpandedPaths(new Set([ROOT_PATH]))}
+            >
               ▸ Show folders
             </button>
           )}

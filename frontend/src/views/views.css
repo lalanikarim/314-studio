@@ -1,16 +1,16 @@
 /* ===== Folder Selector View ===== */
 .view-folder {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   min-height: 100vh;
   background: #0f172a;
-  padding: 40px 20px;
+  padding: 60px 20px;
 }
 
 .view-folder__inner {
   width: 100%;
-  max-width: 720px;
+  max-width: 640px;
 }
 
 .view-folder__header {
@@ -48,6 +48,10 @@
   transition: border-color 0.15s;
 }
 
+.view-folder__search input::placeholder {
+  color: #64748b;
+}
+
 .view-folder__search input:focus {
   border-color: #3b82f6;
 }
@@ -68,63 +72,23 @@
   gap: 4px;
 }
 
-.view-folder__item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.view-folder__expand-all {
+  display: block;
+  width: 100%;
   padding: 12px 16px;
-  background: #1e293b;
-  border: 1px solid transparent;
+  background: transparent;
+  border: 1px dashed #334155;
   border-radius: 8px;
+  color: #94a3b8;
+  font-size: 14px;
   cursor: pointer;
   transition: all 0.15s;
 }
 
-.view-folder__item:hover {
-  background: #253348;
-  border-color: #334155;
-}
-
-.view-folder__item-icon {
-  color: #f59e0b;
-  flex-shrink: 0;
-}
-
-.view-folder__item-content {
-  flex: 1;
-  min-width: 0;
-}
-
-.view-folder__item-name {
-  font-size: 15px;
-  font-weight: 500;
+.view-folder__expand-all:hover {
+  background: #1e293b;
+  border-color: #475569;
   color: #e2e8f0;
-}
-
-.view-folder__item-path {
-  font-size: 12px;
-  color: #64748b;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.view-folder__open-btn {
-  padding: 6px 16px;
-  background: #3b82f6;
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  font-family: inherit;
-  transition: background 0.15s;
-  flex-shrink: 0;
-}
-
-.view-folder__open-btn:hover {
-  background: #2563eb;
 }
 
 .view-folder__empty {
@@ -132,6 +96,149 @@
   color: #64748b;
   font-size: 14px;
   padding: 32px;
+}
+
+/* ===== Folder Tree ===== */
+.folder-tree {
+  display: flex;
+  flex-direction: column;
+}
+
+.folder-tree__node {
+  display: flex;
+  flex-direction: column;
+}
+
+.folder-tree__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-left: calc(var(--depth, 0) * 16px);
+  background: #1e293b;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  transition: all 0.15s;
+  cursor: default;
+}
+
+.folder-tree__row:hover {
+  background: #253348;
+  border-color: #334155;
+}
+
+.folder-tree__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: #64748b;
+  font-size: 10px;
+  cursor: pointer;
+  transition: color 0.15s;
+  flex-shrink: 0;
+}
+
+.folder-tree__toggle:hover {
+  color: #94a3b8;
+}
+
+.folder-tree__toggle:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: -2px;
+  border-radius: 2px;
+}
+
+.folder-tree__folder-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.folder-tree__folder-btn:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: -2px;
+  border-radius: 2px;
+}
+
+.folder-tree__icon {
+  flex-shrink: 0;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.folder-tree__name {
+  font-size: 14px;
+  font-weight: 500;
+  color: #e2e8f0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.folder-tree__open-btn {
+  padding: 4px 12px;
+  background: #3b82f6;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.folder-tree__open-btn:hover {
+  background: #2563eb;
+}
+
+.folder-tree__open-btn:focus-visible {
+  outline: 2px solid #60a5fa;
+  outline-offset: 1px;
+}
+
+.folder-tree__mark {
+  background: rgba(59, 130, 246, 0.3);
+  color: #fff;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+.folder-tree__empty {
+  padding: 12px 16px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.folder-tree__loading {
+  padding: 12px 16px;
+  color: #94a3b8;
+  font-size: 13px;
+  font-style: italic;
+}
+
+.folder-tree__error {
+  padding: 12px 16px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 6px;
+}
+
+.folder-tree__error-text {
+  color: #f87171;
+  font-size: 13px;
 }
 
 /* ===== Model Selector View ===== */
