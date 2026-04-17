@@ -7,6 +7,7 @@ const initialAppState: AppState = {
   selectedFolder: null,
   selectedModel: initialModel,
   currentModel: initialModel,
+  selectedFile: null,
 };
 
 interface AppContextType extends AppState {
@@ -15,6 +16,7 @@ interface AppContextType extends AppState {
   setSelectedModel: (model: Model | null) => void;
   setCurrentModel: (model: Model | null) => void;
   switchModel: (model: Model) => void;
+  setSelectedFile: (path: string | null) => void;
 }
 
 const AppContext = createContext<AppContextType>(null as unknown as AppContextType);
@@ -46,6 +48,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }));
   }, []);
 
+  const setSelectedFile = useCallback((path: string | null) => {
+    setState((prev) => ({ ...prev, selectedFile: path }));
+  }, []);
+
   return (
     <AppContext.Provider
       value={{
@@ -55,6 +61,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setSelectedModel,
         setCurrentModel,
         switchModel,
+        setSelectedFile,
       }}
     >
       {children}

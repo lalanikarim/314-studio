@@ -370,22 +370,23 @@
 
 .model-picker__menu {
   position: absolute;
-  bottom: calc(100% + 4px);
+  top: 100%;
   left: 0;
-  right: 0;
   background: #1e293b;
   border: 1px solid #334155;
   border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   padding: 4px;
   z-index: 100;
+  min-width: 180px;
   max-height: 280px;
   overflow-y: auto;
 }
 
 .model-picker__menu--compact {
   position: absolute;
-  bottom: calc(100% + 4px);
+  top: calc(100% + 4px);
+  left: 0;
 }
 
 .model-picker__item {

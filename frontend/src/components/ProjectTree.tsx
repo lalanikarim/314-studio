@@ -89,8 +89,7 @@ function getFileExtensionIcon(filename: string): string {
 }
 
 export default function ProjectTree() {
-  const { selectedFolder } = useApp();
-  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const { selectedFolder, selectedFile, setSelectedFile } = useApp();
 
   const files = useMemo(() => {
     if (!selectedFolder) return [];
@@ -98,7 +97,7 @@ export default function ProjectTree() {
   }, [selectedFolder]);
 
   const handleSelect = (path: string) => {
-    setSelectedPath(path);
+    setSelectedFile(path);
   };
 
   return (
@@ -113,7 +112,7 @@ export default function ProjectTree() {
             key={node.path}
             node={node}
             depth={0}
-            selectedPath={selectedPath}
+            selectedPath={selectedFile}
             onSelect={handleSelect}
           />
         ))}

@@ -28,4 +28,5 @@ export interface AppState {
   selectedFolder: string | null;
   selectedModel: Model | null;
   currentModel: Model | null;
+  selectedFile: string | null;
 }

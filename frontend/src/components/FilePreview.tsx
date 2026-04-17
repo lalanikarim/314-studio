@@ -3,8 +3,8 @@ import { useFileContent } from '../hooks/useFileContent';
 import './components.css';
 
 export default function FilePreview() {
-  const { selectedFolder } = useApp();
-  const fileContent = useFileContent(selectedFolder || '', '');
+  const { selectedFolder, selectedFile } = useApp();
+  const fileContent = useFileContent(selectedFolder || '', selectedFile || '');
 
   if (!selectedFolder) {
     return (
