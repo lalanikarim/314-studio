@@ -29,8 +29,8 @@ function DirectoryTree({
 }) {
   const [items, setItems] = useState<DirItem[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [isLoaded, setIsLoaded] = useState(false);
   const loadingRef = useRef(false);
-  const hasFetched = useRef(false);
   const isExpanded = expandedPaths.has(path);
 
   // Load children when expanded
@@ -39,7 +39,7 @@ function DirectoryTree({
       loadingRef.current = false;
       return;
     }
-    if (hasFetched.current || loadingRef.current) return;
+    if (isLoaded || loadingRef.current) return;
 
     loadingRef.current = true;
     listDirectories(path)
@@ -52,9 +52,9 @@ function DirectoryTree({
       })
       .finally(() => {
         loadingRef.current = false;
-        hasFetched.current = true;
+        setIsLoaded(true);
       });
-  }, [isExpanded, path, items.length]);
+  }, [isExpanded, path]);
 
   const filteredItems = useMemo(() => {
     if (!search.trim()) return items;
@@ -89,7 +89,7 @@ function DirectoryTree({
           {search ? 'No matching folders' : 'Empty directory'}
         </div>
       )}
-      {items.length === 0 && !error && isExpanded && (
+      {!isLoaded && !error && isExpanded && (
         <div className="folder-tree__loading">Loading…</div>
       )}
     </div>
