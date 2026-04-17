@@ -11,8 +11,9 @@ build/
 
 # Cache & test artifacts
 .ruff_cache/
-.mypy_cache/
 .pytest_cache/
+.pytype/
+mypy_cache/
 htmlcov/
 
 # ===== Node.js =====
