@@ -259,9 +259,7 @@ class SessionManager:
         async with self._lock:
             record = self._sessions.get(session_id)
             if not record or record.status not in ("running",):
-                raise ValueError(
-                    f"Session {session_id} not found or not running"
-                )
+                raise ValueError(f"Session {session_id} not found or not running")
             record.status = "closing"
 
         await self._safe_terminate(session_id, "delete")
@@ -271,28 +269,35 @@ class SessionManager:
     # Model switch
     # ------------------------------------------------------------------
 
-    async def switch_model(
+    def switch_model(
         self, session_id: str, model_id: str, provider: str | None = None
-    ) -> SessionRecord:
-        """Switch the model for a running session. Returns updated record."""
-        async with self._lock:
-            record = self._sessions.get(session_id)
-            if not record or record.status != "running":
-                raise ValueError(
-                    f"Session {session_id} not found or not running"
-                )
+    ) -> SessionRecord | None:
+        """Update the model metadata for a session.
 
-        actual_provider = provider or self._extract_provider(model_id)
-        await self._send_command_internal(
-            record,
-            {"type": "set_model", "provider": actual_provider, "modelId": model_id},
-            timeout=15.0,
-        )
+        This only records the desired model in the session record. The actual
+        set_model RPC command is sent over WebSocket when the client connects
+        (ensuring all Pi actions go through WS, never direct HTTP→stdin).
+        """
 
-        async with self._lock:
-            record = self._sessions[session_id]
-            record.model_id = model_id
-            return record
+        async def _do() -> SessionRecord | None:
+            async with self._lock:
+                record = self._sessions.get(session_id)
+                if not record or record.status != "running":
+                    return None
+                record.model_id = model_id
+                return record
+
+        return asyncio.get_event_loop().run_until_complete(_do())
+
+    def get_model_id(self, session_id: str) -> str | None:
+        """Get the configured model_id for a session (used by WS on connect)."""
+
+        async def _do():
+            async with self._lock:
+                record = self._sessions.get(session_id)
+                return record.model_id if record else None
+
+        return asyncio.get_event_loop().run_until_complete(_do())
 
     # ------------------------------------------------------------------
     # WebSocket management

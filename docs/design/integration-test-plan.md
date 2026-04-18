@@ -255,8 +255,9 @@ class Tc:
 
 - **Check availability:** Query `GET /api/models/` (or `get_available_models` via RPC) for `Qwen 3.5 27B` from provider `aurora`
 - **If available:**
-  - **Request:** `POST /api/projects/<id>/model?model_id=Qwen%203.5%2027B&provider=aurora`
-  - **Verify:** Returns `200`, updated `SessionRecord` with `model_id == "Qwen 3.5 27B"`
+  - **REST:** `POST /api/projects/<id>/model?model_id=Qwen%203.5%2020B&provider=aurora` (updates session metadata only)
+  - **WS:** Connect to session, verify `set_model` command is auto-sent with `modelId="Qwen 3.5 27B"`
+  - **Verify:** Session metadata updated (`model_id == "Qwen 3.5 27B"`)
 - **If unavailable:**
   - **Skip** T4.2 with `⏭ Skipped: secondary model 'Qwen 3.5 27B' (aurora) not available`
   - **Continue** with T4.3/T4.4 using primary model
@@ -379,15 +380,15 @@ Teardown
 | `/api/projects/` | POST | T1.4, T3.1, T4.1, T5.1, T5.3 |
 | `/api/projects/{id}/close` | POST | T3.5, T5.2 |
 | `/api/projects/{id}/delete` | POST | T3.6, T5.4 |
-| `/api/projects/{id}/model` | POST | T4.2 |
+| `/api/projects/{id}/model` | POST | Updates metadata only (model switch via WS) |
 | `/api/projects/files` | GET | T2.1, T2.2, T2.3, T2.7 |
 | `/api/projects/files/read` | GET | T2.4, T2.5, T2.6 |
 | `/api/models/` | GET | T1.5 |
-| `WS /api/projects/ws` | WS | T1.7–T1.12, T3.3, T3.4, T4.3, T4.4, T6.3 |
+| `WS /api/projects/ws` | WS | T1.7–T1.12, T3.3, T3.4, T4.2, T4.3, T4.4, T6.3 |
 
 ---
 
-## Model Availability Enforcement
+**Important architecture rule:** All Pi RPC actions (model switching, chat, get_state, etc.) go through WebSocket — never directly over HTTP. The REST `POST /api/projects/{id}/model` endpoint only updates session metadata. The actual `set_model` RPC command is sent by the WebSocket relay when the client connects.
 
 **Primary model — no fallbacks, no skips, no partial runs.**
 

@@ -67,10 +67,14 @@ async def switch_model(
     model_id: str = Query(..., description="Model ID to switch to"),
     provider: str | None = Query(None, description="Provider (e.g. 'anthropic', 'openai')"),
 ) -> SessionRecord:
-    """Switch the model for a running session."""
-    try:
-        return await session_manager.switch_model(session_id, model_id, provider)
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to switch model: {exc}") from exc
+    """Update the session's model metadata.
+
+    The actual set_model RPC command is sent over WebSocket when the client
+    connects. This endpoint only records the desired model in the session record.
+    """
+    result = session_manager.switch_model(session_id, model_id, provider)
+    if not result:
+        raise HTTPException(
+            status_code=404, detail=f"Session {session_id} not found or not running"
+        )
+    return result

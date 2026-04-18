@@ -47,6 +47,9 @@ async def ws_endpoint(websocket: WebSocket, session_id: str = Query(...)) -> Non
     bidirectionally. The session must already exist (created via POST
     /api/projects/).
 
+    On connect, automatically sends `set_model` with the session's configured
+    model_id (ensuring all Pi actions go through WS, not HTTP).
+
     Query params:
         session_id: the session to connect to
     """
@@ -59,6 +62,18 @@ async def ws_endpoint(websocket: WebSocket, session_id: str = Query(...)) -> Non
         return
 
     await websocket.accept()
+
+    # Send set_model to the RPC process (all Pi actions go through WS)
+    model_id = session_manager.get_model_id(session_id)
+    if model_id:
+        await _write_stdin(
+            session_id,
+            {
+                "type": "set_model",
+                "modelId": model_id,
+                "provider": "",
+            },
+        )
 
     try:
         await _relay_messages(session_id, websocket)
