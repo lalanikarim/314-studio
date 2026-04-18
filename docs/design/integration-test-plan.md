@@ -28,16 +28,23 @@ web-pi-integration-tests/
 
 ### Model Configuration
 
-Model is configurable via environment variable or CLI flag:
+Two models are configured for the test suite:
 
+**Primary model** (required — exits suite immediately if unavailable):
 | Source | Variable | Default |
 |--------|----------|---------|
 | Environment | `TEST_MODEL_ID` | `Qwen/Qwen3.6-35B-A3B` |
 | Environment | `TEST_MODEL_PROVIDER` | `vllm` |
-| CLI flag | `--model-id` | `Qwen/Qwen3.6-35B-A3B` |
-| CLI flag | `--model-provider` | `vllm` |
 
-**Strict model requirement:** The specified model **must be available** from `pi --mode rpc get_available_models`. If not found, the test suite exits immediately with code 1 — no fallback models, no skipped tests, no partial runs.
+**Secondary model** (optional — used for model-switching tests, skipped if unavailable):
+| Source | Variable | Default |
+|--------|----------|---------|
+| Environment | `TEST_MODEL2_ID` | `Qwen 3.5 27B` |
+| Environment | `TEST_MODEL2_PROVIDER` | `aurora` |
+
+**Strict primary requirement:** The primary model **must be available** from `pi --mode rpc get_available_models`. If not found, the test suite exits immediately with code 1 — no fallback, no skipped tests, no partial runs.
+
+**Optional secondary requirement:** The secondary model is used for model-switching tests (T4.2). If not found, only T4.2 is skipped — the rest of the suite runs normally.
 
 This model is used throughout all chat prompts and model-switching tests.
 
@@ -238,22 +245,27 @@ class Tc:
 
 **Frontend path:** ChatPanel → model dropdown → switch model
 
-### T4.1 — Create session with model A
+### T4.1 — Create session with primary model
 
 - **Request:** `POST /api/projects/?project_path=$HOME/Projects/web-pi-integration-tests`
   - Body: `{model_id: "Qwen/Qwen3.6-35B-A3B", name: "ModelSwitch-Test"}`
 - **Verify:** `model_id == "Qwen/Qwen3.6-35B-A3B"`
 
-### T4.2 — Switch to second available model
+### T4.2 — Switch to secondary model (aurora)
 
-- **Request:** `POST /api/projects/<id>/model?model_id=<second_model>&provider=<provider>`
-  - `<second_model>` = first other model returned by `get_available_models` (any provider)
-- **Verify:** Returns `200`, updated `SessionRecord` with new `model_id`
+- **Check availability:** Query `GET /api/models/` (or `get_available_models` via RPC) for `Qwen 3.5 27B` from provider `aurora`
+- **If available:**
+  - **Request:** `POST /api/projects/<id>/model?model_id=Qwen%203.5%2027B&provider=aurora`
+  - **Verify:** Returns `200`, updated `SessionRecord` with `model_id == "Qwen 3.5 27B"`
+- **If unavailable:**
+  - **Skip** T4.2 with `⏭ Skipped: secondary model 'Qwen 3.5 27B' (aurora) not available`
+  - **Continue** with T4.3/T4.4 using primary model
 
 ### T4.3 — Chat with switched model
 
-- **Connect WS to session**, send `{"type":"prompt","message":"What model are you?"}`
-- **Verify:** Response reflects the new model
+- **If T4.2 ran:** Connect WS to session, send `{"type":"prompt","message":"What model are you?"}`
+  - **Verify:** Response reflects the new model (`Qwen 3.5 27B` or whichever model was switched to)
+- **If T4.2 skipped:** No test action (model didn't change)
 
 ### T4.4 — Chat on original model (recreate)
 
@@ -377,9 +389,9 @@ Teardown
 
 ## Model Availability Enforcement
 
-**No fallbacks. No skips. No partial runs.**
+**Primary model — no fallbacks, no skips, no partial runs.**
 
-At startup, the test suite validates the model against `pi --mode rpc get_available_models`:
+At startup, the test suite validates the primary model against `pi --mode rpc get_available_models`:
 
 ```python
 AVAILABLE = await get_available_models()  # via SessionManager
@@ -390,7 +402,9 @@ if TEST_MODEL_ID not in model_ids:
     sys.exit(1)
 ```
 
-All subsequent tests assume the model is available. If any test fails because the model is unavailable, the suite has already exited before reaching it.
+**Secondary model — optional, per-test skip.**
+
+The secondary model (`Qwen 3.5 27B` / `aurora`) is checked at T4.2 test time only. If not found, only T4.2 is skipped — the rest of the suite runs normally.
 
 ---
 
@@ -399,6 +413,11 @@ All subsequent tests assume the model is available. If any test fails because th
 ```bash
 # Local run (requires `pi` binary in PATH, port 8765 available)
 cd backend
+python integration_test_api.py
+
+# With custom models
+TEST_MODEL_ID="Qwen/Qwen3.6-35B-A3B" TEST_MODEL_PROVIDER="vllm" \
+TEST_MODEL2_ID="Qwen 3.5 27B" TEST_MODEL2_PROVIDER="aurora" \
 python integration_test_api.py
 
 # With verbose output
@@ -419,7 +438,7 @@ python integration_test_api.py --flows chat          # T1.7–T1.12 only
 | **1** | T1.1–T1.12 | Full user journey: browse → model → session → chat → WS disconnect/reconnect |
 | **2** | T2.1–T2.7 | File browsing and preview, path traversal protection |
 | **3** | T3.1–T3.7 | Multiple independent sessions on same project |
-| **4** | T4.1–T4.4 | Model switching mid-session |
+| **4** | T4.1–T4.4 | Model switching mid-session (uses Qwen 3.5 27B/aurora as target) |
 | **5** | T5.1–T5.4 | Session close (compact) vs delete (abort) lifecycle |
 | **6** | T6.1–T6.5 | Error handling and edge cases |
 | **7** | T7.1 | App shutdown cleanup of all processes |
