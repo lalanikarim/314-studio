@@ -8,16 +8,12 @@ is active; falls back to a small hardcoded default list otherwise.
 import json
 from typing import List, Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 from ..schemas import ModelConfig
-from .chat import active_rpc_processes
+from ..session_manager import session_manager
 
 router = APIRouter()
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 # Default model list (used when no RPC is active)
 _DEFAULT_MODELS: List[ModelConfig] = [
@@ -27,30 +23,27 @@ _DEFAULT_MODELS: List[ModelConfig] = [
         contextWindow=200000,
         maxTokens=16384,
     ),
-    ModelConfig(id="gpt-4.1", provider="openai", contextWindow=131072, maxTokens=16384),
-    ModelConfig(id="deepseek-coder", provider="deepseek", contextWindow=65536, maxTokens=16384),
+    ModelConfig(
+        id="gpt-4.1",
+        provider="openai",
+        contextWindow=131072,
+        maxTokens=16384,
+    ),
+    ModelConfig(
+        id="deepseek-coder",
+        provider="deepseek",
+        contextWindow=65536,
+        maxTokens=16384,
+    ),
 ]
 
 
-def _find_rpc_for_project(project_name: str):
-    """Find an active RPC process for the given project."""
-    for sid, rpc in active_rpc_processes.items():
-        if project_name in sid:
-            return rpc
-    return None
-
-
 def _parse_rpc_models(raw: Optional[dict]) -> List[ModelConfig]:
-    """
-    Parse model objects from a Pi RPC get_available_models response.
-
-    The response data field contains a list of model objects like:
-    {"provider": "anthropic", "modelId": "claude-sonnet-4-20250514", ...}
-    """
+    """Parse model objects from a Pi RPC get_available_models response."""
     if not raw:
         return _DEFAULT_MODELS
 
-    models = []
+    models: List[ModelConfig] = []
     items = raw if isinstance(raw, list) else raw.get("models", raw.get("data", []))
     if isinstance(items, list):
         for item in items:
@@ -72,19 +65,23 @@ def _parse_rpc_models(raw: Optional[dict]) -> List[ModelConfig]:
 
 
 @router.get("/", response_model=List[ModelConfig])
-async def list_models(project_name: Optional[str] = None) -> List[ModelConfig]:
+async def list_models(
+    session_id: Optional[str] = Query(None, description="Session to query for models"),
+) -> List[ModelConfig]:
     """
     List all available models.
-    Queries Pi RPC if an active session exists; falls back to defaults.
+    Queries Pi RPC if a session is active; falls back to defaults.
     """
-    if project_name:
-        rpc = _find_rpc_for_project(project_name)
-        if rpc:
+    if session_id:
+        record = session_manager.get_session(session_id)
+        if record and record.status == "running" and record.stdin:
             try:
-                await rpc["stdin"].write(b'{"type": "get_available_models"}\n')
-                await rpc["stdin"].drain()
-                # Response will come back via the async WebSocket reader.
-                # For REST endpoint return defaults and let WebSocket deliver update.
+                req_id = json.dumps({"type": "get_available_models"})
+                record.stdin.write((req_id + "\n").encode("utf-8"))
+                await record.stdin.drain()
+                # Response will come back via the stdout reader → event_buffer.
+                # For REST endpoint return defaults; frontend picks up update via WS.
+                return _DEFAULT_MODELS
             except Exception:
                 pass
 
@@ -97,32 +94,17 @@ async def list_models(project_name: Optional[str] = None) -> List[ModelConfig]:
 
 
 @router.post("/{session_id}/model")
-async def switch_model(session_id: str, project_name: str, model_id: str) -> dict:
+async def switch_model(
+    session_id: str,
+    model_id: str = Query(...),
+    provider: str = "anthropic",
+) -> dict:
     """
     Switch the model for a session.
-    Sends set_model RPC command with the target model.
+    Routes through the session API endpoint which handles it properly.
     """
-    rpc = _find_rpc_for_project(project_name)
-    if not rpc:
-        return {"error": "No active RPC session", "message": "Connect via WebSocket first"}
-
-    # Determine provider from model ID or parse from provider/id format
-    provider = "anthropic"
-    if "/" in model_id:
-        provider, model_id = model_id.split("/", 1)
-
-    # Send set_model command
     try:
-        await rpc["stdin"].write(
-            json.dumps({"type": "set_model", "provider": provider, "modelId": model_id}).encode(
-                "utf-8"
-            )
-        )
-        await rpc["stdin"].drain()
-        return {
-            "message": "Model switch requested",
-            "provider": provider,
-            "modelId": model_id,
-        }
-    except Exception as e:
-        return {"error": f"Failed to switch model: {e}"}
+        await session_manager.switch_model(session_id, model_id, provider)
+        return {"message": "Model switched", "modelId": model_id, "provider": provider}
+    except Exception as exc:
+        return {"error": f"Failed to switch model: {exc}"}

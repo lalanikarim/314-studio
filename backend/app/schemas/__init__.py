@@ -90,3 +90,22 @@ class ModelSwitch(BaseModel):
     """
 
     modelId: str
+
+
+# ── Session Manager schemas ───────────────────────────────────────────────────
+# SessionRecord is defined in session_manager.py as a dataclass (source of truth).
+# FastAPI handles dataclasses natively as response_model.
+
+
+class SessionCreateRequest(BaseModel):
+    """Request body for creating a new session."""
+
+    model_id: str
+    name: Optional[str] = None
+
+
+class SessionCloseResponse(BaseModel):
+    """Response from session close or delete."""
+
+    session_id: str
+    compacted: bool

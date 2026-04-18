@@ -11,6 +11,8 @@ directory), not via route parameters. This matches the pattern used by browse.py
 project.py which resolve paths via Path.home() / "Projects".
 """
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -22,14 +24,29 @@ from app.api import (
     project_router,
     session_router,
 )
+from app.session_manager import session_manager
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup and shutdown events for the application."""
+    # Startup
+    await session_manager.initialize()
+    session_manager.start_cleanup_task()
+    yield
+    # Shutdown
+    await session_manager.shutdown_all()
+
 
 app = FastAPI(
     title="FastAPI React Pi Integration",
     description=(
         "API for Pi coding agent integration with React frontend. "
+        "One pi --mode rpc process per session. "
         "All Pi interactions go through WebSocket RPC."
     ),
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 # CORS - allow Vite dev server
