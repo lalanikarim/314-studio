@@ -2,6 +2,19 @@
 
 > Test the backend REST + WebSocket API surface against live `pi --mode rpc` processes, covering all user flows the frontend executes.
 
+## Architecture Rule
+
+**REST = project/file/session metadata only. WebSocket = all Pi RPC actions.**
+
+| Layer | Operations |
+|-------|-----------|
+| **REST** | Create session, list projects, browse files, close/delete session, switch model metadata |
+| **WebSocket** | `set_model`, `prompt`, `get_state`, `get_messages`, `compact`, `abort`, `get_available_models`, etc. |
+
+**Model switching is a 2-step process:**
+1. `POST /api/projects/{id}/model` — updates session metadata only (no RPC command)
+2. Client connects WS — relay automatically sends `set_model` with configured `modelId`
+
 ---
 
 ## Test Fixture Setup
@@ -45,8 +58,6 @@ Two models are configured for the test suite:
 **Strict primary requirement:** The primary model **must be available** from `pi --mode rpc get_available_models`. If not found, the test suite exits immediately with code 1 — no fallback, no skipped tests, no partial runs.
 
 **Optional secondary requirement:** The secondary model is used for model-switching tests (T4.2). If not found, only T4.2 is skipped — the rest of the suite runs normally.
-
-This model is used throughout all chat prompts and model-switching tests.
 
 ---
 
@@ -117,7 +128,7 @@ class Tc:
 
 - **Connect:** `WS /api/projects/ws?session_id=<session_id>`
 - **Verify:** Connection succeeds, state becomes `connected`
-- **Verify:** WS relay sends `set_model` with `modelId="Qwen/Qwen3.6-35B-A3B"` to process stdin (logged or captured)
+- **Verify:** WS relay sends `set_model` with `modelId="Qwen/Qwen3.6-35B-A3B"` to process stdin
 - **Verify:** Receive `"response"` for the `set_model` command
 
 ### T1.8 — Send `get_state` via WS
@@ -245,7 +256,7 @@ class Tc:
 
 ## Flow 4: Model Switching
 
-**Frontend path:** ChatPanel → model dropdown → switch model
+**Frontend path:** ChatPanel → model dropdown → pick new model → WS sends `set_model`
 
 ### T4.1 — Create session with primary model
 
@@ -257,9 +268,10 @@ class Tc:
 
 - **Check availability:** Query `GET /api/models/` (or `get_available_models` via RPC) for `Qwen 3.5 27B` from provider `aurora`
 - **If available:**
-  - **REST:** `POST /api/projects/<id>/model?model_id=Qwen%203.5%2020B&provider=aurora` (updates session metadata only)
-  - **WS:** Connect to session, verify `set_model` command is auto-sent with `modelId="Qwen 3.5 27B"`
-  - **Verify:** Session metadata updated (`model_id == "Qwen 3.5 27B"`)
+  1. **REST:** `POST /api/projects/<id>/model?model_id=Qwen%203.5%2027B&provider=aurora` — updates session metadata only
+  2. **Verify:** Returns `200`, updated `SessionRecord` with `model_id == "Qwen 3.5 27B"`
+  3. **WS:** Connect to session — relay sends `set_model` with `modelId="Qwen 3.5 27B"` to process
+  4. **Verify:** Receive `"response"` confirming `set_model` succeeded
 - **If unavailable:**
   - **Skip** T4.2 with `⏭ Skipped: secondary model 'Qwen 3.5 27B' (aurora) not available`
   - **Continue** with T4.3/T4.4 using primary model
@@ -267,7 +279,7 @@ class Tc:
 ### T4.3 — Chat with switched model
 
 - **If T4.2 ran:**
-  - **WS:** Connect to session, verify `set_model` command is auto-sent with `modelId="Qwen 3.5 27B"` in WS traffic
+  - **WS:** Connect to session, verify `set_model` command is auto-sent with `modelId="Qwen 3.5 27B"` in relay traffic
   - Send `"What model are you?"` via WS
   - **Verify:** Response reflects the new model (`Qwen 3.5 27B`)
 - **If T4.2 skipped:** No test action (model didn't change)
@@ -376,23 +388,23 @@ Teardown
 
 ## API Endpoints Under Test
 
-| Endpoint | Method | Tests |
-|----------|--------|-------|
-| `/api/browse` | GET | T1.1 |
-| `/api/projects/` | GET | T1.2 |
-| `/api/projects/info` | GET | T1.3, T1.6, T3.2, T3.7 |
-| `/api/projects/` | POST | T1.4, T3.1, T4.1, T5.1, T5.3 |
-| `/api/projects/{id}/close` | POST | T3.5, T5.2 |
-| `/api/projects/{id}/delete` | POST | T3.6, T5.4 |
-| `/api/projects/{id}/model` | POST | Updates metadata only (model switch via WS) |
-| `/api/projects/files` | GET | T2.1, T2.2, T2.3, T2.7 |
-| `/api/projects/files/read` | GET | T2.4, T2.5, T2.6 |
-| `/api/models/` | GET | T1.5 |
-| `WS /api/projects/ws` | WS | T1.7–T1.12, T3.3, T3.4, T4.2, T4.3, T4.4, T6.3 |
+| Endpoint | Method | Description | Tests |
+|----------|--------|-------------|-------|
+| `/api/browse` | GET | List directories | T1.1 |
+| `/api/projects/` | GET | List projects | T1.2 |
+| `/api/projects/info` | GET | Project + sessions | T1.3, T1.6, T3.2, T3.7 |
+| `/api/projects/` | POST | Create session | T1.4, T3.1, T4.1, T5.1, T5.3 |
+| `/api/projects/{id}/close` | POST | Compact + terminate | T3.5, T5.2 |
+| `/api/projects/{id}/delete` | POST | Abort + terminate | T3.6, T5.4 |
+| `/api/projects/{id}/model` | POST | **Metadata only** (model via WS) | T4.2 |
+| `/api/projects/files` | GET | List files | T2.1, T2.2, T2.3, T2.7 |
+| `/api/projects/files/read` | GET | Read file | T2.4, T2.5, T2.6 |
+| `/api/models/` | GET | List available models | T1.5 |
+| `WS /api/projects/ws` | WS | Bidirectional RPC relay | T1.7–T1.12, T3.3, T3.4, T4.2, T4.3, T4.4, T6.3 |
 
 ---
 
-**Important architecture rule:** All Pi RPC actions (model switching, chat, get_state, etc.) go through WebSocket — never directly over HTTP. The REST `POST /api/projects/{id}/model` endpoint only updates session metadata. The actual `set_model` RPC command is sent by the WebSocket relay when the client connects.
+## Model Availability Enforcement
 
 **Primary model — no fallbacks, no skips, no partial runs.**
 
@@ -418,20 +430,20 @@ The secondary model (`Qwen 3.5 27B` / `aurora`) is checked at T4.2 test time onl
 ```bash
 # Local run (requires `pi` binary in PATH, port 8765 available)
 cd backend
-python integration_test_api.py
+uv run python integration_test_api.py
 
 # With custom models
 TEST_MODEL_ID="Qwen/Qwen3.6-35B-A3B" TEST_MODEL_PROVIDER="vllm" \
 TEST_MODEL2_ID="Qwen 3.5 27B" TEST_MODEL2_PROVIDER="aurora" \
-python integration_test_api.py
+uv run python integration_test_api.py
 
 # With verbose output
-python integration_test_api.py --verbose
+uv run python integration_test_api.py --verbose
 
 # Run specific flow only
-python integration_test_api.py --flows file-browse   # T2.x only
-python integration_test_api.py --flows multi-session # T3.x only
-python integration_test_api.py --flows chat          # T1.7–T1.12 only
+uv run python integration_test_api.py --flows file-browse   # T2.x only
+uv run python integration_test_api.py --flows multi-session # T3.x only
+uv run python integration_test_api.py --flows chat          # T1.7–T1.12 only
 ```
 
 ---
