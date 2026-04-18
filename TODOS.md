@@ -64,12 +64,22 @@ Sorted by priority (most critical first).
 ### Phase 1: Wire Frontend → Backend (Biggest Impact)
 
 #### 1.1 Replace `mockData.ts` with real API calls
-- [ ] `FolderSelector` → `GET /api/projects` to list real folders from `~/Projects`
-- [ ] `ModelSelector` → fetch models from backend (or via WebSocket `get_available_models`)
-- [ ] `ProjectTree` → `GET /api/projects/{name}/files?path=...` for directory expansion
-- [ ] `FilePreview` → `GET /api/projects/{name}/files/read/{path}` for file content
-- [ ] `useFileContent` hook → replace mock with real fetch
-- [ ] `useModels` hook → replace mock with real fetch
+- [x] `FolderSelector` → `GET /api/browse` to list real folders from `~/Projects`
+- [x] `ModelSelector` → launches `pi --mode rpc` via `POST /sessions`, polls `GET /models`
+- [x] `ProjectTree` → `GET /api/projects/files?project_path=...&path=...` for directory expansion
+- [x] `FilePreview` → `GET /api/projects/files/read?project_path=...&file_path=...` for file content
+- [x] `useFileContent` hook → real fetch (via `readFile`)
+- [x] `useModels` hook → real fetch with pi init + polling fallback
+
+#### 1.2 Backend route scheme
+- [x] All project-scoped endpoints now use `project_path` query param instead of `{project_name}` route param
+- [x] Route prefix changed from `/api/projects/{project_name}` to `/api/projects`
+- [x] Fixed `StreamWriter.write()` — it's sync, only `drain()` is async (was causing 500 on session create)
+- [x] Fixed `project_path` resolution matching `browse.py` / `project.py` (uses `Path.home() / "Projects"`)
+- [x] Fixed `files.py` to return `entry.relative_to(target_path)` (was returning project-root-relative paths)
+- [x] `FolderSelector` stores full path (not just project name) for backend query params
+- [x] `ProjectTree` path construction fixed for nested items
+- [ ] WebSocket endpoint: `GET /api/projects/ws?project_path=...` (needs frontend implementation)
 
 #### 1.2 Add WebSocket client to `ChatPanel.tsx`
 - [ ] Connect to `ws://localhost:8000/api/projects/{project_name}/ws` on workspace mount

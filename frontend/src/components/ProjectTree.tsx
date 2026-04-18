@@ -49,12 +49,20 @@ function TreeNode({
       listFiles(projectRoot || '', node.path)
         .then((items) => {
           setChildren(
-            items.map((item) => ({
-              name: item.path.split('/').pop() || item.path,
-              path: item.isDirectory ? `${node.path}/${item.path}` : `${node.path}/${item.path}`,
-              isDirectory: item.isDirectory,
-              children: [],
-            }))
+            items.map((item) => {
+              const parentPath = node.path;
+              const itemName = item.path.split('/').pop() || item.path;
+              // item.path is now relative to the current node (e.g. "app.py" or "components/Button.tsx")
+              const childPath = parentPath
+                ? `${parentPath}/${item.path}`
+                : item.path;
+              return {
+                name: itemName,
+                path: childPath,
+                isDirectory: item.isDirectory,
+                children: [],
+              };
+            })
           );
         })
         .catch(() => {

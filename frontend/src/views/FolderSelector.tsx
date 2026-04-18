@@ -196,8 +196,7 @@ export default function FolderSelector() {
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set([ROOT_PATH]));
 
   const handleOpen = (path: string) => {
-    const projectName = path.split('/').filter(Boolean).pop() || path;
-    setSelectedFolder(projectName);
+    setSelectedFolder(path); // store full path for backend query params
     setSelectedModel(null);
     setView('models');
   };

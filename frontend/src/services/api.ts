@@ -1,26 +1,12 @@
 /**
  * API service for communicating with the FastAPI backend.
  * All fetch calls use relative URLs (Vite proxy or same-origin).
+ *
+ * Project endpoints now use `project_path` as a query parameter
+ * instead of a route parameter, matching the backend scheme.
  */
 
 const API_BASE = ''; // relative to Vite dev server or behind reverse proxy
-
-/**
- * Derive just the project name from a path.
- * Works with full paths like "/Users/karim/Projects/my-project"
- * or just a project name like "my-project".
- */
-function parseProjectName(fullPath: string): string {
-  if (!fullPath) return '';
-  const parts = fullPath.split('/').filter(Boolean);
-  // If the path contains "Projects" in it, take the segment right after
-  const projIdx = parts.indexOf('Projects');
-  if (projIdx >= 0 && projIdx + 1 < parts.length) {
-    return parts[projIdx + 1];
-  }
-  // Otherwise, the last segment IS the project name
-  return parts[parts.length - 1];
-}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -67,8 +53,21 @@ export async function listProjects(): Promise<string[]> {
   return request<string[]>('/api/projects');
 }
 
-export async function getProjectInfo(projectName: string): Promise<ProjectInfo> {
-  return request<ProjectInfo>(`/api/projects/${encodeURIComponent(projectName)}/info`);
+export async function getProjectInfo(projectPath: string): Promise<ProjectInfo> {
+  return request<ProjectInfo>(
+    `/api/projects/info?project_path=${encodeURIComponent(projectPath)}`
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Sessions
+// ---------------------------------------------------------------------------
+
+export async function createSession(projectPath: string): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>(
+    `/api/projects/sessions?project_path=${encodeURIComponent(projectPath)}`,
+    { method: 'POST' }
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -77,7 +76,6 @@ export async function getProjectInfo(projectName: string): Promise<ProjectInfo> 
 
 export interface ModelConfig {
   id: string;
-  name: string;
   provider: string;
   contextWindow?: number;
   maxTokens?: number;
@@ -101,22 +99,21 @@ export interface FileInfo {
 
 /**
  * List files in a directory.
- * @param fullPath — full path of the project folder or just the project name
+ * @param projectPath — full path of the project folder (e.g. ~/Projects/my-project)
  * @param relativePath — optional sub-directory path (e.g. "src/backend/app")
  */
-export async function listFiles(fullPath: string, relativePath = ''): Promise<FileInfo[]> {
-  const projectName = parseProjectName(fullPath);
-  const qs = relativePath ? `?path=${encodeURIComponent(relativePath)}` : '';
-  return request<FileInfo[]>(`/api/projects/${encodeURIComponent(projectName)}/files${qs}`);
+export async function listFiles(projectPath: string, relativePath = ''): Promise<FileInfo[]> {
+  const qs = relativePath ? `?project_path=${encodeURIComponent(projectPath)}&path=${encodeURIComponent(relativePath)}`
+    : `?project_path=${encodeURIComponent(projectPath)}`;
+  return request<FileInfo[]>(`/api/projects/files${qs}`);
 }
 
 /**
  * Read a file's content.
- * @param fullPath — full path of the project folder or project name
+ * @param projectPath — full path of the project folder (e.g. ~/Projects/my-project)
  * @param filePath — relative path of the file inside the project (e.g. "src/main.py")
  */
-export async function readFile(fullPath: string, filePath: string): Promise<string> {
-  const projectName = parseProjectName(fullPath);
-  const encodedPath = encodeURIComponent(filePath);
-  return request<string>(`/api/projects/${encodeURIComponent(projectName)}/files/read/${encodedPath}`);
+export async function readFile(projectPath: string, filePath: string): Promise<string> {
+  const qs = `?project_path=${encodeURIComponent(projectPath)}&file_path=${encodeURIComponent(filePath)}`;
+  return request<string>(`/api/projects/files/read${qs}`);
 }

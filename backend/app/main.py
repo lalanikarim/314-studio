@@ -5,6 +5,10 @@ This backend provides REST API endpoints for project selection, session manageme
 file browsing, model management, and chat with the Pi coding agent via WebSocket RPC.
 
 All interactions with Pi happen through WebSocket after starting pi --rpc.
+
+Project identification is via query parameter `project_path` (absolute path to project
+directory), not via route parameters. This matches the pattern used by browse.py and
+project.py which resolve paths via Path.home() / "Projects".
 """
 
 from fastapi import FastAPI
@@ -38,13 +42,14 @@ app.add_middleware(
 )
 
 # Include API routers
-# Note: Projects are existing folders under $HOME/Projects
+# All project-scoped endpoints now use `project_path` as a query parameter
+# instead of a route parameter for consistent path resolution.
 app.include_router(browse_router, prefix="/api", tags=["browse"])
 app.include_router(project_router, prefix="/api/projects", tags=["projects"])
-app.include_router(session_router, prefix="/api/projects/{project_name}", tags=["sessions"])
-app.include_router(files_router, prefix="/api/projects/{project_name}", tags=["files"])
+app.include_router(session_router, prefix="/api/projects", tags=["sessions"])
+app.include_router(files_router, prefix="/api/projects", tags=["files"])
 app.include_router(model_router, prefix="/api/models", tags=["models"])
-app.include_router(chat_router, prefix="/api/projects/{project_name}", tags=["chat"])
+app.include_router(chat_router, prefix="/api/projects", tags=["chat"])
 
 # Serve frontend static files in production
 # app.mount("/", StaticFiles(directory="frontend/dist", html=True), name="frontend")

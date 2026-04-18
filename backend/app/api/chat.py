@@ -6,15 +6,17 @@ Protocol:
   - Messages from client → wrapped as `prompt` commands with unique `id`
   - Output from Pi → typed as either `"response"` (matching `id`) or `"event"` (streaming)
   - `extension_ui_request` → forwarded so frontend can respond interactively
+
+Project identification is via `project_path` query parameter, matching browse.py.
 """
 
 import asyncio
 import json
 import uuid
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
 from ..schemas import ChatMessage, Message
 
@@ -63,7 +65,7 @@ async def send_rpc_command(stdin, command: dict) -> str:
         req_id = command["id"]
 
     line = json.dumps(command, ensure_ascii=False)
-    await stdin.write(f"{line}\n".encode("utf-8"))
+    stdin.write(f"{line}\n".encode("utf-8"))  # write() is sync; drain() is async
     await stdin.drain()
     return req_id
 
@@ -129,8 +131,7 @@ async def _auto_reply_to_extension_request(data: dict, stdin):
         "setHeader",
         "setWidget",
         "setEditorComponent",
-        "setToolsExpanded",
-        "set_editor_text",
+        "set_tools_expanded",
     }
     interactive = {"select", "confirm", "input", "editor"}
 
@@ -313,30 +314,28 @@ async def write_rpc_input(stdin, websocket: WebSocket, session_id: str):
 
 
 @router.websocket("/ws")
-async def rpc_websocket_endpoint(websocket: WebSocket, project_name: str):
+async def rpc_websocket_endpoint(websocket: WebSocket, project_path: str = Query(...)):
     """
     WebSocket endpoint for Pi RPC communication.
 
-    Route: /api/projects/{project_name}/ws/{project_name}
-    The second segment (project_name in path) is kept for session scoping
-    but is the same value as the prefix parameter.
+    project_path: absolute path to the project directory (e.g. ~/Projects/ai-chatbot)
     """
     await websocket.accept()
 
-    session_id = f"ws_{project_name}_{uuid.uuid4().hex[:8]}"
+    session_id = f"ws_{uuid.uuid4().hex[:8]}"
 
     try:
         active_websockets[session_id] = websocket
-        project_path = str(Path.cwd() / project_name)
+        resolved_path = str(Path(project_path).expanduser())
 
-        await forward_rpc_messages(session_id, websocket, project_path)
+        await forward_rpc_messages(session_id, websocket, resolved_path)
 
     except WebSocketDisconnect:
-        print(f"WebSocket disconnected for project={project_name}")
+        print(f"WebSocket disconnected for project={project_path}")
         await _cleanup_session(session_id)
 
     except Exception as e:
-        print(f"WebSocket error for project={project_name}: {e}")
+        print(f"WebSocket error for project={project_path}: {e}")
         await _cleanup_session(session_id)
 
 
@@ -366,29 +365,37 @@ async def _cleanup_session(session_id: str):
 
 
 @router.post("/sessions/{session_id}/chat")
-async def send_chat_message(project_name: str, session_id: str, message: ChatMessage) -> dict:
+async def send_chat_message(
+    session_id: str,
+    project_path: str = Query(...),
+    message: Optional[ChatMessage] = None,
+) -> dict:
     """
     Send a chat message. Deprecated — use the WebSocket endpoint instead.
     If the WebSocket is active for this session, the message is forwarded there.
     """
     # Find the WebSocket session for this project
+    if not message:
+        return {"status": "error", "message": "Message body required"}
     for sid, ws in active_websockets.items():
-        if project_name in sid:
-            try:
-                await ws.send_text(json.dumps({"kind": "rpc_event", "event": message.message}))
-                return {"status": "forwarded", "websocket": sid}
-            except Exception:
-                pass
+        try:
+            await ws.send_text(json.dumps({"kind": "rpc_event", "event": message.message}))
+            return {"status": "forwarded", "websocket": sid}
+        except Exception:
+            pass
 
     return {
         "status": "no_active_connection",
-        "message": "Use the WebSocket endpoint /ws/{project} for real-time chat",
-        "websocket_url": f"/ws/{project_name}",
+        "message": "Use the WebSocket endpoint /api/projects/ws?project_path=... for real-time chat",
+        "websocket_url": "/api/projects/ws",
     }
 
 
-@router.get("/sessions/{session_id}/chat", response_model=List[Message])
-async def get_chat_history(project_name: str, session_id: str) -> List[Message]:
+@router.get("/sessions/{session_id}/chat")
+async def get_chat_history(
+    session_id: str,
+    project_path: str = Query(...),
+) -> List[Message]:
     """
     Get chat history. Deprecated — fetch via WebSocket using get_messages RPC command.
     """
