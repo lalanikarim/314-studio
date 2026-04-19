@@ -1,180 +1,499 @@
-import { useState, useRef, useEffect } from 'react';
-import { useApp } from '../store/AppContext';
-import { useModels } from '../hooks/useModels';
-import './components.css';
+import { useState, useRef, useEffect, useCallback } from "react";
+import { useApp } from "../store/AppContext";
+import { useModels } from "../hooks/useModels";
+import { useWebSocket } from "../hooks/useWebSocket";
+import type { Model } from "../types";
+import "./components.css";
 
-const MOCK_REPLIES = [
-  "I've analyzed the project structure. This appears to be a FastAPI + React Pi integration project. Let me know what you'd like to work on!",
-  "Looking at the file tree, I can see the backend is set up with FastAPI routers. Would you like me to help implement the WebSocket chat endpoint?",
-  "I notice the frontend is built with Vite + React 19. I can help with the file tree component, file preview, or the chat interface.",
-  "The project structure looks good. I see we have backend API routers for projects, sessions, files, and models. What would you like to add or modify?",
-  "I can see the integration plan covers project selection, session management, file navigation, model switching, and chat. Let me know which part you'd like to tackle next.",
-];
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+interface DisplayMessage {
+	id: string;
+	role: "user" | "assistant";
+	content: string;
+	timestamp: number;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers — extract content from Pi RPC events
+// ---------------------------------------------------------------------------
+
+function extractText(event: Record<string, unknown>): string {
+	if (typeof event.content === "string") return event.content;
+	if (typeof event.text === "string") return event.text;
+	if (typeof event.data === "string") return event.data;
+	if (typeof event.message === "string") return event.message;
+	return "";
+}
+
+function extractToolName(event: Record<string, unknown>): string | null {
+	if (typeof event.tool_name === "string") return event.tool_name;
+	if (typeof event.command === "string") return event.command;
+	if (typeof event.function === "string") return event.function;
+	if (typeof event.name === "string") return event.name;
+	return null;
+}
+
+function isStreamFinalizer(event: Record<string, unknown>): boolean {
+	if (event.type === "end_turn" || event.type === "end") return true;
+	if (event.status === "done" || event.status === "finished") return true;
+	if (event.type === "response" && event.id) return true;
+	return false;
+}
+
+// ---------------------------------------------------------------------------
+// ChatPanel
+// ---------------------------------------------------------------------------
 
 export default function ChatPanel() {
-  const { currentModel, switchModel, setSelectedModel } = useApp();
-  const { models } = useModels();
+	const {
+		currentModel,
+		switchModel,
+		setSelectedModel,
+		selectedFolder,
+		sessionId: selectedSessionId,
+	} = useApp();
+	const { models } = useModels();
 
-  const [messages, setMessages] = useState<Array<{ id: string; role: 'user' | 'assistant'; content: string; timestamp: number }>>([]);
-  const [input, setInput] = useState('');
-  const [isTyping, setIsTyping] = useState(false);
-  const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+	// Model ref — kept in sync with currentModel so the WS hook always
+	// knows which model to send `set_model` with on connect.
+	const modelRef = useRef<Model | null>(currentModel);
+	useEffect(() => {
+		modelRef.current = currentModel;
+	}, [currentModel]);
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+	// WebSocket connection (one per project — uses sessionId for WS URL)
+	const ws = useWebSocket(selectedFolder, modelRef, selectedSessionId);
 
-  const handleSend = () => {
-    const trimmed = input.trim();
-    if (!trimmed || isTyping) return;
+	// ── Display state: finalized messages ────────────────────────────────────
+	const [displayMessages, setDisplayMessages] = useState<DisplayMessage[]>([]);
 
-    const userMsg = {
-      id: `msg-${Date.now()}`,
-      role: 'user' as const,
-      content: trimmed,
-      timestamp: Date.now(),
-    };
+	// ── Streaming state ─────────────────────────────────────────────────────
+	const [streamingContent, setStreamingContent] = useState("");
+	const [toolCallNames, setToolCallNames] = useState<string[]>([]);
 
-    setMessages((prev) => [...prev, userMsg]);
-    setInput('');
-    setIsTyping(true);
+	// ── Input state ──────────────────────────────────────────────────────────
+	const [input, setInput] = useState("");
+	const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
+	const messagesEndRef = useRef<HTMLDivElement>(null);
+	const inputRef = useRef<HTMLInputElement>(null);
 
-    // Mock reply
-    setTimeout(() => {
-      const reply: typeof messages[number] = {
-        id: `msg-${Date.now()}`,
-        role: 'assistant',
-        content: MOCK_REPLIES[Math.floor(Math.random() * MOCK_REPLIES.length)],
-        timestamp: Date.now(),
-      };
-      setMessages((prev) => [...prev, reply]);
-      setIsTyping(false);
-    }, 1000 + Math.random() * 1500);
-  };
+	// ── Progress tracking (how many inbound events we've processed) ──────────
+	const processedCountRef = useRef(0);
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
+	// Scroll to bottom whenever messages or streaming content changes
+	useEffect(() => {
+		messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+	}, [displayMessages, streamingContent, toolCallNames]);
 
-  const handleSwitchModel = (model: typeof models[0]) => {
-    switchModel(model);
-    setSelectedModel(model);
-    setModelDropdownOpen(false);
-  };
+	// ── Process new RPC events from the hook ─────────────────────────────────
+	useEffect(() => {
+		if (ws.messages.length <= processedCountRef.current) return;
 
-  return (
-    <div className="panel panel--chat">
-      <div className="panel__header panel__header--chat">
-        <span>Chat</span>
-        <div className="model-picker model-picker--compact" ref={null}>
-          <div className="model-picker__dropdown" style={{ position: 'relative' }}>
-            <button
-              className="model-picker__trigger"
-              onClick={() => setModelDropdownOpen(!modelDropdownOpen)}
-              title="Switch model"
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
-                <circle cx="12" cy="12" r="3" />
-                <path d="M12 1v6m0 6v6M1 12h6m6 0h6" />
-              </svg>
-              <span className="model-picker__label">{currentModel?.name}</span>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12">
-                <path d="M6 9l6 6 6-6" />
-              </svg>
-            </button>
-            {modelDropdownOpen && (
-              <div className="model-picker__menu model-picker__menu--compact">
-                {models.map((model) => (
-                  <button
-                    key={model.id}
-                    className={`model-picker__item ${currentModel?.id === model.id ? 'model-picker__item--active' : ''}`}
-                    onClick={() => handleSwitchModel(model)}
-                  >
-                    <div className="model-picker__item-name">{model.name}</div>
-                    <div className="model-picker__item-meta">{model.provider}</div>
-                    {currentModel?.id === model.id && (
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16">
-                        <path d="M20 6L9 17l-5-5" />
-                      </svg>
-                    )}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
+		const newMessages = ws.messages.slice(processedCountRef.current);
 
-      <div className="panel__content panel__content--chat">
-        {messages.length === 0 && (
-          <div className="chat-empty">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="48" height="48">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-            </svg>
-            <p>Start a conversation with Pi</p>
-            <p className="chat-empty__hint">Select a model above and type a message</p>
-          </div>
-        )}
+		for (const msg of newMessages) {
+			if (msg.kind !== "rpc_event") continue;
 
-        {messages.map((msg) => (
-          <div key={msg.id} className={`chat-message chat-message--${msg.role}`}>
-            <div className="chat-message__avatar">
-              {msg.role === 'user' ? 'You' : 'π'}
-            </div>
-            <div className="chat-message__body">
-              <div className="chat-message__role">
-                {msg.role === 'user' ? 'You' : 'Pi'}
-                <span className="chat-message__time">
-                  {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </span>
-              </div>
-              <div className="chat-message__content">{msg.content}</div>
-            </div>
-          </div>
-        ))}
+			const event = msg.event as Record<string, unknown>;
 
-        {isTyping && (
-          <div className="chat-message chat-message--assistant">
-            <div className="chat-message__avatar">π</div>
-            <div className="chat-message__body">
-              <div className="chat-message__role">Pi</div>
-              <div className="chat-message__typing">
-                <span />
-                <span />
-                <span />
-              </div>
-            </div>
-          </div>
-        )}
+			// ── End-of-stream marker → finalize current turn ───────────────
+			if (isStreamFinalizer(event)) {
+				if (streamingContent.trim() || toolCallNames.length > 0) {
+					const lines = [
+						...toolCallNames.map((tc) => `> ${tc}`),
+						streamingContent.trim(),
+					].filter(Boolean);
 
-        <div ref={messagesEndRef} />
-      </div>
+					if (lines.length) {
+						// eslint-disable-next-line react-hooks/set-state-in-effect
+						setDisplayMessages((prev) => [
+							...prev,
+							{
+								id: `assistant-${Date.now()}`,
+								role: "assistant",
+								content: lines.join("\n\n"),
+								timestamp: Date.now(),
+							},
+						]);
+					}
+				}
+				setStreamingContent("");
+				setToolCallNames([]);
+				continue;
+			}
 
-      <div className="panel__input">
-        <input
-          ref={inputRef}
-          type="text"
-          placeholder="Message Pi..."
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          disabled={isTyping}
-        />
-        <button
-          className="btn btn--send"
-          onClick={handleSend}
-          disabled={!input.trim() || isTyping}
-        >
-          <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
-            <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-          </svg>
-        </button>
-      </div>
-    </div>
-  );
+			// ── Text content → accumulate ──────────────────────────────────
+			const text = extractText(event);
+			if (text) {
+				setStreamingContent((prev) => prev + text);
+			}
+
+			// ── Tool call → track ──────────────────────────────────────────
+			const toolName = extractToolName(event);
+			if (toolName) {
+				setToolCallNames((prev) => [...prev, toolName]);
+			}
+		}
+
+		processedCountRef.current = ws.messages.length;
+	}, [ws.messages]);
+
+	// ── Send handler ─────────────────────────────────────────────────────────
+	const handleSend = useCallback(() => {
+		const trimmed = input.trim();
+		if (!trimmed) return;
+
+		// Finalize any current streaming content before the new user message
+		if (streamingContent.trim() || toolCallNames.length > 0) {
+			const lines = [
+				...toolCallNames.map((tc) => `> ${tc}`),
+				streamingContent.trim(),
+			].filter(Boolean);
+
+			if (lines.length) {
+				setDisplayMessages((prev) => [
+					...prev,
+					{
+						id: `assistant-${Date.now()}`,
+						role: "assistant",
+						content: lines.join("\n\n"),
+						timestamp: Date.now(),
+					},
+				]);
+			}
+		}
+		setStreamingContent("");
+		setToolCallNames([]);
+
+		// Add user message to display
+		const userMsg: DisplayMessage = {
+			id: `user-${Date.now()}`,
+			role: "user",
+			content: trimmed,
+			timestamp: Date.now(),
+		};
+		setDisplayMessages((prev) => [...prev, userMsg]);
+		setInput("");
+		inputRef.current?.focus();
+
+		// Forward to Pi via WebSocket
+		ws.send(trimmed);
+	}, [input, streamingContent, toolCallNames, ws]);
+
+	// ── Model switcher ───────────────────────────────────────────────────────
+	const handleSwitchModel = (model: (typeof models)[0]) => {
+		switchModel(model);
+		setSelectedModel(model);
+		setModelDropdownOpen(false);
+
+		// Send set_model RPC through the WS relay
+		ws.send({
+			type: "set_model",
+			provider: model.provider,
+			modelId: model.id,
+		});
+	};
+
+	// ── Key handling ─────────────────────────────────────────────────────────
+	const handleKeyDown = (e: React.KeyboardEvent) => {
+		if (e.key === "Enter" && !e.shiftKey) {
+			e.preventDefault();
+			handleSend();
+		}
+	};
+
+	// ── Connection status label ──────────────────────────────────────────────
+	const connectionLabel = (() => {
+		switch (ws.state) {
+			case "connected":
+				return "Connected";
+			case "connecting":
+				return "Connecting…";
+			case "error":
+				return "Connection Error";
+			case "disconnected":
+				return "Disconnected";
+		}
+	})();
+
+	const connectionColor = (() => {
+		switch (ws.state) {
+			case "connected":
+				return "#22c55e";
+			case "connecting":
+				return "#eab308";
+			case "error":
+				return "#ef4444";
+			case "disconnected":
+				return "#475569";
+		}
+	})();
+
+	// ── Pending UI request banner ────────────────────────────────────────────
+	const renderPendingUi = () => {
+		if (!ws.pendingUiRequest) return null;
+
+		const req = ws.pendingUiRequest;
+		const paramsText =
+			typeof req.params === "string"
+				? req.params
+				: JSON.stringify(req.params, null, 2);
+
+		return (
+			<div className="ui-prompt-banner">
+				<span className="ui-prompt-banner__method">{req.method}</span>
+				<pre className="ui-prompt-banner__params">{paramsText}</pre>
+				<div className="ui-prompt-banner__actions">
+					<button
+						className="btn btn--sm"
+						onClick={() => ws.respondToUi(req.id, null, false)}
+					>
+						Cancel
+					</button>
+					<button
+						className="btn btn--sm btn--primary"
+						onClick={() => ws.respondToUi(req.id, true, false)}
+					>
+						Accept
+					</button>
+				</div>
+			</div>
+		);
+	};
+
+	// ── Empty state ──────────────────────────────────────────────────────────
+	const isEmpty =
+		displayMessages.length === 0 &&
+		!streamingContent &&
+		toolCallNames.length === 0;
+
+	// ── Render ───────────────────────────────────────────────────────────────
+	return (
+		<div className="panel panel--chat">
+			{/* Header */}
+			<div className="panel__header panel__header--chat">
+				<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+					<span>Chat</span>
+					<span
+						className="chat-connection-indicator"
+						style={{
+							display: "inline-flex",
+							alignItems: "center",
+							gap: 4,
+							fontSize: 11,
+							color: connectionColor,
+						}}
+					>
+						<span
+							style={{
+								width: 6,
+								height: 6,
+								borderRadius: "50%",
+								background: connectionColor,
+								display: "inline-block",
+							}}
+						/>
+						{connectionLabel}
+					</span>
+				</div>
+
+				{/* Model picker */}
+				<div style={{ position: "relative" }}>
+					<button
+						className="model-picker__trigger"
+						onClick={() => setModelDropdownOpen(!modelDropdownOpen)}
+						title="Switch model"
+						disabled={ws.state !== "connected"}
+					>
+						<svg
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							strokeWidth="2"
+							width="16"
+							height="16"
+						>
+							<circle cx="12" cy="12" r="3" />
+							<path d="M12 1v6m0 6v6M1 12h6m6 0h6" />
+						</svg>
+						<span className="model-picker__label">
+							{currentModel?.name || "Select"}
+						</span>
+						<svg
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							strokeWidth="2"
+							width="12"
+							height="12"
+						>
+							<path d="M6 9l6 6 6-6" />
+						</svg>
+					</button>
+					{modelDropdownOpen && (
+						<div className="model-picker__menu model-picker__menu--compact">
+							{models.map((model) => (
+								<button
+									key={model.id}
+									className={`model-picker__item ${currentModel?.id === model.id ? "model-picker__item--active" : ""}`}
+									onClick={() => handleSwitchModel(model)}
+								>
+									<div className="model-picker__item-name">{model.name}</div>
+									<div className="model-picker__item-meta">
+										{model.provider}
+									</div>
+									{currentModel?.id === model.id && (
+										<svg
+											viewBox="0 0 24 24"
+											fill="none"
+											stroke="currentColor"
+											strokeWidth="2"
+											width="16"
+											height="16"
+										>
+											<path d="M20 6L9 17l-5-5" />
+										</svg>
+									)}
+								</button>
+							))}
+						</div>
+					)}
+				</div>
+			</div>
+
+			{/* Content */}
+			<div className="panel__content panel__content--chat">
+				{/* Pending UI banner (above messages) */}
+				{renderPendingUi()}
+
+				{/* Empty state */}
+				{isEmpty && (
+					<div className="chat-empty">
+						<svg
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							strokeWidth="1.5"
+							width="48"
+							height="48"
+						>
+							<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+						</svg>
+						<p>Start a conversation with Pi</p>
+						<p className="chat-empty__hint">Type a message below</p>
+					</div>
+				)}
+
+				{/* User messages */}
+				{displayMessages
+					.filter((m) => m.role === "user")
+					.map((msg) => (
+						<div key={msg.id} className="chat-message chat-message--user">
+							<div className="chat-message__avatar">You</div>
+							<div className="chat-message__body">
+								<div className="chat-message__role">
+									You
+									<span className="chat-message__time">
+										{new Date(msg.timestamp).toLocaleTimeString([], {
+											hour: "2-digit",
+											minute: "2-digit",
+										})}
+									</span>
+								</div>
+								<div className="chat-message__content">{msg.content}</div>
+							</div>
+						</div>
+					))}
+
+				{/* Assistant messages (finalized) */}
+				{displayMessages
+					.filter((m) => m.role === "assistant")
+					.map((msg) => (
+						<div key={msg.id} className="chat-message chat-message--assistant">
+							<div className="chat-message__avatar">π</div>
+							<div className="chat-message__body">
+								<div className="chat-message__role">
+									Pi
+									<span className="chat-message__time">
+										{new Date(msg.timestamp).toLocaleTimeString([], {
+											hour: "2-digit",
+											minute: "2-digit",
+										})}
+									</span>
+								</div>
+								<div className="chat-message__content">{msg.content}</div>
+							</div>
+						</div>
+					))}
+
+				{/* Streaming assistant message (content arriving in real-time) */}
+				{streamingContent || toolCallNames.length > 0 ? (
+					<div
+						className="chat-message chat-message--assistant"
+						style={{ opacity: 0.9 }}
+					>
+						<div className="chat-message__avatar">π</div>
+						<div className="chat-message__body">
+							<div className="chat-message__role">
+								Pi
+								<span className="chat-message__time">typing…</span>
+							</div>
+
+							{/* Tool call badges */}
+							{toolCallNames.length > 0 && (
+								<div className="tool-call-badges">
+									{toolCallNames.map((name, i) => (
+										<span key={i} className="tool-call-badge">
+											🔧 {name}
+										</span>
+									))}
+								</div>
+							)}
+
+							{/* Streaming text */}
+							<div className="chat-message__content streaming">
+								{streamingContent || (
+									<span className="chat-message__typing">
+										<span />
+										<span />
+										<span />
+									</span>
+								)}
+								{streamingContent && (
+									<span className="streaming-cursor">▌</span>
+								)}
+							</div>
+						</div>
+					</div>
+				) : null}
+
+				<div ref={messagesEndRef} />
+			</div>
+
+			{/* Input */}
+			<div className="panel__input">
+				<input
+					ref={inputRef}
+					type="text"
+					placeholder="Message Pi…"
+					value={input}
+					onChange={(e) => setInput(e.target.value)}
+					onKeyDown={handleKeyDown}
+					disabled={ws.state !== "connected"}
+				/>
+				<button
+					className="btn btn--send"
+					onClick={handleSend}
+					disabled={!input.trim() || ws.state !== "connected"}
+				>
+					<svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+						<path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+					</svg>
+				</button>
+			</div>
+		</div>
+	);
 }

@@ -8,30 +8,6 @@ function deriveModelName(modelId: string, provider: string): string {
 	return `${providerName} – ${modelId}`;
 }
 
-const DEFAULT_MODELS: Model[] = [
-	{
-		id: "claude-sonnet-4-20250514",
-		name: "Anthropic – claude-sonnet-4-20250514",
-		provider: "anthropic",
-		contextWindow: 200000,
-		maxTokens: 16384,
-	},
-	{
-		id: "gpt-4.1",
-		name: "Openai – gpt-4.1",
-		provider: "openai",
-		contextWindow: 131072,
-		maxTokens: 16384,
-	},
-	{
-		id: "deepseek-coder",
-		name: "Deepseek – deepseek-coder",
-		provider: "deepseek",
-		contextWindow: 65536,
-		maxTokens: 16384,
-	},
-];
-
 const PI_INIT_TIMEOUT_MS = 15_000; // wait up to 15s for pi to initialize
 const POLL_INTERVAL_MS = 1500; // poll every 1.5s
 
@@ -73,8 +49,7 @@ export function useModels(
 
 		const run = async () => {
 			if (!projectPath) {
-				// No project selected — just show defaults (e.g. in ChatPanel)
-				setModels(DEFAULT_MODELS);
+				// No project selected — nothing to load
 				setLoading(false);
 				return;
 			}
@@ -83,13 +58,12 @@ export function useModels(
 			if (!launchedRef.current) {
 				launchedRef.current = true;
 				try {
-					const modelId = selectedModel?.id || DEFAULT_MODELS[0].id;
+					const modelId = selectedModel?.id;
 					const session = await createSession(projectPath, modelId);
 					setSessionId(session.session_id);
 				} catch {
 					if (!cancelledRef.current) {
-						setError("Failed to connect to Pi. Showing fallback models.");
-						setModels(DEFAULT_MODELS);
+						setError("Failed to connect to Pi. Could not fetch models.");
 						setLoading(false);
 					}
 					return;
@@ -131,9 +105,13 @@ export function useModels(
 				}
 			}
 
-			// Timeout reached — fall back to defaults
+			// Timeout reached — no models available
 			if (!cancelledRef.current) {
-				setModels(DEFAULT_MODELS);
+				if (!error) {
+					setError(
+						"Timed out waiting for Pi to initialize. No models available.",
+					);
+				}
 				setLoading(false);
 			}
 		};
