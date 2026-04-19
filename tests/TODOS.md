@@ -5,7 +5,7 @@ All Phase 1–3 cleanup items from the original plan are complete. Test suite is
 ## Summary
 
 - **pytest infrastructure**: `conftest.py` with fixtures, subfixture support, `test_utils.py` with shared helpers
-- **38 tests passing** across flows 1–3, 6
+- **56 tests passing** across flows 1–3, 5–6
 - **Run**: `API_BASE=http://127.0.0.1:8000 WS_BASE=ws://127.0.0.1:8000 uv run pytest -v`
 - **Harness**: `uv run run-tests` (CLI entry point from `pyproject.toml`)
 
@@ -24,6 +24,12 @@ All Phase 1–3 cleanup items from the original plan are complete. Test suite is
 - [x] `tests/.gitignore` added
 - [x] Subfixture pattern working (session_id, ws, session1_id, session2_id)
 - [x] WS fixture creates fresh connection per test (avoids event-loop mismatch)
+- [x] Flow 5 rewritten: pytest-compatible (4 tests, all passing)
+  - T5.1: Create session → status running, PID set and alive
+  - T5.2: Close session → compacted accepted (True or False), PID terminated, session removed
+  - T5.3: Create session for delete → status running, PID set and alive
+  - T5.4: Delete session → compacted == False, PID terminated, session removed
+  - T5.5: Final clean state verification → running_count == 0
 - [x] Flow 6 rewritten: pytest-compatible (12 tests, all passing)
   - T6.1: Create session on non-existent project → 404
   - T6.1b: Missing project_path → 422
@@ -40,7 +46,6 @@ All Phase 1–3 cleanup items from the original plan are complete. Test suite is
 | Flow | File | Tests | Status |
 |------|------|-------|--------|
 | 4: Model Switch | `test_flow4_model_switch.py` | — | ⏳ Not written |
-| 5: Close/Delete | `test_flow5_close_delete.py` | — | ⏳ Not written |
 | 7: Shutdown | `test_flow7_shutdown_cleanup.py` | — | ⏳ Not written |
 
 See `docs/design/integration-test-plan.md` for detailed test specifications for flows 4–7.
