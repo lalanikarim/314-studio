@@ -233,8 +233,8 @@ All project-scoped endpoints use `project_path` as a query parameter, not a rout
 | **Frontend/Backend wiring** | ✅ Complete — real API calls replace mock data |
 | **WebSocket relay** | ✅ Complete — bidirectional JSON over `pi --rpc` stdin/stdout |
 | **Extension UI handling** | ✅ Complete — auto-ack fire-and-forget, forward interactive |
-| **Integration tests** | 🟡 56/60+ passing (flows 1–3, 5–6 of 7) |
-| **Flow 4: Model Switch** | ⏳ Not yet written |
+| **Integration tests** | 🟡 73/77+ passing (flows 1–4, 5–6 of 7) |
+| **Flow 4: Model Switch** | ✅ 4/4 passing (6 checks + 2 skip path) |
 | **Flow 5: Close/Delete** | ✅ 4/4 passing |
 | **Flow 6: Error Handling** | ✅ 12/12 passing |
 | **Flow 7: Shutdown Cleanup** | ⏳ Not yet written |
