@@ -167,7 +167,7 @@ async def test_create_sessions_before_shutdown(client, result, uvicorn_pid=None)
     resp1 = await http_post_json(
         client,
         "/api/projects/",
-        body={"model_id": TEST_MODEL_ID, "name": "ShutdownTest-1"},
+        body={"name": "ShutdownTest-1"},
         params={"project_path": str(TESTS_DIR)},
     )
     if resp1.status_code != 200:
@@ -179,7 +179,7 @@ async def test_create_sessions_before_shutdown(client, result, uvicorn_pid=None)
     resp2 = await http_post_json(
         client,
         "/api/projects/",
-        body={"model_id": TEST_MODEL_ID, "name": "ShutdownTest-2"},
+        body={"name": "ShutdownTest-2"},
         params={"project_path": str(TESTS_DIR)},
     )
     if resp2.status_code != 200:

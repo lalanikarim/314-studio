@@ -116,7 +116,6 @@ async def create_session(
     try:
         record = await session_manager.launch_session(
             project_path=str(resolved),
-            model_id=req.model_id,
             name=name,
         )
         return record

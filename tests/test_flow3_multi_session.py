@@ -35,7 +35,7 @@ async def test_create_session1(client, result):
     resp = await http_post_json(
         client,
         "/api/projects/",
-        body={"model_id": TEST_MODEL_ID, "name": "MultiTest-S1"},
+        body={"name": "MultiTest-S1"},
         params={"project_path": str(TESTS_DIR)},
     )
     if resp.status_code != 200:
@@ -56,7 +56,7 @@ async def test_create_session2(client, result, session1_id):
     resp = await http_post_json(
         client,
         "/api/projects/",
-        body={"model_id": TEST_MODEL_ID, "name": "MultiTest-S2"},
+        body={"name": "MultiTest-S2"},
         params={"project_path": str(TESTS_DIR)},
     )
     if resp.status_code != 200:

@@ -84,7 +84,7 @@ class SessionRecord(BaseModel):
     session_id: str
     project_path: str
     name: str
-    model_id: str
+    model_id: Optional[str] = None
     status: str = "creating"  # creating | running | closing | stopped
     pid: Optional[int] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -138,9 +138,7 @@ class SessionManager:
     # Launch
     # ------------------------------------------------------------------
 
-    async def launch_session(
-        self, project_path: str, model_id: str, name: str | None = None
-    ) -> SessionRecord:
+    async def launch_session(self, project_path: str, name: str | None = None) -> SessionRecord:
         """
         Spawn a new `pi --mode rpc` process and wait for it to be ready.
 
@@ -165,7 +163,6 @@ class SessionManager:
                 session_id=session_id,
                 project_path=project_path,
                 name=session_name,
-                model_id=model_id,
                 status="creating",
                 pid=proc.pid,
                 process=proc,

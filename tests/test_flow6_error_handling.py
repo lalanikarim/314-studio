@@ -36,7 +36,7 @@ async def test_create_session_nonexistent_project(client, result):
     resp = await http_post_json(
         client,
         "/api/projects/",
-        body={"model_id": TEST_MODEL_ID, "name": "BadProject"},
+        body={"name": "BadProject"},
         params={"project_path": nonexistent},
     )
     result.check(
@@ -51,7 +51,7 @@ async def test_create_session_empty_project_path(client, result):
     resp = await http_post_json(
         client,
         "/api/projects/",
-        body={"model_id": TEST_MODEL_ID, "name": "MissingPath"},
+        body={"name": "MissingPath"},
     )
     result.check(
         resp.status_code == 422 or resp.status_code == 400,
@@ -243,7 +243,7 @@ async def test_duplicate_session_names(client, result):
         resp1 = await http_post_json(
             client,
             "/api/projects/",
-            body={"model_id": TEST_MODEL_ID, "name": "DupTest"},
+            body={"name": "DupTest"},
             params={"project_path": str(TESTS_DIR)},
         )
         if resp1.status_code != 200:
@@ -257,7 +257,7 @@ async def test_duplicate_session_names(client, result):
         resp2 = await http_post_json(
             client,
             "/api/projects/",
-            body={"model_id": TEST_MODEL_ID, "name": "DupTest"},
+            body={"name": "DupTest"},
             params={"project_path": str(TESTS_DIR)},
         )
         if resp2.status_code != 200:

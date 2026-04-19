@@ -157,6 +157,7 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "flow5: Flow 5 — Close/Delete")
     config.addinivalue_line("markers", "flow6: Flow 6 — Error Handling")
     config.addinivalue_line("markers", "flow7: Flow 7 — Shutdown Cleanup")
+    config.addinivalue_line("markers", "flow8: Flow 8 — Model Operations")
 
 
 def pytest_addoption(parser):

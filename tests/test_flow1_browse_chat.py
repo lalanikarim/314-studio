@@ -102,12 +102,12 @@ async def test_project_info_before_session(client, result):
 
 
 async def test_create_session(client, result):
-    """T1.4 — Create session with model."""
-    print(f"\n  T1.4 Create session (model={TEST_MODEL_ID})")
+    """T1.4 — Create session."""
+    print("\n  T1.4 Create session")
     resp = await http_post_json(
         client,
         "/api/projects/",
-        body={"model_id": TEST_MODEL_ID, "name": "Flow1-Test"},
+        body={"name": "Flow1-Test"},
         params={"project_path": str(TESTS_DIR)},
     )
     if resp.status_code != 200:
@@ -117,7 +117,9 @@ async def test_create_session(client, result):
 
     data = resp.json()
     result.check(data.get("status") == "running", f"status == 'running', got {data.get('status')}")
-    result.check(data.get("model_id") == TEST_MODEL_ID, "model_id matches")
+    result.check(
+        data.get("model_id") is None, "model_id is unset (session creation is model-agnostic)"
+    )
     result.check(data.get("pid") is not None, "PID is set")
     result.check(len(data.get("session_id", "")) > 0, "session_id is non-empty")
 
@@ -279,5 +281,3 @@ async def run(result):
 
         # Cleanup: close session
         await client.post(f"{API_BASE}/api/projects/{session_id}/close")
-
-

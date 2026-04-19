@@ -44,7 +44,7 @@ async def test_create_session_for_close(client, result):
     resp = await http_post_json(
         client,
         "/api/projects/",
-        body={"model_id": TEST_MODEL_ID, "name": "CloseTest"},
+        body={"name": "CloseTest"},
         params={"project_path": str(TESTS_DIR)},
     )
     if resp.status_code != 200:
@@ -139,7 +139,7 @@ async def test_create_session_for_delete(client, result):
     resp = await http_post_json(
         client,
         "/api/projects/",
-        body={"model_id": TEST_MODEL_ID, "name": "DeleteTest"},
+        body={"name": "DeleteTest"},
         params={"project_path": str(TESTS_DIR)},
     )
     if resp.status_code != 200:

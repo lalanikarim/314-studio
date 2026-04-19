@@ -101,7 +101,6 @@ class ModelSwitch(BaseModel):
 class SessionCreateRequest(BaseModel):
     """Request body for creating a new session."""
 
-    model_id: str
     name: Optional[str] = None
 
 

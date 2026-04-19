@@ -15,7 +15,6 @@ import httpx
 
 from test_utils import (
     API_BASE,
-    TEST_MODEL_ID,
     TESTS_DIR,
     TIMEOUT,
     WS_TIMEOUT,
@@ -38,7 +37,7 @@ async def test_create_session_with_model(client, result):
     resp = await http_post_json(
         client,
         "/api/projects/",
-        body={"model_id": TEST_MODEL_ID, "name": "ModelSwitch-Test"},
+        body={"name": "ModelSwitch-Test"},
         params={"project_path": str(TESTS_DIR)},
     )
     if resp.status_code != 200:
@@ -47,7 +46,9 @@ async def test_create_session_with_model(client, result):
         return None
 
     data = resp.json()
-    result.check(data.get("model_id") == TEST_MODEL_ID, "model_id == primary model")
+    result.check(
+        data.get("model_id") is None, "model_id is unset (session creation is model-agnostic)"
+    )
     result.check(data.get("status") == "running", "status == 'running'")
     return data.get("session_id")
 
@@ -135,7 +136,7 @@ async def test_chat_original_model(client, result):
     resp = await http_post_json(
         client,
         "/api/projects/",
-        body={"model_id": TEST_MODEL_ID, "name": "OriginalModel-Test"},
+        body={"name": "OriginalModel-Test"},
         params={"project_path": str(TESTS_DIR)},
     )
     if resp.status_code != 200:
@@ -144,7 +145,9 @@ async def test_chat_original_model(client, result):
         return
 
     data = resp.json()
-    result.check(data.get("model_id") == TEST_MODEL_ID, "model_id == original model")
+    result.check(
+        data.get("model_id") is None, "model_id is unset (session creation is model-agnostic)"
+    )
     result.check(data.get("status") == "running", "status == 'running'")
 
     session_id2 = data.get("session_id")
