@@ -237,8 +237,9 @@ class SessionManager:
 
         compacted = False
         try:
-            # Compact with a 5s timeout — don't block forever if Pi doesn't respond
-            await self._send_command_internal(record, {"type": "compact"}, timeout=5.0)
+            # Compact with a 5min timeout — context size can vary widely;
+            # allow up to 300s for the compact RPC to complete before giving up
+            await self._send_command_internal(record, {"type": "compact"}, timeout=300.0)
             compacted = True
             logger.info("Session %s compacted", session_id)
         except asyncio.TimeoutError:
