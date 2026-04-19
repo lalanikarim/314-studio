@@ -7,9 +7,7 @@ Covers: T1.1–T1.12
 
 from __future__ import annotations
 
-import asyncio
 import os
-import sys
 
 # Ensure test_utils is importable (same directory)
 
@@ -283,13 +281,3 @@ async def run(result):
         await client.post(f"{API_BASE}/api/projects/{session_id}/close")
 
 
-if __name__ == "__main__":
-    import asyncio
-    import sys
-
-    from integration_test_harness import FlowResult
-
-    r = FlowResult("Flow 1: Browse → Chat")
-    asyncio.run(run(r))
-    print(r)
-    sys.exit(1 if r.failed else 0)

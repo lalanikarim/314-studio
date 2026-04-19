@@ -8,7 +8,6 @@ Covers: T3.1–T3.7
 from __future__ import annotations
 
 import os
-import sys
 
 import httpx
 
@@ -223,12 +222,3 @@ async def run(result):
         await test_project_info_clean(client, result)
 
 
-if __name__ == "__main__":
-    import asyncio
-
-    from integration_test_harness import FlowResult
-
-    r = FlowResult("Flow 3: Multi Session")
-    asyncio.run(run(r))
-    print(r)
-    sys.exit(1 if r.failed else 0)

@@ -7,7 +7,6 @@ Covers: T2.1–T2.7
 
 from __future__ import annotations
 
-import sys
 
 import httpx
 
@@ -190,12 +189,3 @@ async def run(result):
         await test_path_traversal(client, result)
 
 
-if __name__ == "__main__":
-    import asyncio
-
-    from integration_test_harness import FlowResult
-
-    r = FlowResult("Flow 2: File Browse")
-    asyncio.run(run(r))
-    print(r)
-    sys.exit(1 if r.failed else 0)
