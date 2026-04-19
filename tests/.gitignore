@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Cache & build artifacts
+.ruff_cache/
+.ty_cache/
+.pytest_cache/
+uv.lock
+
+# Pi tooling (local state)
+.pi-lens/
