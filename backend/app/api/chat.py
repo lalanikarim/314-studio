@@ -47,8 +47,8 @@ async def ws_endpoint(websocket: WebSocket, session_id: str = Query(...)) -> Non
     bidirectionally. The session must already exist (created via POST
     /api/projects/).
 
-    On connect, automatically sends `set_model` with the session's configured
-    model_id (ensuring all Pi actions go through WS, not HTTP).
+    On connect, sends `set_model` with the session's configured model_id.
+    No automatic RPC calls are made during session creation.
 
     Query params:
         session_id: the session to connect to

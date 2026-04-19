@@ -196,29 +196,32 @@ class SessionManager:
 
         return record
 
-    async def _wait_for_ready(self, record: SessionRecord) -> dict:
-        """Send get_available_models, wait for response, then set model & name."""
-        # 1. Get available models (confirms RPC is alive)
-        ready_resp = await self._send_command_internal(record, {"type": "get_available_models"})
-        logger.info("Session %s RPC ready: %s", record.session_id, ready_resp)
+    async def _wait_for_ready(self, record: SessionRecord) -> None:
+        """Verify the process is alive without sending any RPC commands.
 
-        # 2. Set model
-        await self._send_command_internal(
-            record,
-            {
-                "type": "set_model",
-                "provider": self._extract_provider(record.model_id),
-                "modelId": record.model_id,
-            },
-        )
-
-        # 3. Set session name
-        await self._send_command_internal(
-            record,
-            {"type": "set_session_name", "name": record.name},
-        )
-
-        return ready_resp
+        No automatic RPC calls (get_available_models, set_model, set_session_name).
+        All RPC interactions happen only when explicitly requested by the client
+        (e.g. WS connect, model-switch endpoint).
+        """
+        # Brief poll to verify the process started successfully
+        for _ in range(10):
+            await asyncio.sleep(0.1)
+            if record.process.returncode is None:
+                logger.info(
+                    "Session %s process alive (pid=%s)",
+                    record.session_id,
+                    record.pid,
+                )
+                return
+            # Process exited immediately — something went wrong
+            logger.error(
+                "Session %s process exited with code %s",
+                record.session_id,
+                record.process.returncode,
+            )
+            raise RuntimeError(
+                f"pi --rpc process exited immediately with code {record.process.returncode}"
+            )
 
     # ------------------------------------------------------------------
     # Close / Delete

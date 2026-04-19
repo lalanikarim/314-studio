@@ -100,8 +100,9 @@ async def create_session(
 ) -> SessionRecord:
     """Create a new session on a pi --rpc process.
 
-    The session is created with the specified model. The process must become
-    ready (responds to get_available_models) before this endpoint returns.
+    The session is created with the specified model_id stored as metadata.
+    No RPC calls (get_available_models, set_model) are made during launch —
+    they happen only when explicitly requested by the client.
     """
     resolved = _resolve_project_path(project_path)
 
