@@ -104,15 +104,18 @@ async def test_fetch_models(client, result, session_id: str):
     return models
 
 
-async def test_verify_model_presence(client, result, models: list):
+async def test_verify_model_presence(client, result, session_id: str):
     """T8.2 — Verify expected models (vllm + aurora) are present.
 
-    Checks that at least one model from each provider is in the list.
-    Prints each model found.
+    Fetches models directly (idempotent) and verifies both providers/models.
     """
     print("\n  T8.2 Verify expected models present")
     print(f"     Expected providers: {TEST_MODEL_PROVIDER}, {TEST_MODEL2_PROVIDER}")
     print(f"     Expected model IDs: {TEST_MODEL_ID}, {TEST_MODEL2_ID}")
+
+    # Fetch models (same API call as T8.1, just verifying content)
+    resp = await http_get(client, "/api/models/", params={"session_id": session_id})
+    models = resp.json()
 
     # Print all models found
     print(f"     Models returned ({len(models)}):")
@@ -354,8 +357,8 @@ async def run(result):
             result.failures.append("T8.2–T8.5: Skipped due to model fetch failure")
             return
 
-        # T8.2: Verify model presence
-        await test_verify_model_presence(client, result, models)
+        # T8.2: Verify model presence (re-fetches models idempotently)
+        await test_verify_model_presence(client, result, session_id)
 
         # T8.3: Switch model
         await test_switch_model(client, result, session_id)

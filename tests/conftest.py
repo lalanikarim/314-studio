@@ -41,8 +41,24 @@ class TestResult:
 
 @pytest.fixture
 def session_id() -> str | None:
-    """Provide session_id from test_create_session return value."""
-    return _subfixture_cache.get("test_create_session")
+    """Provide session_id from test_create_session return value.
+
+    Checks multiple possible cache keys so Flow 8 tests work too.
+    """
+    for key in (
+        "test_create_session",
+        "test_create_session_for_model_ops",
+    ):
+        val = _subfixture_cache.get(key)
+        if val is not None:
+            return val
+    return None
+
+
+@pytest.fixture
+def models() -> list | None:
+    """Provide models list from test_fetch_models return value."""
+    return _subfixture_cache.get("test_fetch_models")
 
 
 @pytest.fixture
