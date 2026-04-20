@@ -14,6 +14,7 @@ import {
 	useRef,
 	useEffect,
 	useState,
+	useMemo,
 	type MutableRefObject,
 } from "react";
 import type { Model } from "../types";
@@ -146,6 +147,19 @@ export function useWebSocket(
 	// Track whether cleanup has run (to prevent async setState after unmount)
 	const disposedRef = useRef(false);
 
+	// Stable refs so doConnect can read current values without being recreated.
+	// doConnect reads from these refs instead of the closure, giving it stable deps.
+	const projectFolderRef = useRef(projectFolder);
+	const sessionIdRef = useRef(sessionId);
+
+	// Keep refs in sync with props — runs after render, not during.
+	useEffect(() => {
+		projectFolderRef.current = projectFolder;
+	}, [projectFolder]);
+	useEffect(() => {
+		sessionIdRef.current = sessionId;
+	}, [sessionId]);
+
 	// ── Send helper ────────────────────────────────────────────────────────
 
 	const send = useCallback((data: OutboundMessage) => {
@@ -204,11 +218,14 @@ export function useWebSocket(
 
 	// ── Connect helper (defined before lifecycle so it's hoisted by ref) ───
 
+	// Read from stable refs inside the callback body (not at render time).
+	// eslint-disable-next-line react-hooks/refs
 	const doConnect = useCallback(() => {
 		if (disposedRef.current) return;
 
-		const targetProject = projectFolder || "";
-		if (!targetProject || !sessionId) return;
+		const folder = projectFolderRef.current;
+		const sid = sessionIdRef.current;
+		if (!folder || !sid) return;
 
 		// Close any existing connection first
 		disconnect();
@@ -218,7 +235,7 @@ export function useWebSocket(
 		// Use a relative path so Vite's dev proxy (configured for /api with
 		// ws: true) routes the WebSocket upgrade to the backend at :8000.
 		// In production both frontend and backend share the same origin.
-		const wsUrl = `/api/projects/ws?session_id=${encodeURIComponent(sessionId)}`;
+		const wsUrl = `/api/projects/ws?session_id=${encodeURIComponent(sid)}`;
 		const ws = new WebSocket(wsUrl);
 		wsRef.current = ws;
 
@@ -309,17 +326,15 @@ export function useWebSocket(
 				}, 2000);
 			}
 		};
-	}, [projectFolder, sessionId, disconnect, send]);
+	}, [disconnect, send]);
 
 	// ── Lifecycle ──────────────────────────────────────────────────────────
 
-	// Keep the ref in sync so the setTimeout callback can call it
-	useEffect(() => {
-		doConnectRef.current = doConnect;
-	}, [doConnect]);
-
 	useEffect(() => {
 		disposedRef.current = false;
+		// Set the ref for reconnect timer & manual reconnect button.
+		doConnectRef.current = doConnect;
+		// eslint-disable-next-line react-hooks/set-state-in-effect
 		doConnect();
 		return () => {
 			disposedRef.current = true;
@@ -379,20 +394,45 @@ export function useWebSocket(
 		return null;
 	})();
 
-	return {
-		state,
-		closeCode,
-		closeReason,
-		errorMessage,
-		send,
-		abort,
-		compact,
-		setAutoCompaction,
-		messages,
-		pendingUiRequest,
-		respondToUi,
-		disconnect,
-		clearMessages,
-		reconnect,
-	};
+	// ── Memoized return value ─────────────────────────────────────────────
+	// Only returns a new object when state values actually change.
+	// Without this, a new object on every render causes ChatPanel to
+	// recreate handleSend (which depends on ws), triggering cascading
+	// re-renders that tear down and reconnect the WebSocket.
+	return useMemo(
+		() => ({
+			state,
+			closeCode,
+			closeReason,
+			errorMessage,
+			send,
+			abort,
+			compact,
+			setAutoCompaction,
+			messages,
+			pendingUiRequest,
+			respondToUi,
+			disconnect,
+			clearMessages,
+			reconnect,
+		}),
+		// Include all state values so the memo updates when connection state changes.
+		// This is safe — the object only changes when the values actually change,
+		// not on every render where state happens to be the same value.
+		[
+			state,
+			closeCode,
+			closeReason,
+			send,
+			abort,
+			compact,
+			setAutoCompaction,
+			messages,
+			pendingUiRequest,
+			respondToUi,
+			disconnect,
+			clearMessages,
+			reconnect,
+		],
+	);
 }

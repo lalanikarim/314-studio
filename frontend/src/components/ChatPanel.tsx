@@ -19,21 +19,75 @@ interface DisplayMessage {
 
 // ---------------------------------------------------------------------------
 // Helpers — extract content from Pi RPC events
-// ---------------------------------------------------------------------------
+// Per the official RPC protocol, message_update events contain:
+//   event.assistantMessageEvent.delta    — streaming text chunk
+//   event.assistantMessageEvent.partial.content[0].text — accumulated text
 
 function extractText(event: Record<string, unknown>): string {
+	// Direct fields (fallback for non-message_update events)
 	if (typeof event.content === "string") return event.content;
 	if (typeof event.text === "string") return event.text;
-	if (typeof event.data === "string") return event.data;
 	if (typeof event.message === "string") return event.message;
+
+	const ami = event.assistantMessageEvent as
+		| {
+				type?: string;
+				delta?: unknown;
+				partial?: { content?: unknown[] };
+		  }
+		| undefined;
+	if (ami) {
+		const deltaType = ami.type;
+
+		// text_delta: single chunk in delta field
+		if (deltaType === "text_delta") {
+			const delta = ami.delta;
+			if (typeof delta === "string" && delta) return delta;
+		}
+
+		// text_start / other: accumulated in partial.content[0].text
+		const partial = ami.partial;
+		if (partial) {
+			const content = partial.content;
+			if (Array.isArray(content) && content.length > 0) {
+				const first = content[0];
+				if (typeof first === "object" && first !== null && "text" in first) {
+					const text = (first as { text: unknown }).text;
+					if (typeof text === "string" && text) return text;
+				}
+			}
+		}
+	}
+
 	return "";
 }
 
 function extractToolName(event: Record<string, unknown>): string | null {
+	// Direct fields (fallback)
 	if (typeof event.tool_name === "string") return event.tool_name;
 	if (typeof event.command === "string") return event.command;
 	if (typeof event.function === "string") return event.function;
-	if (typeof event.name === "string") return event.name;
+
+	// assistantMessageEvent for toolcall events (per RPC protocol docs)
+	const ami = event.assistantMessageEvent as
+		| {
+				type?: string;
+				toolCall?: { name?: unknown };
+		  }
+		| undefined;
+	if (ami) {
+		const deltaType = ami.type;
+
+		// toolcall_delta / toolcall_end: toolCall.name has the function name
+		if (
+			(deltaType === "toolcall_delta" || deltaType === "toolcall_end") &&
+			ami.toolCall
+		) {
+			const name = ami.toolCall.name;
+			if (typeof name === "string" && name) return name;
+		}
+	}
+
 	return null;
 }
 
