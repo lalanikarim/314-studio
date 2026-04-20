@@ -98,6 +98,8 @@ export interface UseWebSocketReturn {
 	abort: () => void;
 	/** Compact conversation to reduce context size (session stays running) */
 	compact: () => void;
+	/** Set auto-compaction on/off */
+	setAutoCompaction: (enabled: boolean) => void;
 	/** List of inbound messages (rpc_events, extension_ui_requests, etc.) */
 	messages: InboundMessage[];
 	/** Extension UI request currently awaiting user input */
@@ -214,8 +216,10 @@ export function useWebSocket(
 
 		setState("connecting");
 
-		const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-		const wsUrl = `${protocol}://${window.location.host}/api/projects/ws?session_id=${encodeURIComponent(sessionId)}`;
+		// Use a relative path so Vite's dev proxy (configured for /api)
+		// routes the WebSocket upgrade to the backend at :8000.
+		// In production both frontend and backend share the same origin.
+		const wsUrl = `/api/projects/ws?session_id=${encodeURIComponent(sessionId)}`;
 		const ws = new WebSocket(wsUrl);
 		wsRef.current = ws;
 
@@ -354,6 +358,15 @@ export function useWebSocket(
 		doConnectRef.current();
 	}, []);
 
+	// ── Auto-compaction helper ───────────────────────────────────────────
+
+	const setAutoCompaction = useCallback(
+		(enabled: boolean) => {
+			send({ type: "set_auto_compaction", enabled });
+		},
+		[send],
+	);
+
 	// ── Error message helper ─────────────────────────────────────────────
 
 	const errorMessage: string | null = (() => {
@@ -374,6 +387,7 @@ export function useWebSocket(
 		send,
 		abort,
 		compact,
+		setAutoCompaction,
 		messages,
 		pendingUiRequest,
 		respondToUi,

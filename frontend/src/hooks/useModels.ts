@@ -41,8 +41,13 @@ export function useModels(
 	const launchedRef = useRef(false);
 	const cancelledRef = useRef(false);
 	const prevProjectRef = useRef<string | null>(null);
+	const abortRef = useRef<AbortController | null>(null);
 
 	useEffect(() => {
+		// Cancel any previous polling cycle (e.g. when selectedModel changes)
+		abortRef.current?.abort();
+		const abortController = new AbortController();
+		abortRef.current = abortController;
 		cancelledRef.current = false;
 
 		// Only reset launch guard when projectPath actually changes
@@ -88,11 +93,15 @@ export function useModels(
 
 			// Step 2: Poll for real models from Pi (via session)
 			const deadline = Date.now() + PI_INIT_TIMEOUT_MS;
-			while (Date.now() < deadline && !cancelledRef.current) {
+			while (
+				Date.now() < deadline &&
+				!cancelledRef.current &&
+				!abortController.signal.aborted
+			) {
 				timer = setTimeout(() => {}, 0);
 				await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
 
-				if (cancelledRef.current) break;
+				if (cancelledRef.current || abortController.signal.aborted) break;
 
 				try {
 					const resp = await listModels(activeSessionId!);
@@ -104,7 +113,7 @@ export function useModels(
 							contextWindow: m.contextWindow || 0,
 							maxTokens: m.maxTokens || 0,
 						}));
-						if (!cancelledRef.current) {
+						if (!cancelledRef.current && !abortController.signal.aborted) {
 							setModels(mapped);
 							setError(null);
 							setLoading(false);
@@ -117,7 +126,7 @@ export function useModels(
 			}
 
 			// Timeout reached — no models available
-			if (!cancelledRef.current) {
+			if (!cancelledRef.current && !abortController.signal.aborted) {
 				if (!error) {
 					setError(
 						"Timed out waiting for Pi to initialize. No models available.",
@@ -131,6 +140,7 @@ export function useModels(
 
 		return () => {
 			cancelledRef.current = true;
+			abortController.abort();
 			if (timer) clearTimeout(timer);
 		};
 	}, [projectPath, selectedModel]);
