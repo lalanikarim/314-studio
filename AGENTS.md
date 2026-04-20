@@ -152,6 +152,20 @@ Or use the harness:
 API_BASE=http://127.0.0.1:8000 WS_BASE=ws://127.0.0.1:8000 uv run run-tests --flows flow1
 ```
 
+### Development Notes
+
+- **Never run `python` directly.** Always use `uv run` to execute Python code:
+  ```bash
+  uv run python script.py    # ✅ correct
+  python script.py           # ❌ wrong — uses system python, wrong env
+  ```
+  This ensures the virtual environment with all project dependencies is used.
+
+- **`timeout` command is not available** (macOS). Use these alternatives:
+  - **For asyncio code**: use `asyncio.wait_for(coro, timeout=N)` — this is preferred for async scripts.
+  - **For bash**: use `gtimeout` from `coreutils` (`brew install coreutils`), or spawn a background process with a delayed `kill`.
+  - **For uv runs**: pass `--timeout` if supported, or wrap in a Python-based timeout.
+
 ## API Endpoints
 
 ### Projects
