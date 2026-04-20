@@ -229,6 +229,20 @@ export default function ChatPanel() {
 		}
 	}, [closingState, selectedSessionId, setView]);
 
+	// ── Compact only (no terminate) ────────────────────────────────────────
+	const handleCompact = useCallback(() => {
+		if (closingState !== "none") return;
+		setClosingState("compact");
+		try {
+			ws.compact();
+			// Compact is async — reset state after a delay
+			setTimeout(() => setClosingState("none"), 3000);
+		} catch (err) {
+			console.error("Failed to compact:", err);
+			setClosingState("none");
+		}
+	}, [closingState, ws]);
+
 	// ── Key handling ─────────────────────────────────────────────────────────
 	const handleKeyDown = (e: React.KeyboardEvent) => {
 		if (e.key === "Enter" && !e.shiftKey) {
@@ -440,8 +454,8 @@ export default function ChatPanel() {
 						<>
 							<button
 								className="btn btn--sm btn--compact"
-								onClick={handleClose}
-								title="Compact conversation and close"
+								onClick={handleCompact}
+								title="Compact conversation (reduce context size, session stays alive)"
 							>
 								<svg
 									viewBox="0 0 24 24"
@@ -451,9 +465,27 @@ export default function ChatPanel() {
 									width="14"
 									height="14"
 								>
-									<path d="M12 3v18M3 12h18" />
+									<circle cx="12" cy="12" r="10" />
+									<path d="M12 6v6l4 2" />
 								</svg>
-								Compact &amp; Close
+								Compact
+							</button>
+							<button
+								className="btn btn--sm btn--close"
+								onClick={handleClose}
+								title="Compact and close session"
+							>
+								<svg
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									strokeWidth="2"
+									width="14"
+									height="14"
+								>
+									<path d="M18 6L6 18M6 6l12 12" />
+								</svg>
+								Close
 							</button>
 							<button
 								className="btn btn--sm btn--delete"

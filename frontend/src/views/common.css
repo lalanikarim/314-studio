@@ -158,6 +158,18 @@
 	border-color: #0369a1;
 }
 
+/* ===== Close button ===== */
+.btn--close {
+	background: #f59e0b;
+	color: #fff;
+	border: 1px solid #d97706;
+}
+
+.btn--close:hover:not(:disabled) {
+	background: #d97706;
+	border-color: #b45309;
+}
+
 /* ===== Delete button ===== */
 .btn--delete {
 	background: #7f1d1d;

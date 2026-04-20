@@ -96,6 +96,8 @@ export interface UseWebSocketReturn {
 	send: (data: OutboundMessage) => void;
 	/** Abort current Pi turn without terminating session */
 	abort: () => void;
+	/** Compact conversation to reduce context size (session stays running) */
+	compact: () => void;
 	/** List of inbound messages (rpc_events, extension_ui_requests, etc.) */
 	messages: InboundMessage[];
 	/** Extension UI request currently awaiting user input */
@@ -334,6 +336,12 @@ export function useWebSocket(
 		send({ type: "abort" });
 	}, [send]);
 
+	// ── Compact helper ───────────────────────────────────────────────────
+
+	const compact = useCallback(() => {
+		send({ type: "compact" });
+	}, [send]);
+
 	// ── Reconnect helper ─────────────────────────────────────────────────
 
 	const reconnect = useCallback(() => {
@@ -365,6 +373,7 @@ export function useWebSocket(
 		errorMessage,
 		send,
 		abort,
+		compact,
 		messages,
 		pendingUiRequest,
 		respondToUi,
