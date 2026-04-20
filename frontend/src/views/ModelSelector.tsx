@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useApp } from "../store/AppContext";
 import { useModels } from "../hooks/useModels";
+import { getProjectInfo } from "../services/api";
 import "./views.css";
 import "./common.css";
 
@@ -16,6 +17,15 @@ export default function ModelSelector() {
 	} = useApp();
 	const { models, loading, error, sessionId } = useModels(selectedFolder);
 	const [switching, setSwitching] = useState(false);
+	const [runningCount, setRunningCount] = useState<number | null>(null);
+
+	// Fetch project info to show running sessions
+	useEffect(() => {
+		if (!selectedFolder) return;
+		getProjectInfo(selectedFolder)
+			.then((info) => setRunningCount(info.running_count ?? 0))
+			.catch(() => {});
+	}, [selectedFolder]);
 
 	// Persist sessionId so ChatPanel can use it for WebSocket URL
 	useEffect(() => {
@@ -60,7 +70,15 @@ export default function ModelSelector() {
 					</button>
 					<h1>Choose a Model</h1>
 					<p className="view-models__project">
-						Project: {selectedFolder?.split("/").filter(Boolean).pop()}
+						<span>
+							Project: {selectedFolder?.split("/").filter(Boolean).pop()}
+						</span>
+						{runningCount !== null && runningCount > 0 && (
+							<span className="view-models__session-count">
+								{runningCount} session
+								{runningCount !== 1 ? "s" : ""} running
+							</span>
+						)}
 					</p>
 				</div>
 
