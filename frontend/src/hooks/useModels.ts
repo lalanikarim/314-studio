@@ -27,28 +27,22 @@ interface UseModelsResult {
  * 3. Fall back to defaults on error or timeout
  *
  * @param projectPath — optional project folder path (triggers session creation)
- * @param selectedModel — optional model to use for session (defaults to first default)
  * @returns models list, loading state, error message, and session_id for WS connection
  */
-export function useModels(
-	projectPath?: string | null,
-	selectedModel?: Model | null,
-): UseModelsResult {
+export function useModels(projectPath?: string | null): UseModelsResult {
 	const [models, setModels] = useState<Model[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 	const [sessionId, setSessionId] = useState<string | null>(null);
 	const launchedRef = useRef(false);
-	const cancelledRef = useRef(false);
 	const prevProjectRef = useRef<string | null>(null);
-	const abortRef = useRef<AbortController | null>(null);
+	const abortControllerRef = useRef<AbortController | null>(null);
 
 	useEffect(() => {
-		// Cancel any previous polling cycle (e.g. when selectedModel changes)
-		abortRef.current?.abort();
+		// Cancel any previous polling cycle (e.g. when projectPath changes)
+		abortControllerRef.current?.abort();
 		const abortController = new AbortController();
-		abortRef.current = abortController;
-		cancelledRef.current = false;
+		abortControllerRef.current = abortController;
 
 		// Only reset launch guard when projectPath actually changes
 		if (prevProjectRef.current !== projectPath) {
@@ -59,8 +53,6 @@ export function useModels(
 			setLoading(true);
 			setError(null);
 		}
-
-		let timer: ReturnType<typeof setTimeout>;
 
 		const run = async () => {
 			if (!projectPath) {
@@ -78,7 +70,7 @@ export function useModels(
 					activeSessionId = session.session_id;
 					setSessionId(session.session_id);
 				} catch {
-					if (!cancelledRef.current) {
+					if (!abortControllerRef.current?.signal.aborted) {
 						setError("Failed to connect to Pi. Could not fetch models.");
 						setLoading(false);
 					}
@@ -95,13 +87,11 @@ export function useModels(
 			const deadline = Date.now() + PI_INIT_TIMEOUT_MS;
 			while (
 				Date.now() < deadline &&
-				!cancelledRef.current &&
-				!abortController.signal.aborted
+				!abortControllerRef.current?.signal.aborted
 			) {
-				timer = setTimeout(() => {}, 0);
 				await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
 
-				if (cancelledRef.current || abortController.signal.aborted) break;
+				if (abortControllerRef.current?.signal.aborted) break;
 
 				try {
 					const resp = await listModels(activeSessionId!);
@@ -113,7 +103,7 @@ export function useModels(
 							contextWindow: m.contextWindow || 0,
 							maxTokens: m.maxTokens || 0,
 						}));
-						if (!cancelledRef.current && !abortController.signal.aborted) {
+						if (!abortControllerRef.current?.signal.aborted) {
 							setModels(mapped);
 							setError(null);
 							setLoading(false);
@@ -126,7 +116,7 @@ export function useModels(
 			}
 
 			// Timeout reached — no models available
-			if (!cancelledRef.current && !abortController.signal.aborted) {
+			if (!abortControllerRef.current?.signal.aborted) {
 				if (!error) {
 					setError(
 						"Timed out waiting for Pi to initialize. No models available.",
@@ -139,11 +129,9 @@ export function useModels(
 		run();
 
 		return () => {
-			cancelledRef.current = true;
-			abortController.abort();
-			if (timer) clearTimeout(timer);
+			abortControllerRef.current?.abort();
 		};
-	}, [projectPath, selectedModel]);
+	}, [projectPath]);
 
 	return { models, loading, error, sessionId };
 }
