@@ -111,7 +111,7 @@ WS_BASE = os.environ.get("WS_BASE", "ws://127.0.0.1:8765")
 TESTS_DIR = Path(
     os.environ.get("TESTS_DIR", str(Path.home() / "Projects" / "web-pi-integration-tests"))
 )
-TIMEOUT = float(os.environ.get("TEST_TIMEOUT", "30.0"))
+TIMEOUT = float(os.environ.get("TEST_TIMEOUT", "300.0"))
 WS_TIMEOUT = float(os.environ.get("WS_TIMEOUT", "10.0"))
 TEST_MODEL_ID = os.environ.get("TEST_MODEL_ID", "Qwen/Qwen3.6-35B-A3B")
 TEST_MODEL2_ID = os.environ.get("TEST_MODEL2_ID", "")

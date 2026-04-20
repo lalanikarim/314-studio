@@ -59,7 +59,7 @@ async def list_models(
 
     try:
         result = await session_manager._send_command_internal(
-            record, {"type": "get_available_models"}, timeout=10.0
+            record, {"type": "get_available_models"}, timeout=30.0
         )
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Pi RPC failed: {exc}")
