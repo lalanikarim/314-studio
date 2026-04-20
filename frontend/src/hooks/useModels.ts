@@ -65,10 +65,12 @@ export function useModels(
 			}
 
 			// Step 1: Launch pi RPC session (model is set later via WS `set_model` on connect)
+			let activeSessionId = sessionId;
 			if (!launchedRef.current) {
 				launchedRef.current = true;
 				try {
 					const session = await createSession(projectPath);
+					activeSessionId = session.session_id;
 					setSessionId(session.session_id);
 				} catch {
 					if (!cancelledRef.current) {
@@ -77,12 +79,9 @@ export function useModels(
 					}
 					return;
 				}
-				// Capture the session ID immediately (before the state update
-				// propagates) so the polling loop below can use it.
-				return;
 			}
 
-			if (!sessionId) {
+			if (!activeSessionId) {
 				setLoading(false);
 				return;
 			}
@@ -96,7 +95,7 @@ export function useModels(
 				if (cancelledRef.current) break;
 
 				try {
-					const resp = await listModels(sessionId);
+					const resp = await listModels(activeSessionId!);
 					if (resp && resp.length > 0) {
 						const mapped: Model[] = resp.map((m) => ({
 							id: m.id,
