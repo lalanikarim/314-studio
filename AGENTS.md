@@ -50,7 +50,8 @@ FastAPI backend + React (TypeScript) frontend for the Pi coding agent.
 │   ├── test_flow4_model_switch.py      # Pending
 │   ├── test_flow5_close_delete.py      # Pending
 │   ├── test_flow6_error_handling.py    # Pending
-│   └── test_flow7_shutdown_cleanup.py  # Pending
+│   ├── test_flow7_shutdown_cleanup.py  # Pending
+│   ├── test_flow8_model_operations.py  # Pending
 ├── docs/
 │   ├── design/                  # Architecture plans
 │   │   ├── integration-test-plan.md  # Test plan (flows 1–7)
@@ -252,3 +253,4 @@ All project-scoped endpoints use `project_path` as a query parameter, not a rout
 | **Flow 5: Close/Delete** | ✅ 4/4 passing |
 | **Flow 6: Error Handling** | ✅ 12/12 passing |
 | **Flow 7: Shutdown Cleanup** | ✅ 3/3 passing |
+| **Flow 8: Model Operations** | ✅ All passing (fetch, verify, switch, chat before/after) |
