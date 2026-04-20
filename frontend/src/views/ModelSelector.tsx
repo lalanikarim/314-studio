@@ -105,7 +105,7 @@ export default function ModelSelector() {
 						<div className="view-models__list">
 							{models.map((model) => (
 								<div
-									key={model.id}
+									key={`${model.provider}:${model.id}`}
 									className={`view-models__card ${selectedModel?.id === model.id ? "view-models__card--selected" : ""}`}
 									onClick={() => setSelectedModel(model)}
 								>
