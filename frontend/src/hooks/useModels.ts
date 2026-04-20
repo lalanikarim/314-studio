@@ -40,10 +40,20 @@ export function useModels(
 	const [sessionId, setSessionId] = useState<string | null>(null);
 	const launchedRef = useRef(false);
 	const cancelledRef = useRef(false);
+	const prevProjectRef = useRef<string | null>(null);
 
 	useEffect(() => {
 		cancelledRef.current = false;
-		launchedRef.current = false;
+
+		// Only reset launch guard when projectPath actually changes
+		if (prevProjectRef.current !== projectPath) {
+			launchedRef.current = false;
+			prevProjectRef.current = projectPath ?? null;
+			setSessionId(null);
+			setModels([]);
+			setLoading(true);
+			setError(null);
+		}
 
 		let timer: ReturnType<typeof setTimeout>;
 
@@ -67,6 +77,9 @@ export function useModels(
 					}
 					return;
 				}
+				// Capture the session ID immediately (before the state update
+				// propagates) so the polling loop below can use it.
+				return;
 			}
 
 			if (!sessionId) {
@@ -121,7 +134,7 @@ export function useModels(
 			cancelledRef.current = true;
 			if (timer) clearTimeout(timer);
 		};
-	}, [projectPath, selectedModel, sessionId]);
+	}, [projectPath, selectedModel]);
 
 	return { models, loading, error, sessionId };
 }
