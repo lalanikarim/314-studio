@@ -116,4 +116,10 @@ delete(abort)  → stopped (process terminated, record removed)
 | Frontend UI | ✅ Complete |
 | Frontend/Backend wiring | ✅ Complete |
 | WebSocket relay | ✅ Complete |
-| Integration tests | 🟡 26/26 passing (3 of 7 flows) |
+| Extension UI handling | ✅ Complete |
+| Integration tests | ✅ 76/76 passing (all 8 flows complete) |
+| Flow 4: Model Switch | ✅ 4/4 passing |
+| Flow 5: Close/Delete | ✅ 4/4 passing |
+| Flow 6: Error Handling | ✅ 12/12 passing |
+| Flow 7: Shutdown Cleanup | ✅ 3/3 passing |
+| Flow 8: Model Operations | ✅ All passing |

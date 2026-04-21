@@ -66,17 +66,18 @@ Only serializable fields are included in API responses. Runtime-only fields are 
 
 ## Tests
 
-26 integration tests passing across 3 of 7 planned flows:
+76 integration tests passing across all 8 flows:
 
 | Flow | File | Tests | Status |
-|------|------|-------|--------|
+|------|------|-------|----------|
 | 1: Browse & Chat | `test_flow1_browse_chat.py` | 12 | ✅ All passing |
 | 2: File Browse | `test_flow2_file_browse.py` | 7 | ✅ All passing |
 | 3: Multi Session | `test_flow3_multi_session.py` | 7 | ✅ All passing |
-| 4: Model Switch | `test_flow4_model_switch.py` | — | ⏳ Pending |
-| 5: Close/Delete | `test_flow5_close_delete.py` | — | ⏳ Pending |
-| 6: Error Handling | `test_flow6_error_handling.py` | — | ⏳ Pending |
-| 7: Shutdown | `test_flow7_shutdown_cleanup.py` | — | ⏳ Pending |
+| 4: Model Switch | `test_flow4_model_switch.py` | 4 | ✅ All passing (6 checks + 2 skip path) |
+| 5: Close/Delete | `test_flow5_close_delete.py` | 4 | ✅ All passing |
+| 6: Error Handling | `test_flow6_error_handling.py` | 12 | ✅ All passing |
+| 7: Shutdown Cleanup | `test_flow7_shutdown_cleanup.py` | 3 | ✅ All passing |
+| 8: Model Operations | `test_flow8_model_operations.py` | 27 | ✅ All passing (fetch, verify, switch, chat before/after) |
 
 Run tests:
 ```bash
