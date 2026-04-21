@@ -470,3 +470,138 @@
 .view-workspace__chat--collapsed {
 	width: 0;
 }
+
+/* ── Model selector search ────────────────────────────────────────── */
+
+.view-models__search {
+	position: relative;
+	margin-bottom: 16px;
+	margin-top: 12px;
+}
+
+.view-models__search input {
+	width: 100%;
+	padding: 10px 16px 10px 40px;
+	background: #1e293b;
+	border: 1px solid #334155;
+	border-radius: 6px;
+	color: #e2e8f0;
+	font-size: 14px;
+	font-family: inherit;
+	outline: none;
+	transition: border-color 0.15s;
+}
+
+.view-models__search input::placeholder {
+	color: #64748b;
+}
+
+.view-models__search input:focus {
+	border-color: #3b82f6;
+}
+
+.view-models__search-icon {
+	position: absolute;
+	left: 12px;
+	top: 50%;
+	transform: translateY(-50%);
+	width: 16px;
+	height: 16px;
+	color: #64748b;
+	pointer-events: none;
+}
+
+/* Highlighted match text */
+.view-models__mark {
+	background: rgba(59, 130, 246, 0.3);
+	border-radius: 2px;
+	padding: 0 1px;
+	color: #e2e8f0;
+}
+
+/* Empty state */
+.view-models__empty {
+	text-align: center;
+	color: #64748b;
+	padding: 32px;
+	font-size: 15px;
+}
+
+/* ── Provider filter chips ────────────────────────────────────────── */
+
+.view-models__providers {
+	display: flex;
+	gap: 8px;
+	flex-wrap: wrap;
+	margin-top: 12px;
+	align-items: center;
+}
+
+.view-models__provider-btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 6px 12px;
+	background: #1e293b;
+	border: 1px solid #334155;
+	border-radius: 16px;
+	color: #94a3b8;
+	font-size: 13px;
+	font-family: inherit;
+	cursor: pointer;
+	transition: all 0.15s ease;
+	user-select: none;
+}
+
+.view-models__provider-btn:hover {
+	background: #334155;
+	border-color: #475569;
+}
+
+.view-models__provider-btn--active {
+	background: #1e3a5f;
+	border-color: #3b82f6;
+	color: #e2e8f0;
+}
+
+.view-models__provider-btn--active:hover {
+	background: #1e40af;
+}
+
+.view-models__provider-count {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 18px;
+	height: 18px;
+	padding: 0 6px;
+	background: rgba(148, 163, 184, 0.2);
+	border-radius: 9px;
+	font-size: 11px;
+	font-weight: 600;
+}
+
+.view-models__provider-btn--active .view-models__provider-count {
+	background: rgba(255, 255, 255, 0.2);
+}
+
+.view-models__clear-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	background: transparent;
+	border: 1px solid #475569;
+	border-radius: 50%;
+	color: #94a3b8;
+	font-size: 12px;
+	cursor: pointer;
+	transition: all 0.15s ease;
+}
+
+.view-models__clear-btn:hover {
+	background: #dc2626;
+	border-color: #dc2626;
+	color: white;
+}

@@ -143,6 +143,17 @@ export default function ChatPanel() {
 
 	// ── Progress tracking (how many inbound events we've processed) ──────────
 	const processedCountRef = useRef(0);
+	const prevConnectionSeqRef = useRef(ws.connectionSequence);
+
+	// Reset display state on reconnection
+	useEffect(() => {
+		if (ws.connectionSequence !== prevConnectionSeqRef.current) {
+			setDisplayMessages([]);
+			setStreamingContent("");
+			setToolCallNames([]);
+			prevConnectionSeqRef.current = ws.connectionSequence;
+		}
+	}, [ws.connectionSequence]);
 
 	// Scroll to bottom whenever messages or streaming content changes
 	useEffect(() => {
@@ -151,6 +162,12 @@ export default function ChatPanel() {
 
 	// ── Process new RPC events from the hook ─────────────────────────────────
 	useEffect(() => {
+		// Reset processing on reconnection
+		if (ws.connectionSequence !== prevConnectionSeqRef.current) {
+			prevConnectionSeqRef.current = ws.connectionSequence;
+			processedCountRef.current = 0;
+		}
+
 		if (ws.messages.length <= processedCountRef.current) return;
 
 		const newMessages = ws.messages.slice(processedCountRef.current);

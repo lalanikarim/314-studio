@@ -11,6 +11,40 @@ function deriveModelName(modelId: string, provider: string): string {
 const PI_INIT_TIMEOUT_MS = 15_000; // wait up to 15s for pi to initialize
 const POLL_INTERVAL_MS = 1500; // poll every 1.5s
 
+interface ModelsCache {
+	models: Model[];
+	timestamp: number;
+}
+
+const MODELS_CACHE_KEY = "pi_models_cache";
+const MODELS_MAX_AGE_MS = 30 * 60 * 1000; // 30 minutes
+
+function getCachedModels(): Model[] | null {
+	try {
+		const cached = localStorage.getItem(MODELS_CACHE_KEY);
+		if (!cached) return null;
+
+		const parsed: ModelsCache = JSON.parse(cached);
+		if (Date.now() - parsed.timestamp > MODELS_MAX_AGE_MS) return null;
+
+		return parsed.models;
+	} catch {
+		return null;
+	}
+}
+
+function cacheModels(models: Model[]) {
+	try {
+		const cache: ModelsCache = {
+			models,
+			timestamp: Date.now(),
+		};
+		localStorage.setItem(MODELS_CACHE_KEY, JSON.stringify(cache));
+	} catch {
+		// Ignore localStorage errors (privacy mode, quota exceeded, etc.)
+	}
+}
+
 interface UseModelsResult {
 	models: Model[];
 	loading: boolean;
@@ -59,6 +93,16 @@ export function useModels(projectPath?: string | null): UseModelsResult {
 				// No project selected — nothing to load
 				setLoading(false);
 				return;
+			}
+
+			// Step 0: Check cache first
+			const cachedModels = getCachedModels();
+			if (cachedModels && cachedModels.length > 0) {
+				if (!abortControllerRef.current?.signal.aborted) {
+					setModels(cachedModels);
+					setLoading(false);
+				}
+				// Still poll in background to refresh cache
 			}
 
 			// Step 1: Launch pi RPC session (model is set later via WS `set_model` on connect)
@@ -115,6 +159,7 @@ export function useModels(projectPath?: string | null): UseModelsResult {
 						if (!abortControllerRef.current?.signal.aborted) {
 							setModels(mapped);
 							setError(null);
+							cacheModels(mapped); // Cache the models for next load
 							setLoading(false);
 							return; // done
 						}

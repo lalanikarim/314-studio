@@ -19,7 +19,7 @@ import {
 } from "react";
 import type { Model } from "../types";
 
-// ── Message types forwarded from backend ────────────────────────────────────
+// ── Message types forwarded from backend ───────────────────────────────────
 
 export interface RpcEventMessage {
 	kind: "rpc_event";
@@ -76,7 +76,7 @@ export type OutboundMessage =
 	| RpcCommand
 	| PromptMessage;
 
-// ── Connection states ──────────────────────────────────────────────────────
+// ── Connection states ─────────────────────────────────────────────────────
 
 export type ConnectionState =
 	| "connecting"
@@ -113,9 +113,11 @@ export interface UseWebSocketReturn {
 	clearMessages: () => void;
 	/** Reconnect the WebSocket */
 	reconnect: () => void;
+	/** Connection sequence number (increments on each reconnection) */
+	connectionSequence: number;
 }
 
-// ── Interactive extension UI methods (need user input) ──────────────────────
+// ── Interactive extension UI methods (need user input) ────────────────────
 
 const INTERACTIVE_METHODS = new Set(["select", "confirm", "input", "editor"]);
 
@@ -143,9 +145,12 @@ export function useWebSocket(
 		useState<ExtensionUiRequestMessage | null>(null);
 	const [closeCode, setCloseCode] = useState<number | null>(null);
 	const [closeReason, setCloseReason] = useState<string | null>(null);
+	const [connectionSequence, setConnectionSequence] = useState<number>(0);
 
 	// Track whether cleanup has run (to prevent async setState after unmount)
 	const disposedRef = useRef(false);
+	// Track whether the user explicitly requested disconnect (to prevent unwanted reconnection)
+	const shouldDisconnectRef = useRef(false);
 
 	// Stable refs so doConnect can read current values without being recreated.
 	// doConnect reads from these refs instead of the closure, giving it stable deps.
@@ -199,9 +204,10 @@ export function useWebSocket(
 		[send],
 	);
 
-	// ── Disconnect helper ──────────────────────────────────────────────────
+	// ── Disconnect helper ─────────────────────────────────────────────────
 
 	const disconnect = useCallback(() => {
+		shouldDisconnectRef.current = true; // Mark that user requested disconnect
 		if (reconnectTimerRef.current) {
 			clearTimeout(reconnectTimerRef.current);
 			reconnectTimerRef.current = null;
@@ -219,18 +225,31 @@ export function useWebSocket(
 	// ── Connect helper (defined before lifecycle so it's hoisted by ref) ───
 
 	// Read from stable refs inside the callback body (not at render time).
-	// eslint-disable-next-line react-hooks/refs
 	const doConnect = useCallback(() => {
 		if (disposedRef.current) return;
+		if (shouldDisconnectRef.current) return; // Don't reconnect if user requested disconnect
+
+		// Prevent double connection attempts
+		if (wsRef.current && wsRef.current.readyState === WebSocket.CONNECTING) {
+			return;
+		}
 
 		const folder = projectFolderRef.current;
 		const sid = sessionIdRef.current;
 		if (!folder || !sid) return;
 
-		// Close any existing connection first
-		disconnect();
+		// Inline disconnect logic instead of calling disconnect() to avoid dependency
+		if (reconnectTimerRef.current) {
+			clearTimeout(reconnectTimerRef.current);
+			reconnectTimerRef.current = null;
+		}
+		const existingWs = wsRef.current;
+		if (existingWs) {
+			existingWs.close(1000, "Reconnecting");
+		}
 
 		setState("connecting");
+		setConnectionSequence((prev) => prev + 1); // Increment connection sequence
 
 		// Use a relative path so Vite's dev proxy (configured for /api with
 		// ws: true) routes the WebSocket upgrade to the backend at :8000.
@@ -242,7 +261,7 @@ export function useWebSocket(
 		ws.onopen = () => {
 			if (disposedRef.current) return;
 			setState("connected");
-			setMessages([]);
+			// Note: Do NOT call setMessages([]) here to avoid breaking message processing
 
 			// Send initial get_state to trigger the streaming pipeline
 			send({ type: "get_state" });
@@ -283,6 +302,8 @@ export function useWebSocket(
 								cancelled: false,
 							} as UiResponseMessage),
 						);
+						// Clear pending UI request after successful auto-ack
+						setPendingUiRequest(null);
 					}
 				} else if (parsed.kind === "extension_ui_response") {
 					// Extension got a response — just log it
@@ -313,34 +334,53 @@ export function useWebSocket(
 			setCloseCode(event.code);
 			setCloseReason(event.reason || null);
 
-			if (event.code === 1000) {
-				// Clean close
-				setState("disconnected");
-			} else {
-				// Unexpected close — try to reconnect
+			// Don't set state to disconnected if we're intentionally reconnecting
+			// The reconnect flag check above prevents unwanted auto-reconnection
+			if (!shouldDisconnectRef.current) {
 				setState("error");
+			} else {
+				// Reset flag for manual reconnect
+				shouldDisconnectRef.current = false;
+				setState("disconnected");
+			}
+
+			// Only attempt reconnection if not intentional disconnect
+			// and not a clean close (1000 = Normal closure)
+			if (!shouldDisconnectRef.current && event.code !== 1000) {
 				reconnectTimerRef.current = setTimeout(() => {
-					if (!disposedRef.current) {
+					if (!disposedRef.current && !shouldDisconnectRef.current) {
 						doConnectRef.current();
 					}
 				}, 2000);
 			}
 		};
-	}, [disconnect, send]);
+	}, [send]);
 
 	// ── Lifecycle ──────────────────────────────────────────────────────────
-
+	// Note: Use empty dep array to prevent re-connection loops
+	// doConnect and disconnect are stored in refs, not closure deps
 	useEffect(() => {
 		disposedRef.current = false;
+		shouldDisconnectRef.current = false; // Reset on mount
 		// Set the ref for reconnect timer & manual reconnect button.
 		doConnectRef.current = doConnect;
-		// eslint-disable-next-line react-hooks/set-state-in-effect
+		// Clear any existing reconnect timer
+		if (reconnectTimerRef.current) {
+			clearTimeout(reconnectTimerRef.current);
+			reconnectTimerRef.current = null;
+		}
 		doConnect();
 		return () => {
 			disposedRef.current = true;
+			shouldDisconnectRef.current = true; // Set flag in cleanup
+			// Clean up reconnect timer
+			if (reconnectTimerRef.current) {
+				clearTimeout(reconnectTimerRef.current);
+				reconnectTimerRef.current = null;
+			}
 			disconnect();
 		};
-	}, [doConnect, disconnect]);
+	}, []); // Empty deps - use refs instead of closure variables
 
 	// ── Clear messages helper ──────────────────────────────────────────────
 
@@ -349,23 +389,24 @@ export function useWebSocket(
 		send({ type: "get_messages" });
 	}, [send]);
 
-	// ── Abort helper ──────────────────────────────────────────────────────
+	// ── Abort helper ───────────────────────────────────────────────────────
 
 	const abort = useCallback(() => {
 		send({ type: "abort" });
 	}, [send]);
 
-	// ── Compact helper ───────────────────────────────────────────────────
+	// ── Compact helper ─────────────────────────────────────────────────────
 
 	const compact = useCallback(() => {
 		send({ type: "compact" });
 	}, [send]);
 
-	// ── Reconnect helper ─────────────────────────────────────────────────
+	// ── Reconnect helper ───────────────────────────────────────────────────
 
 	const reconnect = useCallback(() => {
 		setCloseCode(null);
 		setCloseReason(null);
+		shouldDisconnectRef.current = false; // Reset disconnect flag for manual reconnect
 		if (reconnectTimerRef.current) {
 			clearTimeout(reconnectTimerRef.current);
 			reconnectTimerRef.current = null;
@@ -373,7 +414,7 @@ export function useWebSocket(
 		doConnectRef.current();
 	}, []);
 
-	// ── Auto-compaction helper ───────────────────────────────────────────
+	// ── Auto-compaction helper ────────────────────────────────────────────
 
 	const setAutoCompaction = useCallback(
 		(enabled: boolean) => {
@@ -382,7 +423,7 @@ export function useWebSocket(
 		[send],
 	);
 
-	// ── Error message helper ─────────────────────────────────────────────
+	// ── Error message helper ──────────────────────────────────────────────
 
 	const errorMessage: string | null = (() => {
 		if (state === "error") {
@@ -394,7 +435,7 @@ export function useWebSocket(
 		return null;
 	})();
 
-	// ── Memoized return value ─────────────────────────────────────────────
+	// ── Memoized return value ──────────────────────────────────────────────
 	// Only returns a new object when state values actually change.
 	// Without this, a new object on every render causes ChatPanel to
 	// recreate handleSend (which depends on ws), triggering cascading
@@ -415,6 +456,7 @@ export function useWebSocket(
 			disconnect,
 			clearMessages,
 			reconnect,
+			connectionSequence,
 		}),
 		// Include all state values so the memo updates when connection state changes.
 		// This is safe — the object only changes when the values actually change,
@@ -433,6 +475,7 @@ export function useWebSocket(
 			disconnect,
 			clearMessages,
 			reconnect,
+			connectionSequence,
 		],
 	);
 }

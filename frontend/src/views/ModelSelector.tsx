@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useApp } from "../store/AppContext";
 import { useModels } from "../hooks/useModels";
 import { getProjectInfo } from "../services/api";
@@ -18,6 +18,81 @@ export default function ModelSelector() {
 	const { models, loading, error, sessionId } = useModels(selectedFolder);
 	const [switching, setSwitching] = useState(false);
 	const [runningCount, setRunningCount] = useState<number | null>(null);
+	const [search, setSearch] = useState("");
+	const [selectedProviders, setSelectedProviders] = useState<string[]>([]);
+
+	// Extract unique providers from fetched models
+	const providers = useMemo(() => {
+		const providerSet = new Set(models.map((m) => m.provider));
+		return Array.from(providerSet).sort();
+	}, [models]);
+
+	// Select all providers when models first load
+	const loadedRef = useRef(false);
+	useEffect(() => {
+		if (models.length > 0 && !loadedRef.current && providers.length > 0) {
+			loadedRef.current = true;
+			setSelectedProviders([...providers]);
+		}
+	}, [models, providers]);
+
+	// Toggle provider filter
+	const toggleProvider = (provider: string) => {
+		setSelectedProviders((prev) =>
+			prev.includes(provider)
+				? prev.filter((p) => p !== provider)
+				: [...prev, provider],
+		);
+	};
+
+	// Filter models by search AND provider filters
+	const filteredModels = useMemo(() => {
+		let result = models;
+
+		// Apply provider filter
+		if (
+			selectedProviders.length > 0 &&
+			selectedProviders.length < providers.length
+		) {
+			result = result.filter((m) => selectedProviders.includes(m.provider));
+		}
+
+		// Apply search filter
+		if (search.trim()) {
+			const q = search.toLowerCase();
+			result = result.filter((m) => m.name.toLowerCase().includes(q));
+		}
+
+		return result;
+	}, [models, search, selectedProviders, providers]);
+
+	// Clear all filters
+	const clearFilters = () => {
+		setSearch("");
+		setSelectedProviders([...providers]);
+	};
+
+	const hasActiveFilters =
+		search.trim() ||
+		(selectedProviders.length > 0 &&
+			selectedProviders.length < providers.length);
+
+	// Highlight matching text in model name
+	function highlightMatch(text: string, search: string) {
+		if (!search.trim()) return text;
+		const q = search.toLowerCase();
+		const idx = text.toLowerCase().indexOf(q);
+		if (idx < 0) return text;
+		return (
+			<>
+				{text.slice(0, idx)}
+				<mark className="view-models__mark">
+					{text.slice(idx, idx + search.length)}
+				</mark>
+				{text.slice(idx + search.length)}
+			</>
+		);
+	}
 
 	// Fetch project info to show running sessions
 	useEffect(() => {
@@ -82,6 +157,55 @@ export default function ModelSelector() {
 					</p>
 				</div>
 
+				<div className="view-models__search">
+					<svg
+						className="view-models__search-icon"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						strokeWidth="2"
+					>
+						<circle cx="11" cy="11" r="8" />
+						<path d="m21 21-4.35-4.35" />
+					</svg>
+					<input
+						type="text"
+						placeholder="Search models…"
+						value={search}
+						onChange={(e) => setSearch(e.target.value)}
+					/>
+				</div>
+
+				{/* Provider filter chips */}
+				{!loading && providers.length > 0 && (
+					<div className="view-models__providers">
+						{providers.map((provider) => {
+							const isActive = selectedProviders.includes(provider);
+							return (
+								<button
+									key={provider}
+									className={`view-models__provider-btn ${isActive ? "view-models__provider-btn--active" : ""}`}
+									onClick={() => toggleProvider(provider)}
+								>
+									{provider}
+									<span className="view-models__provider-count">
+										{models.filter((m) => m.provider === provider).length}
+									</span>
+								</button>
+							);
+						})}
+						{hasActiveFilters && (
+							<button
+								className="view-models__clear-btn"
+								onClick={clearFilters}
+								title="Clear all filters"
+							>
+								✕
+							</button>
+						)}
+					</div>
+				)}
+
 				{loading && (
 					<div className="view-models__loading">
 						<svg
@@ -103,14 +227,16 @@ export default function ModelSelector() {
 					<>
 						{error && <p className="view-models__error">{error}</p>}
 						<div className="view-models__list">
-							{models.map((model) => (
+							{filteredModels.map((model) => (
 								<div
 									key={`${model.provider}:${model.id}`}
 									className={`view-models__card ${selectedModel?.id === model.id ? "view-models__card--selected" : ""}`}
 									onClick={() => setSelectedModel(model)}
 								>
 									<div className="view-models__card-header">
-										<div className="view-models__card-name">{model.name}</div>
+										<div className="view-models__card-name">
+											{highlightMatch(model.name, search)}
+										</div>
 										{selectedModel?.id === model.id && (
 											<span className="view-models__badge">Selected</span>
 										)}
@@ -136,6 +262,9 @@ export default function ModelSelector() {
 									</div>
 								</div>
 							))}
+							{filteredModels.length === 0 && models.length > 0 && (
+								<div className="view-models__empty">No matching models</div>
+							)}
 						</div>
 
 						<div className="view-models__actions">
