@@ -2,7 +2,11 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useApp } from "../store/AppContext";
 import { useModels } from "../hooks/useModels";
 import { useWebSocket } from "../hooks/useWebSocket";
-import { closeSession, deleteSession } from "../services/api";
+import {
+	closeSession,
+	deleteSession,
+	switchModel as apiSwitchModel,
+} from "../services/api";
 import type { Model } from "../types";
 import "./components.css";
 
@@ -263,18 +267,28 @@ export default function ChatPanel() {
 	}, [input, streamingContent, toolCallNames, ws]);
 
 	// ── Model switcher ───────────────────────────────────────────────────────
-	const handleSwitchModel = (model: (typeof models)[0]) => {
-		switchModel(model);
-		setSelectedModel(model);
-		setModelDropdownOpen(false);
+	const handleSwitchModel = useCallback(
+		(model: (typeof models)[0]) => {
+			switchModel(model);
+			setSelectedModel(model);
+			setModelDropdownOpen(false);
 
-		// Send set_model RPC through the WS relay
-		ws.send({
-			type: "set_model",
-			provider: model.provider,
-			modelId: model.id,
-		});
-	};
+			// Persist model change on backend so it survives WS reconnect
+			if (selectedSessionId) {
+				apiSwitchModel(selectedSessionId, model.id, model.provider).catch(
+					(err) => console.warn("Failed to persist model switch:", err),
+				);
+			}
+
+			// Send set_model RPC through the WS relay for immediate effect
+			ws.send({
+				type: "set_model",
+				provider: model.provider,
+				modelId: model.id,
+			});
+		},
+		[switchModel, setSelectedModel, ws, selectedSessionId],
+	);
 
 	// ── Session close/delete ─────────────────────────────────────────────────
 	const handleClose = useCallback(async () => {
