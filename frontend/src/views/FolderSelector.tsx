@@ -102,12 +102,15 @@ function SessionRow({
 	return (
 		<div className="session-row" onClick={onClick}>
 			<div className="session-row__top">
-				<span className="session-row__name">
-					<span
-						className={`session-row__status ${session.ws_connected ? "session-row__status--connected" : session.status === "running" ? "session-row__status--running" : ""}`}
-					/>
-					{session.name || projectName}
-				</span>
+				<div className="session-row__info">
+					<span className="session-row__name">
+						<span
+							className={`session-row__status ${session.ws_connected ? "session-row__status--connected" : session.status === "running" ? "session-row__status--running" : ""}`}
+						/>
+						{session.name || projectName}
+					</span>
+					<span className="session-row__time">{timeStr}</span>
+				</div>
 				<button
 					className="session-row__shutdown-btn"
 					onClick={(e) => {
@@ -118,7 +121,6 @@ function SessionRow({
 				>
 					⏻
 				</button>
-				<span className="session-row__time">{timeStr}</span>
 			</div>
 			<div className="session-row__meta">
 				<span>{projectName}</span>
