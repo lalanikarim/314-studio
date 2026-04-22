@@ -24,7 +24,8 @@ function deriveModelName(modelId: string, provider: string): string {
 }
 
 /** Extract provider from model_id if it uses provider/id format */
-function extractProvider(modelId: string): string {
+function extractProvider(modelId: string | null | undefined): string {
+	if (!modelId) return "";
 	if (modelId.includes("/")) return modelId.split("/")[0];
 	for (const p of [
 		"anthropic",
@@ -149,7 +150,12 @@ function SessionRow({
 				<span>{projectName}</span>
 				<span className="session-row__divider">&middot;</span>
 				<span>
-					{deriveModelName(session.model_id, extractProvider(session.model_id))}
+					{session.model_id
+						? deriveModelName(
+								session.model_id,
+								extractProvider(session.model_id),
+							)
+						: "—"}
 				</span>
 			</div>
 		</div>
