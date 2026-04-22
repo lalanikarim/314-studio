@@ -459,4 +459,4 @@ uv run python integration_test_api.py --flows chat          # T1.7–T1.12 only
 | **5** | T5.1–T5.4 | Session close (compact) vs delete (abort) lifecycle |
 | **6** | T6.1–T6.5 | Error handling and edge cases |
 | **7** | T7.1 | App shutdown cleanup of all processes |
-| **Total** | **~40 test cases** | |
+| **Total** | **55 test cases** | |
