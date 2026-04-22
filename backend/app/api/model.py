@@ -1,8 +1,8 @@
 """
 Model API endpoints for managing available models.
 
-Uses Pi RPC commands (get_available_models, set_model) when a session
-is active.
+Queries the session's Pi RPC process for model information when a session
+is active. Model switching is handled via session_manager.py.
 """
 
 from typing import List, Optional
@@ -16,7 +16,7 @@ router = APIRouter()
 
 
 def _parse_rpc_models(raw: Optional[dict]) -> List[ModelConfig]:
-    """Parse model objects from a Pi RPC get_available_models response."""
+    """Parse model objects from a Pi RPC get_available_models response dict."""
     if not raw:
         return []
 
@@ -46,9 +46,9 @@ async def list_models(
     session_id: str = Query(..., description="Session to query for models"),
 ) -> List[ModelConfig]:
     """
-    List all available models via Pi RPC.
+    List all available models via the session's Pi RPC process.
 
-    Sends `get_available_models` to the session's pi process and waits
+    Sends `get_available_models` through SessionManager and waits
     for the response synchronously.
     """
     record = session_manager.get_session(session_id)

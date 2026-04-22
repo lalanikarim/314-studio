@@ -1,8 +1,8 @@
 """
-Session Manager — orchestrates pi --mode rpc processes and WebSocket relays.
+Session Manager — orchestrates `pi --mode rpc` processes and WebSocket relays.
 
 Architecture:
-  - One `pi --mode rpc` process PER SESSION (not per project).
+  - One `pi --mode rpc` process per session (not per project).
   - Sessions persist independently of WebSocket connections.
   - WebSocket is a thin relay channel; reconnect swaps the channel without
     touching the underlying RPC process.
@@ -13,17 +13,20 @@ Usage:
   from app.session_manager import session_manager
 
   # Create a new session (spawns pi --rpc)
-  record = await session_manager.launch_session(project_path, model_id, name)
+  record = await session_manager.launch_session(project_path, name)
 
   # Connect a WebSocket to an existing session
   await session_manager.connect_ws(session_id, websocket_id)
 
-  # Send a command (compact, abort, prompt, set_model, etc.)
-  result = await session_manager.send_command(session_id, {"type": "compact"})
+  # Send a command (compact, abort, set_model, etc.) via WS relay
+  session_manager.send_to_session(session_id, {"type": "compact"})
 
   # Close / delete a session
-  await session_manager.close_session(session_id)       # compact + abort
-  await session_manager.delete_session(session_id)       # abort only
+  await session_manager.close_session(session_id)       # compact + abort + terminate
+  await session_manager.delete_session(session_id)       # abort + terminate
+
+  # Switch model (updates metadata; actual RPC sent on WS connect)
+  await session_manager.switch_model(session_id, model_id, provider)
 
   # Shutdown all (called on app shutdown)
   await session_manager.shutdown_all()
@@ -191,9 +194,9 @@ class SessionManager:
         return record
 
     async def _wait_for_ready(self, record: SessionRecord) -> None:
-        """Verify the process is alive without sending any RPC commands.
+        """Verify the process started successfully (no RPC commands sent).
 
-        No automatic RPC calls (get_available_models, set_model, set_session_name).
+        No automatic RPC calls (get_available_models, set_model, etc.).
         All RPC interactions happen only when explicitly requested by the client
         (e.g. WS connect, model-switch endpoint).
         """

@@ -1,8 +1,8 @@
 """
-File API endpoints for browsing and reading files.
+File API endpoints for browsing and reading project files.
 
 All endpoints take `project_path` as a query parameter (absolute path
-to the project directory), matching the pattern in browse.py / session.py.
+to the project directory), matching the pattern in browse.py and project.py.
 """
 
 from pathlib import Path

@@ -1,25 +1,26 @@
 """
 Pydantic models for the API.
+
+SessionRecord (the session data model) lives in session_manager.py and is the
+source of truth — FastAPI serialises it natively as a Pydantic dataclass.
 """
 
-from typing import List, Optional
+from typing import Optional
 
 from pydantic import BaseModel
 
 
-class Message(BaseModel):
-    """
-    Message in a conversation.
-    """
+class FileInfo(BaseModel):
+    """File information returned by file listing endpoints."""
 
-    role: str  # "user" or "assistant"
-    content: str
+    name: str
+    path: str
+    isDirectory: bool
+    size: Optional[int] = None
 
 
 class ModelConfig(BaseModel):
-    """
-    Model configuration.
-    """
+    """Model configuration with optional metadata."""
 
     id: str
     provider: str
@@ -27,75 +28,7 @@ class ModelConfig(BaseModel):
     maxTokens: Optional[int] = None
 
 
-class SessionBase(BaseModel):
-    """
-    Base session model.
-    """
-
-    session_id: str
-    name: str
-    project: str
-
-
-class SessionListItem(SessionBase):
-    """
-    Session item for listing (lighter than full session).
-    """
-
-    pass
-
-
-class SessionCreate(BaseModel):
-    """
-    Session creation model.
-    """
-
-    name: str
-    model: ModelConfig
-
-
-class Session(SessionBase):
-    """
-    Full session model with messages.
-    """
-
-    messages: List[Message]
-    model: ModelConfig
-    thinking: str  # "none", "low", "medium", "high"
-
-
-class FileInfo(BaseModel):
-    """
-    File information.
-    """
-
-    name: str
-    path: str
-    isDirectory: bool
-    size: Optional[int] = None
-    sha256: Optional[str] = None
-
-
-class ChatMessage(BaseModel):
-    """
-    Chat message model.
-    """
-
-    message: str
-    streamingBehavior: Optional[str] = None  # "prompt" or None
-
-
-class ModelSwitch(BaseModel):
-    """
-    Model switch request.
-    """
-
-    modelId: str
-
-
 # ── Session Manager schemas ───────────────────────────────────────────────────
-# SessionRecord is defined in session_manager.py as a dataclass (source of truth).
-# FastAPI handles dataclasses natively as response_model.
 
 
 class SessionCreateRequest(BaseModel):

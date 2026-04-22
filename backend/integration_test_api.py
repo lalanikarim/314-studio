@@ -3,8 +3,7 @@
 Integration test: backend REST API flows against a live uvicorn server.
 
 Tests every REST endpoint that the frontend calls, validating responses
-match expected shapes. Covers the same logical flows as integration_test_rpc.py
-but through the HTTP API surface.
+match expected shapes.
 
 Architecture:
   - Starts uvicorn in a subprocess on port 8765

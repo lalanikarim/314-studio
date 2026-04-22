@@ -1,7 +1,7 @@
 """
 Chat API endpoints — WebSocket relay for Pi RPC communication.
 
-This module is now a thin relay layer. All process lifecycle is owned by
+This module is a thin relay layer. All process lifecycle is owned by
 SessionManager (see session_manager.py). The WebSocket connects to an
 existing session and relays messages bidirectionally:
 
@@ -91,7 +91,7 @@ async def ws_endpoint(websocket: WebSocket, session_id: str = Query(...)) -> Non
 
 
 async def _relay_messages(session_id: str, websocket: WebSocket) -> None:
-    """Bidirectional relay between WebSocket and session's stdin/stdout."""
+    """Bidirectional relay between WebSocket and session's stdin (stdout via event_buffer)."""
 
     async def _outbound() -> None:
         """Session stdout → WebSocket."""

@@ -109,11 +109,11 @@ async def create_session(
     req: SessionCreateRequest,
     project_path: str = Query(..., description="Absolute path to the project directory"),
 ) -> SessionRecord:
-    """Create a new session on a pi --rpc process.
+    """Create a new session (spawns a pi --rpc process).
 
-    The session is created with the specified model_id stored as metadata.
-    No RPC calls (get_available_models, set_model) are made during launch —
-    they happen only when explicitly requested by the client.
+    The session record stores model_id as metadata only — no RPC calls
+    (get_available_models, set_model) are made during launch; they happen
+    only when explicitly requested by the client.
     """
     resolved = _resolve_project_path(project_path)
 

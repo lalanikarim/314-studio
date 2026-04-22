@@ -4,11 +4,11 @@ Main application module for FastAPI + React Pi Integration.
 This backend provides REST API endpoints for project selection, session management,
 file browsing, model management, and chat with the Pi coding agent via WebSocket RPC.
 
-All interactions with Pi happen through WebSocket after starting pi --rpc.
+Process lifecycle is managed by SessionManager (one `pi --mode rpc` process per session).
+All RPC interactions with Pi go through WebSocket.
 
-Project identification is via query parameter `project_path` (absolute path to project
-directory), not via route parameters. This matches the pattern used by browse.py and
-project.py which resolve paths via Path.home() / "Projects".
+Project identification uses `project_path` as a query parameter (absolute path to project
+directory), not as a route parameter.
 """
 
 from contextlib import asynccontextmanager

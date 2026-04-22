@@ -3,7 +3,7 @@
 Integration test: backend RPC protocol against a live pi --mode rpc process.
 
 Tests every command the backend sends/receives, validating against the
-protocol described in docs/pi-rpc-knowledgebase.md.
+Pi RPC protocol.
 
 Architecture:
   - Single event_reader task: owns proc.stdout.readline()

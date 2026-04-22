@@ -5,8 +5,8 @@ from __future__ import annotations
 import os
 
 # Server endpoints
-API_BASE = os.environ.get("API_BASE", "http://127.0.0.1:8765")
-WS_BASE = os.environ.get("WS_BASE", "ws://127.0.0.1:8765")
+API_BASE = os.environ.get("API_BASE", "http://127.0.0.1:8000")
+WS_BASE = os.environ.get("WS_BASE", "ws://127.0.0.1:8000")
 
 # Project & model
 PROJECT_NAME = os.environ.get("PROJECT_NAME", "agent-spy")

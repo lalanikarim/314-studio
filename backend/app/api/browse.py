@@ -1,5 +1,8 @@
 """
-Browse endpoint for navigating the filesystem tree (used by FolderSelector).
+Browse endpoint — navigates the filesystem tree to list project directories.
+
+Returns only directory entries (no files), suitable for building a folder tree
+view on the frontend.
 """
 
 from pathlib import Path
@@ -12,10 +15,7 @@ router = APIRouter()
 
 @router.get("/browse")
 async def browse(path: Optional[str] = None) -> List[dict]:
-    """
-    List subdirectories at the given path (defaults to ~/Projects).
-    Returns only directories, suitable for building a folder tree view.
-    """
+    """List subdirectories at the given path (defaults to ~/Projects)."""
     if path:
         # Resolve relative paths against home
         target = Path(path).expanduser()

@@ -88,14 +88,14 @@ async def test_model_switch_with_reconnect(client, result, session_id=None):
         return
 
     model_data = resp.json()
-    # Response model uses SessionCloseResponse schema: {session_id, compacted: False}
+    # Model switch endpoint returns: {message, modelId, provider}
     result.check(
         isinstance(model_data, dict),
         "Model switch returns JSON response",
     )
     result.check(
-        model_data.get("session_id") == session_id,
-        "Response contains correct session_id",
+        model_data.get("modelId") == TEST_MODEL2_ID,
+        "Response contains correct modelId",
     )
 
     # WS: reconnect — relay should send set_model to stdin with new modelId

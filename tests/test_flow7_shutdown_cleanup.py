@@ -49,12 +49,12 @@ def _is_pid_alive(pid: int) -> bool:
 
 def _extract_port(api_base: str) -> int:
     """Extract port number from API_BASE URL."""
-    # Handle http://127.0.0.1:8765 or http://localhost:8765 etc.
+    # Handle http://127.0.0.1:8000 or http://localhost:8000 etc.
     match = re.search(r":(\d+)", api_base)
     if match:
         return int(match.group(1))
-    # Default to 8765 if no port specified
-    return 8765
+    # Default to 8000 if no port specified
+    return 8000
 
 
 def _find_process_by_port(port: int) -> str | None:
@@ -72,7 +72,8 @@ def _find_process_by_port(port: int) -> str | None:
             timeout=5,
         )
         if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip()
+            # lsof may return multiple PIDs (e.g. reload workers) — take the first (parent)
+            return result.stdout.strip().splitlines()[0]
     except (FileNotFoundError, subprocess.TimeoutExpired):
         pass
 
