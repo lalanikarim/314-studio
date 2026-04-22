@@ -1,4 +1,4 @@
-# FastAPI React Pi
+# 314 Studio
 
 A web interface for [Pi](https://github.com/badlogic/pi-mono) — the AI coding agent toolkit by Mario Zechner.
 

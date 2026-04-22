@@ -39,9 +39,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="FastAPI React Pi Integration",
+    title="314 Studio API",
     description=(
-        "API for Pi coding agent integration with React frontend. "
+        "Backend API for 314 Studio — browser workspace for the Pi coding agent. "
         "One pi --mode rpc process per session. "
         "All Pi interactions go through WebSocket RPC."
     ),
