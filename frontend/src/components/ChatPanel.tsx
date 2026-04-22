@@ -252,7 +252,7 @@ export default function ChatPanel() {
 		selectedFolder,
 		sessionId: selectedSessionId,
 	} = useApp();
-	const { models } = useModels();
+	const { models } = useModels(selectedFolder);
 
 	// Model ref — kept in sync with currentModel so the WS hook always
 	// knows which model to send `set_model` with on connect.
