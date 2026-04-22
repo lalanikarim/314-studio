@@ -235,8 +235,13 @@ export function useWebSocket(
 		if (disposedRef.current) return;
 		if (shouldDisconnectRef.current) return; // Don't reconnect if user requested disconnect
 
-		// Prevent double connection attempts
+		// Prevent double connection attempts (StrictMode mounts twice in dev)
 		if (wsRef.current && wsRef.current.readyState === WebSocket.CONNECTING) {
+			// Already connecting, don't create another one
+			return;
+		}
+		if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+			// Already connected, don't create a duplicate connection
 			return;
 		}
 
