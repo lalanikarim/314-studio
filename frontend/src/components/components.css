@@ -132,19 +132,23 @@
 
 /* Session controls on their own row below the main header */
 .chat-header-controls {
+	display: block;
+	width: 100%;
+	border-top: 1px solid #334155;
+	background: #1e293b;
+	padding: 4px 12px;
+}
+
+.chat-header-controls-inner {
 	display: flex;
 	gap: 2px;
 	justify-content: flex-end;
-	padding: 4px 12px 2px;
-	border-top: 1px solid #334155;
-	background: #1e293b;
-	flex-shrink: 0;
 }
 
 /* Icon-only buttons in the session controls row */
-.chat-header-controls .btn--compact,
-.chat-header-controls .btn--close,
-.chat-header-controls .btn--delete {
+.chat-header-controls-inner .btn--compact,
+.chat-header-controls-inner .btn--close,
+.chat-header-controls-inner .btn--delete {
 	padding: 4px;
 	min-width: 26px;
 	height: 26px;
@@ -153,9 +157,9 @@
 	justify-content: center;
 }
 
-.chat-header-controls .btn--compact svg,
-.chat-header-controls .btn--close svg,
-.chat-header-controls .btn--delete svg {
+.chat-header-controls-inner .btn--compact svg,
+.chat-header-controls-inner .btn--close svg,
+.chat-header-controls-inner .btn--delete svg {
 	width: 14px;
 	height: 14px;
 }
