@@ -17,6 +17,29 @@ interface DirItem {
 	name: string;
 }
 
+/** Derive a display name from provider + model id, e.g. "Anthropic – claude-sonnet-4-20250514" */
+function deriveModelName(modelId: string, provider: string): string {
+	const providerName = provider.charAt(0).toUpperCase() + provider.slice(1);
+	return `${providerName} – ${modelId}`;
+}
+
+/** Extract provider from model_id if it uses provider/id format */
+function extractProvider(modelId: string): string {
+	if (modelId.includes("/")) return modelId.split("/")[0];
+	for (const p of [
+		"anthropic",
+		"openai",
+		"google",
+		"deepseek",
+		"mistral",
+		"groq",
+		"together",
+	]) {
+		if (modelId.toLowerCase().startsWith(p)) return p;
+	}
+	return "anthropic";
+}
+
 // ---------------------------------------------------------------------------
 // Confirmation dialog for session shutdown
 // ---------------------------------------------------------------------------
@@ -125,7 +148,9 @@ function SessionRow({
 			<div className="session-row__meta">
 				<span>{projectName}</span>
 				<span className="session-row__divider">&middot;</span>
-				<span>{session.model_id || "—"}</span>
+				<span>
+					{deriveModelName(session.model_id, extractProvider(session.model_id))}
+				</span>
 			</div>
 		</div>
 	);
