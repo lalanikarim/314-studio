@@ -1,30 +1,93 @@
 # FastAPI React Pi
 
-FastAPI backend + React (TypeScript) frontend for the Pi coding agent.
+A web interface for [Pi](https://github.com/badlogic/pi-mono) — the AI coding agent toolkit by Mario Zechner.
+
+Pi is an interactive coding agent that runs in your terminal. It understands your codebase, performs read/write/edit/bash operations, and works across sessions. This project wraps Pi with a **FastAPI backend** and **React frontend** to give you a browser-based workspace where you can manage sessions, browse files, and chat with the agent — all from a single page.
+
+> **Pi CLI** is the core agent. This project is a *web UI layer* on top of it, not a replacement.
+
+## Prerequisites
+
+Before running this project, make sure you have these installed:
+
+### Required tools
+
+| Tool | Version | Why | Install |
+|------|---------|-----|---------|
+| **[Node.js](https://nodejs.org/)** | ≥ 18 | Required for bun and npm | `brew install node` (macOS) or [nodejs.org](https://nodejs.org/) |
+| **[Bun](https://bun.sh/)** | Latest | Frontend runtime and package manager | `curl -fsSL https://bun.sh/install \| bash` |
+| **[Python](https://python.org/)** | ≥ 3.13 | Backend language | `brew install python` (macOS) or [python.org](https://python.org/) |
+| **[uv](https://docs.astral.sh/uv/)** | Latest | Python package & project manager | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
+| **[Pi CLI](https://github.com/badlogic/pi-mono)** | Latest | The coding agent itself (spawned by backend) | `npm install -g @mariozechner/pi-coding-agent` |
+
+### Pi authentication
+
+The Pi agent needs an LLM provider configured. Choose **one**:
+
+```bash
+# Option A: API key (Anthropic recommended)
+export ANTHROPIC_API_KEY=sk-ant-...
+
+# Option B: Interactive login (supports OpenAI, Anthropic, Google, etc.)
+pi --login
+```
+
+Verify Pi works from the command line before starting the server:
+
+```bash
+pi --list-models
+```
+
+### Optional
+
+| Tool | Why |
+|------|-----|
+| **Git** | Version control (used by the agent for operations) |
+| **Docker** | Not required — Pi runs as a native subprocess |
 
 ## Quick Start
 
-### Backend
+All three components (backend, frontend, Pi agent) must be running simultaneously.
+
+### 1. Start the backend
+
+The backend spawns `pi --mode rpc` processes on demand when you create sessions.
 
 ```bash
 cd backend
 uv run uvicorn app.main:app --reload   # :8000, auto-reload
-# Docs: http://localhost:8000/docs
 ```
 
-### Frontend
+API docs are available at **http://localhost:8000/docs**.
+
+### 2. Start the frontend (in a separate terminal)
 
 ```bash
 cd frontend
 bun dev                                 # :5173
-bun run build                           # → dist/
 ```
 
-### Tests
+### 3. Open the app
+
+Navigate to **http://localhost:5173** and:
+
+1. **Select a folder** — browse any project directory on your filesystem
+2. **Pick a model** — Pi will list available models via RPC
+3. **Start chatting** — sessions run as separate `pi --rpc` processes
+
+### Running tests
 
 ```bash
 cd tests
 API_BASE=http://127.0.0.1:8000 WS_BASE=ws://127.0.0.1:8000 uv run pytest -v
+
+# Or run specific flows:
+API_BASE=http://127.0.0.1:8000 WS_BASE=ws://127.0.0.1:8000 \
+  uv run integration_test_harness.py --flows browse chat file-browse
+
+# Full suite (all 7 flows, ~117 tests):
+API_BASE=http://127.0.0.1:8000 WS_BASE=ws://127.0.0.1:8000 \
+  uv run python integration_test_harness.py
 ```
 
 ## Architecture
@@ -117,9 +180,4 @@ delete(abort)  → stopped (process terminated, record removed)
 | Frontend/Backend wiring | ✅ Complete |
 | WebSocket relay | ✅ Complete |
 | Extension UI handling | ✅ Complete |
-| Integration tests | ✅ 76/76 passing (all 8 flows complete) |
-| Flow 4: Model Switch | ✅ 4/4 passing |
-| Flow 5: Close/Delete | ✅ 4/4 passing |
-| Flow 6: Error Handling | ✅ 12/12 passing |
-| Flow 7: Shutdown Cleanup | ✅ 3/3 passing |
-| Flow 8: Model Operations | ✅ All passing |
+| Integration tests | ✅ 117 passed, 0 failed (all 7 flows) |
