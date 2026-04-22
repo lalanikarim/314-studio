@@ -26,6 +26,11 @@ export interface RpcEventMessage {
 	event: Record<string, unknown>;
 }
 
+export interface RpcResponseMessage {
+	kind: "rpc_response";
+	response: Record<string, unknown>;
+}
+
 export interface ExtensionUiRequestMessage {
 	kind: "extension_ui_request";
 	type: "extension_ui_request";
@@ -45,7 +50,8 @@ export interface ExtensionUiResponseMessage {
 export type InboundMessage =
 	| RpcEventMessage
 	| ExtensionUiRequestMessage
-	| ExtensionUiResponseMessage;
+	| ExtensionUiResponseMessage
+	| RpcResponseMessage;
 
 // ── Outbound message types ─────────────────────────────────────────────────
 
@@ -310,6 +316,15 @@ export function useWebSocket(
 					setMessages((prev) => [
 						...prev,
 						parsed as ExtensionUiResponseMessage,
+					]);
+				} else if (parsed.type === "response") {
+					// RPC response (get_state, set_model, etc.) — relay to frontend
+					setMessages((prev) => [
+						...prev,
+						{
+							kind: "rpc_response",
+							response: parsed as Record<string, unknown>,
+						},
 					]);
 				}
 			} catch {

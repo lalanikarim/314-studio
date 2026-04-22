@@ -276,7 +276,47 @@ export default function ChatPanel() {
 	// Track if history load has been requested (ref to avoid effect cycles)
 	const historyRequestedRef = useRef(false);
 
-	// ── Input state ──────────────────────────────────────────────────────────
+	// Track if we've already set the model from get_state (to avoid duplicates)
+	const modelSetFromStateRef = useRef(false);
+
+	// ── Derive a display name from provider + model id ───────────────────────
+	function deriveModelName(modelId: string, provider: string): string {
+		const providerName = provider.charAt(0).toUpperCase() + provider.slice(1);
+		return `${providerName} – ${modelId}`;
+	}
+
+	// ── Match a raw model object against the fetched models list ─────────────
+	function matchModelFromState(
+		rawModel: Record<string, unknown>,
+	): Model | null {
+		const modelId = typeof rawModel.id === "string" ? rawModel.id : undefined;
+		const provider =
+			typeof rawModel.provider === "string" ? rawModel.provider : undefined;
+		if (!modelId || !provider) return null;
+
+		// Try to find exact match in fetched models
+		const found = models.find(
+			(m) => m.id === modelId && m.provider === provider,
+		);
+		if (found) return found;
+
+		// If not in the models list, create a minimal Model from the raw object
+		const ctxWindow =
+			typeof rawModel.contextWindow === "number" ? rawModel.contextWindow : 0;
+		const maxTok =
+			typeof rawModel.maxTokens === "number" ? rawModel.maxTokens : 0;
+		return {
+			id: modelId,
+			name: rawModel.name
+				? String(rawModel.name)
+				: deriveModelName(modelId, provider),
+			provider,
+			contextWindow: ctxWindow,
+			maxTokens: maxTok,
+		};
+	}
+
+	// ── Process new RPC events from the hook ─────────────────────────────────
 	const [input, setInput] = useState("");
 	const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
 	const [closingState, setClosingState] = useState<
@@ -334,6 +374,30 @@ export default function ChatPanel() {
 		const newMessages = ws.messages.slice(processedCountRef.current);
 
 		for (const msg of newMessages) {
+			// ── Handle get_state responses to update currentModel ─────────
+			if (msg.kind === "rpc_response") {
+				const response = msg.response as Record<string, unknown>;
+				if (
+					response.type === "response" &&
+					response.command === "get_state" &&
+					!modelSetFromStateRef.current
+				) {
+					const data = response.data as
+						| { model?: Record<string, unknown> }
+						| undefined;
+					if (data?.model) {
+						const matched = matchModelFromState(data.model);
+						if (matched) {
+							switchModel(matched);
+							setSelectedModel(matched);
+							modelSetFromStateRef.current = true;
+						}
+					}
+					continue;
+				}
+				continue;
+			}
+
 			if (msg.kind !== "rpc_event") continue;
 
 			const event = msg.event as Record<string, unknown>;
