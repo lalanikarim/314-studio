@@ -1,6 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useApp } from "../store/AppContext";
-import { getProjectInfo } from "../services/api";
 import ProjectTree from "../components/ProjectTree";
 import FilePreview from "../components/FilePreview";
 import ChatPanel from "../components/ChatPanel";
@@ -9,15 +8,6 @@ export default function Workspace() {
 	const { setView, selectedFolder } = useApp();
 	const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 	const [chatExpanded, setChatExpanded] = useState(false);
-	const [runningCount, setRunningCount] = useState<number | null>(null);
-
-	// Fetch project info to show running session count
-	useEffect(() => {
-		if (!selectedFolder) return;
-		getProjectInfo(selectedFolder)
-			.then((info) => setRunningCount(info.running_count ?? 0))
-			.catch(() => setRunningCount(null));
-	}, [selectedFolder]);
 
 	return (
 		<div className="view-workspace">
@@ -42,11 +32,6 @@ export default function Workspace() {
 					</button>
 					<span className="view-workspace__project">
 						{selectedFolder?.split("/").filter(Boolean).pop()}
-						{runningCount !== null && runningCount > 0 && (
-							<span className="view-workspace__session-badge">
-								{runningCount} session{runningCount !== 1 ? "s" : ""}
-							</span>
-						)}
 					</span>
 				</div>
 				<div className="view-workspace__header-center">
@@ -55,7 +40,7 @@ export default function Workspace() {
 						onClick={() => setView("folders")}
 						title="Back to folder view"
 					>
-						Pi Coding Agent
+						314 Studio
 					</span>
 				</div>
 				<div className="view-workspace__header-right">

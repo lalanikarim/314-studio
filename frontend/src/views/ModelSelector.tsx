@@ -14,8 +14,7 @@ export default function ModelSelector() {
 		setView,
 		setSessionId,
 	} = useApp();
-	const { models, loading, error, sessionId, runningCount } =
-		useModels(selectedFolder);
+	const { models, loading, error, sessionId } = useModels(selectedFolder);
 	const [switching, setSwitching] = useState(false);
 	const [search, setSearch] = useState("");
 	const [selectedProviders, setSelectedProviders] = useState<string[]>([]);
@@ -128,15 +127,7 @@ export default function ModelSelector() {
 					</button>
 					<h1>Choose a Model</h1>
 					<p className="view-models__project">
-						<span>
-							Project: {selectedFolder?.split("/").filter(Boolean).pop()}
-						</span>
-						{runningCount !== null && runningCount > 0 && (
-							<span className="view-models__session-count">
-								{runningCount} session
-								{runningCount !== 1 ? "s" : ""} running
-							</span>
-						)}
+						Project: {selectedFolder?.split("/").filter(Boolean).pop()}
 					</p>
 				</div>
 

@@ -1,27 +1,23 @@
 [project]
-name = "fastapi-react-pi"
+name = "314-studio"
 version = "0.1.0"
-description = "FastAPI server for Pi coding agent with React frontend"
+description = "Backend API for 314 Studio browser workspace"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "fastapi>=0.115.0",
-    "uvicorn[standard]>=0.30.0",
-    "aiofiles>=24.1.0",
-    "pydantic>=2.8.0",
-    "httpx>=0.28.1",
-    "pytest>=8.0.0",
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.30.0",
+  "aiofiles>=24.1.0",
+  "pydantic>=2.8.0",
+  "httpx>=0.28.1",
+  "pytest>=8.0.0",
 ]
 
 [dependency-groups]
-dev = [
-    "ruff>=0.11.0",
-    "ty>=0.0.31",
-]
+dev = ["ruff>=0.11.0", "ty>=0.0.31"]
 
 [tool.ruff]
 line-length = 100
 target-version = "py313"
 
-[tool.ty]
-target-version = "3.13"
+# target-version removed: tool.ty doesn't support this key

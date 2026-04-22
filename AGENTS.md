@@ -1,4 +1,4 @@
-# FastAPI React Pi
+# 314 Studio
 
 FastAPI backend + React (TypeScript) frontend for the Pi coding agent.
 

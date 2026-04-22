@@ -1,1 +1,1 @@
-"""Integration test utilities for the web-pi backend."""
+"""Integration test utilities for 314 Studio."""
