@@ -47,16 +47,16 @@ FastAPI backend + React (TypeScript) frontend for the Pi coding agent.
 │   ├── test_flow1_browse_chat.py       # 12 tests
 │   ├── test_flow2_file_browse.py       # 7 tests
 │   ├── test_flow3_multi_session.py     # 7 tests
-│   ├── test_flow4_model_switch.py      # Pending
-│   ├── test_flow5_close_delete.py      # Pending
-│   ├── test_flow6_error_handling.py    # Pending
-│   ├── test_flow7_shutdown_cleanup.py  # Pending
-│   ├── test_flow8_model_operations.py  # Pending
+│   ├── test_flow4_model_switch.py      # 4 tests (all passing)
+│   ├── test_flow5_close_delete.py      # 4 tests (all passing)
+│   ├── test_flow6_error_handling.py    # 12 tests (all passing)
+│   ├── test_flow7_shutdown_cleanup.py  # 2 tests (all passing)
+│   ├── test_flow8_model_operations.py  # 6 tests (all passing)
 ├── docs/
 │   ├── design/                  # Architecture plans
-│   │   ├── integration-test-plan.md  # Test plan (flows 1–7)
+│   │   ├── integration-test-plan.md  # Test plan (flows 1–8)
 │   │   └── session-manager-plan.md   # Session manager design
-│   └── backend_status.md        # Implementation progress
+│   └── kb/                      # Knowledge base (RPC, WebSocket, testing)
 ├── AGENTS.md                    # This file — project reference
 ├── pyproject.toml               # Python deps (root shim)
 ├── pyproject.toml               # Python deps (backend/)
@@ -236,7 +236,7 @@ All project-scoped endpoints use `project_path` as a query parameter, not a rout
 - **Frontend root**: `frontend/src/`
 - **Tests root**: `tests/`
 - **Config**: `backend/pyproject.toml` (Python deps), `frontend/package.json` (Node deps)
-- **Docs**: `docs/`, `AGENTS.md`, `README.backend.md`
+- **Docs**: `docs/`, `AGENTS.md`, `README.backend.md`, `README.frontend.md`
 
 ## Current Status
 
@@ -248,7 +248,7 @@ All project-scoped endpoints use `project_path` as a query parameter, not a rout
 | **Frontend/Backend wiring** | ✅ Complete — real API calls replace mock data |
 | **WebSocket relay** | ✅ Complete — bidirectional JSON over `pi --rpc` stdin/stdout |
 | **Extension UI handling** | ✅ Complete — auto-ack fire-and-forget, forward interactive |
-| **Integration tests** | ✅ 76/76 passing (all 7 flows complete) |
+| **Integration tests** | ✅ 55/55 passing (all 8 flows complete) |
 | **Flow 4: Model Switch** | ✅ 4/4 passing (6 checks + 2 skip path) |
 | **Flow 5: Close/Delete** | ✅ 4/4 passing |
 | **Flow 6: Error Handling** | ✅ 12/12 passing |
