@@ -401,6 +401,8 @@ export default function ChatPanel() {
 
 	// Track if history load has been requested (ref to avoid effect cycles)
 	const historyRequestedRef = useRef(false);
+	// Track if history has been fully loaded (skip streaming finalizer once loaded)
+	const historyLoadedRef = useRef(false);
 
 	// Track if we've already set the model from get_state (to avoid duplicates)
 	const modelSetFromStateRef = useRef(false);
@@ -463,6 +465,7 @@ export default function ChatPanel() {
 			setToolCalls([]);
 			prevConnectionSeqRef.current = ws.connectionSequence;
 			historyRequestedRef.current = false;
+			historyLoadedRef.current = false;
 			processedCountRef.current = 0;
 		}
 	}, [ws.connectionSequence]);
@@ -516,6 +519,7 @@ export default function ChatPanel() {
 							.filter((m): m is DisplayMessage => m !== null);
 						if (history.length > 0) {
 							setDisplayMessages((prev) => [...prev, ...history]);
+							historyLoadedRef.current = true;
 						}
 					}
 					continue;
@@ -546,7 +550,7 @@ export default function ChatPanel() {
 			const event = msg.event as Record<string, unknown>;
 
 			// ── End-of-stream marker → finalize current turn ───────────────
-			if (isStreamFinalizer(event)) {
+			if (isStreamFinalizer(event) && !historyLoadedRef.current) {
 				if (streamingContent.trim() || toolCalls.length > 0) {
 					const toolLines = toolCalls
 						.map((tc) => {
