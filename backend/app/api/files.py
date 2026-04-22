@@ -61,11 +61,13 @@ async def list_files(
     # List files
     files = []
     for entry in target_path.iterdir():
-        if entry.name.startswith("."):
+        if entry.name.startswith(".") or entry.name.startswith("_"):
             continue
 
+        rel = str(entry.relative_to(target_path))
         file_info: dict = {
-            "path": str(entry.relative_to(target_path)),
+            "name": rel,
+            "path": rel,
             "isDirectory": entry.is_dir(),
         }
 

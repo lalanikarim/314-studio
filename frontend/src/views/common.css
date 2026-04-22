@@ -1,100 +1,196 @@
 /* ===== Common Button Styles ===== */
 .btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 8px 16px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  font-size: 14px;
-  font-weight: 500;
-  font-family: inherit;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  white-space: nowrap;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	padding: 8px 16px;
+	border: 1px solid transparent;
+	border-radius: 6px;
+	font-size: 14px;
+	font-weight: 500;
+	font-family: inherit;
+	cursor: pointer;
+	transition: all 0.15s ease;
+	white-space: nowrap;
 }
 
 .btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+	opacity: 0.5;
+	cursor: not-allowed;
 }
 
 .btn--primary {
-  background: #3b82f6;
-  color: #fff;
-  border-color: #3b82f6;
+	background: #3b82f6;
+	color: #fff;
+	border-color: #3b82f6;
 }
 
 .btn--primary:hover:not(:disabled) {
-  background: #2563eb;
-  border-color: #2563eb;
+	background: #2563eb;
+	border-color: #2563eb;
 }
 
 .btn--lg {
-  padding: 12px 24px;
-  font-size: 16px;
+	padding: 12px 24px;
+	font-size: 16px;
 }
 
 .btn--send {
-  background: #3b82f6;
-  color: #fff;
-  border-radius: 50%;
-  width: 36px;
-  height: 36px;
-  padding: 0;
-  flex-shrink: 0;
+	background: #3b82f6;
+	color: #fff;
+	border-radius: 50%;
+	width: 36px;
+	height: 36px;
+	padding: 0;
+	flex-shrink: 0;
 }
 
 .btn--send:hover:not(:disabled) {
-  background: #2563eb;
+	background: #2563eb;
+}
+
+/* ===== Abort button ===== */
+.btn--abort {
+	background: #ef4444;
+	color: #fff;
+	border-radius: 50%;
+	width: 36px;
+	height: 36px;
+	padding: 0;
+	flex-shrink: 0;
+}
+
+.btn--abort:hover:not(:disabled) {
+	background: #dc2626;
 }
 
 /* ===== Back button ===== */
 .view-models__back {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: none;
-  border: none;
-  color: #94a3b8;
-  font-size: 14px;
-  cursor: pointer;
-  padding: 4px 0;
-  font-family: inherit;
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	background: none;
+	border: none;
+	color: #94a3b8;
+	font-size: 14px;
+	cursor: pointer;
+	padding: 4px 0;
+	font-family: inherit;
 }
 
 .view-models__back:hover {
-  color: #e2e8f0;
+	color: #e2e8f0;
 }
 
 /* ===== Icon button ===== */
 .icon-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: none;
-  border: none;
-  color: #94a3b8;
-  cursor: pointer;
-  padding: 6px;
-  border-radius: 6px;
-  transition: all 0.15s ease;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	background: none;
+	border: none;
+	color: #94a3b8;
+	cursor: pointer;
+	padding: 6px;
+	border-radius: 6px;
+	transition: all 0.15s ease;
 }
 
 .icon-btn:hover {
-  background: #334155;
-  color: #e2e8f0;
+	background: #334155;
+	color: #e2e8f0;
 }
 
 /* ===== Model badge ===== */
 .view-workspace__model-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 12px;
-  background: #1e293b;
-  border: 1px solid #475569;
-  border-radius: 20px;
-  font-size: 12px;
-  color: #94a3b8;
+	display: inline-flex;
+	align-items: center;
+	padding: 4px 12px;
+	background: #1e293b;
+	border: 1px solid #475569;
+	border-radius: 20px;
+	font-size: 12px;
+	color: #94a3b8;
+}
+
+/* ===== Small button (for reconnect) ===== */
+.btn--sm {
+	padding: 4px 10px;
+	font-size: 12px;
+}
+
+/* ===== Reconnect button ===== */
+.btn--reconnect {
+	background: #64748b;
+	color: #fff;
+	border: 1px solid #475569;
+}
+
+.btn--reconnect:hover:not(:disabled) {
+	background: #475569;
+	border-color: #64748b;
+}
+
+/* ===== Chat error banner ===== */
+.chat-error-banner {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 6px 12px;
+	margin: 8px 12px 0;
+	background: #1c1217;
+	border: 1px solid #7f1d1d;
+	border-radius: 6px;
+	font-size: 12px;
+	color: #fca5a5;
+}
+
+/* ===== Compact button ===== */
+.btn--compact {
+	background: #0ea5e9;
+	color: #fff;
+	border: 1px solid #0284c7;
+}
+
+.btn--compact:hover:not(:disabled) {
+	background: #0284c7;
+	border-color: #0369a1;
+}
+
+/* ===== Close button ===== */
+.btn--close {
+	background: #f59e0b;
+	color: #fff;
+	border: 1px solid #d97706;
+}
+
+.btn--close:hover:not(:disabled) {
+	background: #d97706;
+	border-color: #b45309;
+}
+
+/* ===== Delete button ===== */
+.btn--delete {
+	background: #7f1d1d;
+	color: #fca5a5;
+	border: 1px solid #991b1b;
+}
+
+.btn--delete:hover:not(:disabled) {
+	background: #991b1b;
+	border-color: #b91c1c;
+	color: #fff;
+}
+
+/* ===== Session closing text ===== */
+.session-closing {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 12px;
+	color: #94a3b8;
+	padding: 4px 10px;
+	background: #1e293b;
+	border-radius: 6px;
 }

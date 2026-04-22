@@ -1,116 +1,70 @@
-# Pi RPC Integration - Bug Fixes TODO
+# TODO — Web-Pi Project
 
-Sorted by priority (most critical first).
+## Completed
+
+### Frontend
+- [x] Folder Selector view — browse directories, select project
+- [x] Model Selector view — pick model, create RPC session
+- [x] Workspace view — 3-column layout (tree, preview, chat)
+- [x] ProjectTree component — recursive file tree with lazy loading
+- [x] FilePreview component — file content viewer with line numbers
+- [x] `useFileContent` hook — read files via REST
+- [x] `useModels` hook — create RPC session, poll for real models, fallback
+- [x] `useWebSocket` hook — WS connection, reconnection, event routing, extension UI
+- [x] **ChatPanel wired to WebSocket** — real `ws.send()` replaces mock replies
+- [x] **Streaming content** — accumulate `rpc_event` text in real-time
+- [x] **Tool call tracking** — display tool names as badges during streaming
+- [x] **Model switcher** — send `set_model` RPC on model change
+- [x] **Connection status** — indicator + label in header
+- [x] **Pending UI requests** — banner with accept/cancel buttons
+- [x] CSS for streaming cursor, tool call badges, UI prompt banner
+
+### Backend
+- [x] All REST endpoints (browse, projects, sessions, models, files)
+- [x] SessionManager — spawn/manage `pi --rpc` processes
+- [x] WebSocket relay — bidirectional JSON over `pi --rpc` stdin/stdout
+- [x] Extension UI handling — auto-ack fire-and-forget, forward interactive
+
+### Tests
+- [x] 76/76 passing across 7 flows
+- [x] Flow 1: Browse + Chat
+- [x] Flow 2: File Browse
+- [x] Flow 3: Multi-Session
+- [x] Flow 4: Model Switch
+- [x] Flow 5: Close/Delete
+- [x] Flow 6: Error Handling
+- [x] Flow 7: Shutdown Cleanup
 
 ---
 
-## ✅ Fixed
+## Pending
 
-- [x] **#1 Fix RPC launch command** (`chat.py`) — `--rpc` → `--mode rpc`
-  - Confirmed by `pi --help`: the correct flag is `--mode <mode>`
+### Near-term
+- [x] **Display tool call args/results + collapsible** — enhanced `extractToolCall` to pull args/result from rpc_events; AssistantMessage renders collapsible tool call sections (default collapsed) with expand-all toggle
+- [x] **Markdown rendering in chat responses** — added react-markdown + remark-gfm; assistant messages rendered as rich markdown (code blocks, tables, lists, blockquotes)
+- [x] **Multi-turn message history / clear chat** — added clear chat button in ChatPanel header that resets all message/tool-call state
+- [x] **WS URL uses `projectFolder` but backend expects `session_id`** — already correct: useWebSocket constructs `/api/projects/ws?session_id=...`
+- [ ] **Skip model fetch from server if already cached** — `useModels` already has localStorage cache (30min TTL) but still creates a session and polls in background; could optimize to skip session creation when cache is fresh
+- [ ] **Model refresh button in ModelSelector** — add a refresh/reload button that forces a new session and re-polls models from Pi, bypassing the cache
+- [x] **Provider filter default logic: inverted** — removed auto-select-all effect; filter now applies whenever selectedProviders > 0 (empty = all shown)
+- [x] **Chat input stays disabled after agent end event** — added `agent_end` to isStreamFinalizer check so streaming state clears properly
+- [x] **Model selection doesn't work from chat view** — wired handleSwitchModel to call REST switchModel (persist) + WS set_model (immediate effect)
+- [x] **Chat message ordering** — messages are now interleaved by timestamp (oldest first); user prompts and assistant responses alternate naturally; auto-scroll to latest on new messages
+- [x] **Expandable chat panel** — added expand button in ChatPanel header; when expanded, sidebar and preview are hidden, chat takes full width
+- [x] **Populate chat history on workspace load** — sends `get_messages` RPC when WS connects to load historical conversation messages
 
-- [x] **#2 Fix session.py** — Replace stub data with real RPC calls
-  - `new_session` RPC command to create sessions
-  - `get_state` RPC command to retrieve session info
-  - `set_session_name` RPC command for naming
+### Medium-term
+- [ ] **Typing indicator for streaming** — show "Pi is thinking" during the initial delay before first event arrives
+- [ ] **Session persistence** — remember last active project/model across page reloads
+- [ ] **Keyboard shortcuts** — Ctrl/Cmd+K to focus input, Escape to close dropdown
+- [ ] **File search** — add fuzzy search to the project tree
+- [ ] **Tabbed file preview** — open multiple files in tabs
+- [ ] **Error boundary** — wrap components in React ErrorBoundary for graceful degradation
+- [ ] **Toast notifications** — display API errors, session errors to the user
+- [ ] **Dark/light theme toggle**
 
-- [x] **#3 Fix chat.py message wrapping** — Wrap messages in `prompt` command envelope
-  - Plain text messages → `{"type":"prompt","id":"<uuid>","message":"..."}`
-  - Structured messages routed by `type` field
-
-- [x] **#4 Fix chat.py request ID tracking** — Auto-generate UUIDs for each command
-  - `send_rpc_command()` attaches `id` via `uuid.uuid4()`
-  - Responses echo back the same `id` for matching
-
-- [x] **#5 Fix files.py route conflict** — Source of 404 bug
-  - Changed `/{file_path:.+}` to `/files/read/{file_path:path}`
-  - `path` type annotation prevents FastAPI route disambiguation issues
-  - Removed `project_name` double-binding
-
-- [x] **#6 Handle extension_ui_request events** (`chat.py`)
-  - `extension_ui_request` → `{"kind":"extension_ui_request", ...}`
-  - `extension_ui_response` → `{"kind":"extension_ui_response", ...}`
-
-- [x] **#7 Fix model.py** — RPC-aware model management
-  - `list_models()` queries RPC if active, falls back to defaults
-  - `switch_model()` sends `set_model` RPC command
-  - Helper: `_parse_rpc_models()` to parse RPC response format
-
-- [x] **#8 Fix core.utils.py** — Removed dead code (used non-existent `pi-rpc` binary)
-  - Not imported anywhere, confirmed safe to delete
-
-- [x] **#9 Fix WebSocket path** — removed duplicate `project_name` from route
-  - Route changed from `/ws/rpc/{project_name}` to `/ws`
-  - Full path: `/api/projects/{project_name}/ws` (clean)
-
-- [x] **#10 Distinguish response vs event events** (`chat.py`)
-  - Responses: forwarded as-is with `{"type":"response"}`
-  - Events: wrapped as `{"kind":"rpc_event", "event": {...}}`
-
-- [x] **#11 Forward extension_ui events as typed messages** (`chat.py`)
-  - All Pi output tagged with `kind` field
-  - `kind: "extension_ui_request" | "extension_ui_response" | "rpc_event"`
-
-## ✅ Integration Tests (passing)
-
-- [x] `backend/integration_test_rpc.py` — 42 assertions, all passing against live `pi --mode rpc`
-  - Warm-up phase triggers extension loading before test sequence
-  - Single `event_reader` task owns stdout; `send_command` writes stdin + waits on queue
-  - Auto-replies to `extension_ui_request` so Pi doesn't block
-  - Covers: `get_available_models`, `set_model`, `get_state`, `get_messages`, `get_session_stats`, `get_commands`, `set_thinking_level`, `set_session_name`, prompt+event-streaming, extension_ui handling, message wrapping, model parsing
-
-## Remaining
-
-### Phase 1: Wire Frontend → Backend (Biggest Impact)
-
-#### 1.1 Replace `mockData.ts` with real API calls
-- [x] `FolderSelector` → `GET /api/browse` to list real folders from `~/Projects`
-- [x] `ModelSelector` → launches `pi --mode rpc` via `POST /sessions`, polls `GET /models`
-- [x] `ProjectTree` → `GET /api/projects/files?project_path=...&path=...` for directory expansion
-- [x] `FilePreview` → `GET /api/projects/files/read?project_path=...&file_path=...` for file content
-- [x] `useFileContent` hook → real fetch (via `readFile`)
-- [x] `useModels` hook → real fetch with pi init + polling fallback
-
-#### 1.2 Backend route scheme
-- [x] All project-scoped endpoints now use `project_path` query param instead of `{project_name}` route param
-- [x] Route prefix changed from `/api/projects/{project_name}` to `/api/projects`
-- [x] Fixed `StreamWriter.write()` — it's sync, only `drain()` is async (was causing 500 on session create)
-- [x] Fixed `project_path` resolution matching `browse.py` / `project.py` (uses `Path.home() / "Projects"`)
-- [x] Fixed `files.py` to return `entry.relative_to(target_path)` (was returning project-root-relative paths)
-- [x] `FolderSelector` stores full path (not just project name) for backend query params
-- [x] `ProjectTree` path construction fixed for nested items
-- [ ] WebSocket endpoint: `GET /api/projects/ws?project_path=...` (needs frontend implementation)
-
-#### 1.2 Add WebSocket client to `ChatPanel.tsx`
-- [ ] Connect to `ws://localhost:8000/api/projects/{project_name}/ws` on workspace mount
-- [ ] Send `{kind: "chat", message: "..."}` for user messages
-- [ ] Render `kind: "rpc_event"` messages as streaming assistant responses
-- [ ] Handle `kind: "response"` for command responses (model switch, state, etc.)
-- [ ] Handle `kind: "extension_ui_request"` for interactive prompts
-- [ ] Send warm-up command (`get_session_stats`) on connect
-- [ ] Handle `kind: "extension_ui_response"` auto-acks
-- [ ] Add connection status indicator (connected/disconnecting/error)
-- [ ] Add reconnection logic for WebSocket drops
-
-### Phase 2: Fix Backend Gaps
-
-#### 2.1 Fix session API to use real RPC data
-- [ ] `GET /sessions` → return real session info from RPC `get_state`
-- [ ] `GET /sessions/{id}` → return data from `get_state` response (sessionName, model, thinkingLevel, etc.)
-- [ ] Add proper session ID tracking in the RPC process mapping
-- [ ] `POST /sessions` → wire `new_session` + `set_session_name` + `set_model` fully
-
-#### 2.2 Add CORS middleware to `main.py`
-- [ ] `fastapi.middleware.cors.CORSMiddleware` for dev (frontend :5173 → backend :8000)
-- [ ] Allow origins, methods, headers
-
-### Phase 3: Polish
-
-- [ ] Implement extension UI dialog in frontend (`select`, `confirm`, `input`, `editor` methods)
-- [ ] Add loading states and error handling across all components
-- [ ] Add rate limiting and connection pooling
-- [ ] Session cleanup / auto-expunge logic
-- [ ] Backend unit tests for RPC integration
-- [ ] Export session (`export_html`, `get_messages`) via WebSocket
-- [ ] File tree search/filter
-- [ ] Model switching from UI actually calls `set_model` via WebSocket
+### Stretch
+- [ ] **Code diff view** — when Pi modifies files, show diffs inline
+- [ ] **Voice input** — Web Speech API for voice-to-text
+- [ ] **Collaboration** — multiple users in the same session
+- [ ] **Plugin system** — user-defined commands/shortcuts

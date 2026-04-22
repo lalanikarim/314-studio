@@ -27,7 +27,7 @@ async def browse(path: Optional[str] = None) -> List[dict]:
 
     dirs = []
     for entry in sorted(target.iterdir(), key=lambda e: e.name.lower()):
-        if entry.is_dir() and not entry.name.startswith("."):
+        if entry.is_dir() and not entry.name.startswith(".") and not entry.name.startswith("_"):
             dirs.append(
                 {
                     "path": str(entry),

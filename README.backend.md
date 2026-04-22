@@ -1,110 +1,94 @@
-# FastAPI + React Pi Integration
+# Backend Implementation Status
 
-This is the implementation of the FastAPI backend for the Pi coding agent integration with React frontend.
+## Architecture
 
-## Backend Architecture
+**REST = metadata, WebSocket = all Pi RPC actions.**
 
-The backend provides RESTful APIs for:
-- Project browsing and management
-- Session creation and management
-- File system navigation
-- Model configuration
-- Chat interface with Pi agent
+- Each session runs its own `pi --mode rpc` process (managed by `SessionManager`)
+- Sessions outlive WebSocket connections — disconnect/reconnect is painless
+- Model switching: REST updates metadata, WS relay sends the actual `set_model` command
 
-## API Overview
+## Implemented
 
-### Projects
-```
-GET    /api/projects              - List available projects
-POST   /api/projects/{name}/start - Initialize a new project
-```
+### Session Manager (`backend/app/session_manager.py`)
 
-### Sessions
-```
-GET     /api/projects/{proj}/sessions        - List sessions
-POST    /api/projects/{proj}/sessions        - Create session
-GET     /api/projects/{proj}/sessions/{id}   - Get session details
-```
+| Feature | Status |
+|---------|--------|
+| `launch_session(project_path, model_id, name)` | ✅ Spawns `pi --mode rpc`, waits for ready |
+| `close_session(session_id)` | ✅ Compact (5s timeout) → abort → terminate → remove |
+| `delete_session(session_id)` | ✅ Abort → terminate → remove (no compact) |
+| `switch_model(session_id, model_id, provider)` | ✅ Updates metadata only |
+| `get_model_id(session_id)` | ✅ Reads configured model for WS relay |
+| `connect_ws / disconnect_ws` | ✅ Tracks last connected WebSocket |
+| `get_session / get_sessions / get_running_instances` | ✅ Query methods |
+| `_send_command_internal` | ✅ JSON line protocol with Future-based response matching |
+| stdout reader | ✅ Routes responses to Futures, queues events in buffer |
+| Extension UI handling | ✅ Auto-ack fire-and-forget, forward interactive to event buffer |
+| Cleanup task | ✅ Removes expired Futures every 30s |
 
-### Files
-```
-GET     /api/projects/{proj}/files          - List files
-GET     /api/projects/{proj}/files/{path}   - Read file contents
-```
+### API Endpoints
 
-### Models
-```
-GET     /api/models              - List available models
-POST    /api/models/{session}/model - Switch model
-```
+| Module | Endpoints | Status |
+|--------|-----------|--------|
+| `browse.py` | `GET /api/browse?path=...` | ✅ Recursive directory listing |
+| `project.py` | `GET /api/` | ✅ List project names |
+| | `GET /api/projects/info?project_path=...` | ✅ Project + sessions |
+| | `POST /api/projects/?project_path=...` | ✅ Create session |
+| `session.py` | `POST /api/projects/{id}/close` | ✅ Compact + terminate |
+| | `POST /api/projects/{id}/delete` | ✅ Abort + terminate |
+| | `POST /api/projects/{id}/model` | ✅ Switch model metadata |
+| `files.py` | `GET /api/projects/files?project_path=...&path=...` | ✅ List files |
+| | `GET /api/projects/files/read?project_path=...&file_path=...` | ✅ Read file |
+| `model.py` | `GET /api/models/?session_id=...` | ✅ RPC-aware with fallback defaults |
+| `chat.py` | `WS /api/projects/ws?session_id=...` | ✅ Bidirectional JSON relay |
 
-### Chat
-```
-GET     /api/projects/{proj}/sessions/{id}/chat  - Get chat history
-POST    /api/projects/{proj}/sessions/{id}/chat  - Send message
-WebSocket /api/projects/{proj}/ws/chat/{id}    - Real-time chat
-```
+### Session Record Fields
 
-## Running the Backend
+Only serializable fields are included in API responses. Runtime-only fields are excluded:
 
+| Field | Included in API? | Notes |
+|-------|-----------------|-------|
+| `session_id` | ✅ | `sess_<hex>` |
+| `project_path` | ✅ | Absolute path |
+| `name` | ✅ | Human-readable |
+| `model_id` | ✅ | Configured model |
+| `status` | ✅ | running / closing / stopped |
+| `pid` | ✅ | Process ID |
+| `created_at` | ✅ | ISO timestamp |
+| `ws_session_id` | ✅ | Last connected WS ID |
+| `ws_connected` | ✅ | Boolean |
+| `process` | ❌ | `asyncio.Process` — excluded |
+| `stdin` / `stdout` | ❌ | Streams — excluded |
+| `pending_requests` | ❌ | Futures dict — excluded |
+| `event_buffer` | ❌ | Queue — excluded |
+| `stdout_task` | ❌ | Task — excluded |
+| `ws_to_stdin_queue` | ❌ | Queue — excluded |
+
+## Tests
+
+76 integration tests passing across all 8 flows:
+
+| Flow | File | Tests | Status |
+|------|------|-------|----------|
+| 1: Browse & Chat | `test_flow1_browse_chat.py` | 12 | ✅ All passing |
+| 2: File Browse | `test_flow2_file_browse.py` | 7 | ✅ All passing |
+| 3: Multi Session | `test_flow3_multi_session.py` | 7 | ✅ All passing |
+| 4: Model Switch | `test_flow4_model_switch.py` | 4 | ✅ All passing (6 checks + 2 skip path) |
+| 5: Close/Delete | `test_flow5_close_delete.py` | 4 | ✅ All passing |
+| 6: Error Handling | `test_flow6_error_handling.py` | 12 | ✅ All passing |
+| 7: Shutdown Cleanup | `test_flow7_shutdown_cleanup.py` | 3 | ✅ All passing |
+| 8: Model Operations | `test_flow8_model_operations.py` | 27 | ✅ All passing (fetch, verify, switch, chat before/after) |
+
+Run tests:
 ```bash
-# Install dependencies
-cd backend
-uv install
-
-# Start the server
-uv run python app/main.py
-
-# Server will be available at http://localhost:8000
-# API documentation at http://localhost:8000/docs
+cd tests
+API_BASE=http://127.0.0.1:8000 WS_BASE=ws://127.0.0.1:8000 uv run pytest -v
 ```
 
-## Testing
+## Known Design Decisions
 
-```bash
-# Run tests
-cd backend
-uv run pytest
-
-# Or run specific tests
-uv run python test_api.py
-```
-
-## Development Setup
-
-1. Install Python 3.13+
-2. Install Node.js 20+ for the React frontend
-3. Clone this repository
-4. Run `uv install` in the backend directory
-5. Run `npm install` in the frontend directory
-
-## Technical Notes
-
-- Uses FastAPI with async support
-- Session data stored as JSONL files
-- Pi agent communicates via stdin/stdout (JSONL)
-- WebSocket for real-time chat streaming
-- File access restricted to project directory
-
-## Requirements Compliance
-
-This implementation follows the architecture specified in @docs/fastapi-react-pi-integration-plan.md with support for:
-- 🔄 Project selection
-- 🔄 Session management
-- 🔄 File tree with viewer
-- 🔄 Chat console
-- 🔄 Model switching
-- 🔄 Session persistence via JSONL
-- 🔄 Pi RPC integration plan
-- 🔄 Security via path validation
-
-## Known Issues
-
-- File reading endpoint returns 404 (path parameter routing issue)
-- WebSocket lacks actual Pi RPC integration (uses stub responses)
-- No rate limiting implemented
-- No session cleanup/expunction logic
-
-## Progress
-
-See @docs/backend_status.md for detailed progress tracking.
+1. **Session creation doesn't auto-send RPC commands** — model selection and session naming happen when the client connects via WebSocket. This keeps the REST API lightweight.
+2. **Model switch is metadata-only** — the actual `set_model` RPC is sent by the WS relay when the client reconnects, ensuring all Pi actions go through WS.
+3. **Compact has a 5s timeout** — Pi may not respond to `compact`, so we don't block indefinitely. The session is still terminated regardless.
+4. **One WS per session** — only the latest WebSocket connection receives the event relay. Previous connections are ignored.
+5. **All paths validated** — file browsing is restricted to the project directory. Path traversal (`../`) returns 403.
