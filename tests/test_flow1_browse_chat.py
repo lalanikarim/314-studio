@@ -16,8 +16,6 @@ import httpx
 
 from test_utils import (
     API_BASE,
-    FLAT_DIR,
-    NESTED_DIR,
     TEST_MODEL_ID,
     TESTS_DIR,
     TIMEOUT,
@@ -38,38 +36,71 @@ TEST_MODEL_PROVIDER = os.environ.get("TEST_MODEL_PROVIDER", "vllm")
 
 
 async def test_browse_directory(client, result):
-    """T1.1 — Browse directories (recursive)."""
+    """T1.1 — Browse directories (recursive).
+
+    Creates a temporary fixture directory with:
+      flat/           (1 file)
+      nested/
+        subdir1/      (1 file)
+        subdir2/      (1 file)
+    Cleans up the temp dir after the test.
+    """
+    import shutil
+    import tempfile
+
     print("\n  T1.1 Browse directories")
 
-    # Browse root tests dir
-    resp = await http_get(client, "/api/browse", params={"path": str(TESTS_DIR)})
-    if resp.status_code != 200:
-        result.failed += 1
-        result.failures.append("T1.1a: Browse returned non-200")
-        return
+    # ── Setup: create temp fixture directory ──────────────────────────────
+    tmp_dir = tempfile.mkdtemp(prefix="browse_test_")
+    try:
+        # flat: 1 subfolder with 1 file
+        flat_dir = os.path.join(tmp_dir, "flat")
+        os.makedirs(flat_dir, exist_ok=True)
+        with open(os.path.join(flat_dir, "main.py"), "w") as f:
+            f.write("def main(): pass\n")
 
-    data = resp.json()
-    names = {d["name"] for d in data}
-    result.check("flat" in names, "Root contains 'flat'")
-    result.check("nested" in names, "Root contains 'nested'")
+        # nested: 2 subfolders, each with 1 file
+        nested_dir = os.path.join(tmp_dir, "nested")
+        os.makedirs(os.path.join(nested_dir, "subdir1"), exist_ok=True)
+        os.makedirs(os.path.join(nested_dir, "subdir2"), exist_ok=True)
+        with open(os.path.join(nested_dir, "subdir1", "app.py"), "w") as f:
+            f.write("def app(): pass\n")
+        with open(os.path.join(nested_dir, "subdir2", "config.py"), "w") as f:
+            f.write("def config(): pass\n")
 
-    # Browse flat subdir
-    resp = await http_get(client, "/api/browse", params={"path": str(FLAT_DIR)})
-    if resp.status_code != 200:
-        result.failed += 1
-        result.failures.append("T1.1b: Browse flat returned non-200")
-        return
-    data = resp.json()
-    result.check(isinstance(data, list), f"flat dir returns list, got {len(data)} items")
+        # ── T1.1a — Browse root ───────────────────────────────────────────
+        resp = await http_get(client, "/api/browse", params={"path": tmp_dir})
+        if resp.status_code != 200:
+            result.failed += 1
+            result.failures.append("T1.1a: Browse returned non-200")
+            return
 
-    # Browse nested/src
-    resp = await http_get(client, "/api/browse", params={"path": str(NESTED_DIR / "src")})
-    if resp.status_code != 200:
-        result.failed += 1
-        result.failures.append("T1.1c: Browse nested/src returned non-200")
-        return
-    data = resp.json()
-    result.check(len(data) >= 2, f"nested/src has >= 2 items, got {len(data)}")
+        data = resp.json()
+        names = {d["name"] for d in data}
+        result.check("flat" in names, "Root contains 'flat'")
+        result.check("nested" in names, "Root contains 'nested'")
+
+        # ── T1.1b — Browse flat ───────────────────────────────────────────
+        resp = await http_get(client, "/api/browse", params={"path": flat_dir})
+        if resp.status_code != 200:
+            result.failed += 1
+            result.failures.append("T1.1b: Browse flat returned non-200")
+            return
+        data = resp.json()
+        result.check(isinstance(data, list), f"flat dir returns list, got {len(data)} items")
+
+        # ── T1.1c — Browse nested (should have 2 subdirs) ─────────────────
+        resp = await http_get(client, "/api/browse", params={"path": nested_dir})
+        if resp.status_code != 200:
+            result.failed += 1
+            result.failures.append("T1.1c: Browse nested returned non-200")
+            return
+        data = resp.json()
+        result.check(len(data) >= 2, f"nested has >= 2 subdirs, got {len(data)}")
+
+    finally:
+        # ── Teardown: remove temp dir and all contents ────────────────────
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 async def test_list_projects(client, result):

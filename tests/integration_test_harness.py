@@ -7,7 +7,7 @@ Usage:
     cd tests && uv run python integration_test_harness.py --flows chat   # T1.x only
     cd tests && uv run python integration_test_harness.py --flows file-browse  # T2.x only
 
-The backend must already be running on :8765 before invoking the harness.
+The backend must already be running on :8000 before invoking the harness.
 
 Environment variables:
     TEST_MODEL_ID / TEST_MODEL_PROVIDER    — primary model (required)

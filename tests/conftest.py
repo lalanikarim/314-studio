@@ -106,8 +106,8 @@ def result() -> TestResult:
 
 # ── Config (env-overridable) ─────────────────────────────────────────────────
 
-API_BASE = os.environ.get("API_BASE", "http://127.0.0.1:8765")
-WS_BASE = os.environ.get("WS_BASE", "ws://127.0.0.1:8765")
+API_BASE = os.environ.get("API_BASE", "http://127.0.0.1:8000")
+WS_BASE = os.environ.get("WS_BASE", "ws://127.0.0.1:8000")
 TESTS_DIR = Path(
     os.environ.get("TESTS_DIR", str(Path.home() / "Projects" / "web-pi-integration-tests"))
 )
