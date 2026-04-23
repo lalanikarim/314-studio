@@ -1,0 +1,22 @@
+# Codeowners for web-pi
+# See https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Backend (Python/FastAPI)
+/backend       @karim
+/backend/app    @karim
+
+# Frontend (React/TypeScript)
+/frontend       @karim
+/frontend/src   @karim
+
+# Tests
+/tests          @karim
+
+# Docs
+/docs           @karim
+
+# Root config files
+pyproject.toml  @karim
+uv.lock         @karim
+package.json    @karim
+bun.lock        @karim
