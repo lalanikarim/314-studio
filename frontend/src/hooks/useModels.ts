@@ -1,11 +1,23 @@
 import { useState, useEffect, useRef } from "react";
 import type { Model } from "../types";
 import { createSession, listModels } from "../services/api";
+import type { ModelConfig } from "../services/api";
 
 /** Derive a display name from provider + model id, e.g. "Anthropic – claude-sonnet-4-20250514" */
 function deriveModelName(modelId: string, provider: string): string {
 	const providerName = provider.charAt(0).toUpperCase() + provider.slice(1);
 	return `${providerName} – ${modelId}`;
+}
+
+/** Convert a ModelConfig into the frontend Model type */
+function mapModelConfig(config: ModelConfig): Model {
+	return {
+		id: config.id,
+		name: deriveModelName(config.id, config.provider),
+		provider: config.provider,
+		contextWindow: config.contextWindow ?? 0,
+		maxTokens: config.maxTokens ?? 0,
+	};
 }
 
 const PI_INIT_TIMEOUT_MS = 15_000; // wait up to 15s for pi to initialize
@@ -57,9 +69,10 @@ interface UseModelsResult {
  * Fetch available models from Pi RPC.
  *
  * Flow:
- * 1. If projectPath is provided, create a Pi RPC session (unless existingSessionId is provided)
- * 2. Poll `/api/models?session_id=...` until models arrive or timeout
- * 3. Fall back to defaults on error or timeout
+ * 1. Check localStorage cache (instant, survives page reload)
+ * 2. Call `/api/models` WITHOUT session → uses server-side cache (instant, no session needed)
+ * 3. Create Pi RPC session + WebSocket for actual communication
+ * 4. RPC polling as final fallback (cache may be stale)
  *
  * @param projectPath — optional project folder path (triggers session creation)
  * @param existingSessionId — optional existing session id to use instead of creating one
@@ -102,18 +115,50 @@ export function useModels(
 				return;
 			}
 
-			// Step 0: Check cache first
+			// Step 0: Check localStorage cache first
 			const cachedModels = getCachedModels();
-			let useCache = false;
 			if (cachedModels && cachedModels.length > 0) {
 				if (!abortControllerRef.current?.signal.aborted) {
 					setModels(cachedModels);
 					setLoading(false);
-					useCache = true;
+					return; // ✅ immediate — no session needed
 				}
 			}
 
-			// Step 1: Launch pi RPC session (model is set later via WS `set_model` on connect)
+			// Step 1: Fetch models WITHOUT creating a session.
+			// The server serves cached models from `pi --list-models` populated at startup.
+			// This is instant — no subprocess, no session required.
+			try {
+				const serverModels = await listModels(); // no session_id → uses cache
+				if (
+					serverModels &&
+					serverModels.length > 0 &&
+					!abortControllerRef.current?.signal.aborted
+				) {
+					// Deduplicate by provider:id composite key
+					const seen = new Set<string>();
+					const mapped: Model[] = [];
+					for (const m of serverModels) {
+						const key = `${m.provider}:${m.id}`;
+						if (!seen.has(key)) {
+							seen.add(key);
+							mapped.push(mapModelConfig(m));
+						}
+					}
+					if (!abortControllerRef.current?.signal.aborted) {
+						setModels(mapped);
+						cacheModels(mapped);
+						setLoading(false);
+						setError(null);
+					}
+				}
+			} catch {
+				// Server cache unavailable — ignore, will fall back to RPC
+			}
+
+			// Step 2: Launch pi RPC session (model is set later via WS `set_model` on connect)
+			// This happens regardless of whether models were already loaded.
+			// We need the session for actual communication with Pi.
 			let activeSessionId = existingSessionId || sessionId;
 			if (!launchedRef.current && !existingSessionId) {
 				launchedRef.current = true;
@@ -126,7 +171,7 @@ export function useModels(
 					}
 				} catch {
 					if (!abortControllerRef.current?.signal.aborted) {
-						setError("Failed to connect to Pi. Could not fetch models.");
+						setError("Failed to connect to Pi. No models available.");
 						setLoading(false);
 					}
 					return;
@@ -141,11 +186,7 @@ export function useModels(
 				return;
 			}
 
-			// Step 2: Poll for real models from Pi (via session)
-			// Skip polling if we already have cached models
-			if (useCache) {
-				return;
-			}
+			// Step 3: RPC polling as final fallback (use cached models if available)
 			const deadline = Date.now() + PI_INIT_TIMEOUT_MS;
 			while (
 				Date.now() < deadline &&
@@ -165,13 +206,7 @@ export function useModels(
 							const key = `${m.provider}:${m.id}`;
 							if (!seen.has(key)) {
 								seen.add(key);
-								mapped.push({
-									id: m.id,
-									name: deriveModelName(m.id, m.provider),
-									provider: m.provider,
-									contextWindow: m.contextWindow || 0,
-									maxTokens: m.maxTokens || 0,
-								});
+								mapped.push(mapModelConfig(m));
 							}
 						}
 						if (!abortControllerRef.current?.signal.aborted) {

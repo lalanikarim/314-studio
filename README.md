@@ -72,7 +72,7 @@ bun dev                                 # :5173
 Navigate to **http://localhost:5173** and:
 
 1. **Select a folder** — browse any project directory on your filesystem
-2. **Pick a model** — Pi will list available models via RPC
+2. **Pick a model** — available models are fetched from cache (no session needed yet)
 3. **Start chatting** — sessions run as separate `pi --rpc` processes
 
 ## Screenshots
@@ -172,7 +172,7 @@ delete(abort)  → stopped (process terminated, record removed)
 ### Models
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/models/` | List models (queries RPC if `session_id` provided) |
+| `GET` | `/api/models/` | List available models — cached at startup (no session required) |
 
 ### WebSocket
 | Endpoint | Description |

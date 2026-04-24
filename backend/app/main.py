@@ -32,6 +32,10 @@ async def lifespan(app: FastAPI):
     """Startup and shutdown events for the application."""
     # Startup
     await session_manager.initialize()
+    await session_manager.fetch_available_models()
+    if session_manager._cached_models:
+        logger = __import__("logging").getLogger(__name__)
+        logger.info("Cached %d models at startup", len(session_manager._cached_models))
     session_manager.start_cleanup_task()
     yield
     # Shutdown

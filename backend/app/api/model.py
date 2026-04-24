@@ -1,8 +1,11 @@
 """
 Model API endpoints for managing available models.
 
-Queries the session's Pi RPC process for model information when a session
-is active. Model switching is handled via session_manager.py.
+Models are cached at server startup via ``pi --list-models``.
+This endpoint returns the cached list without requiring an active session.
+
+For backward compatibility, when a `session_id` is provided and no cache is
+available, it falls back to querying the session's Pi RPC process.
 """
 
 from typing import List, Optional
@@ -43,28 +46,38 @@ def _parse_rpc_models(raw: Optional[dict]) -> List[ModelConfig]:
 
 @router.get("/", response_model=List[ModelConfig])
 async def list_models(
-    session_id: str = Query(..., description="Session to query for models"),
+    session_id: Optional[str] = Query(
+        None, description="Session to query (optional – uses cache if available)"
+    ),
 ) -> List[ModelConfig]:
     """
-    List all available models via the session's Pi RPC process.
+    List all available models.
 
-    Sends `get_available_models` through SessionManager and waits
-    for the response synchronously.
+    Primary source is the server-side cache populated at startup via
+    ``pi --list-models``.  A `session_id` is accepted for backward
+    compatibility — if no cache is available the RPC path is used.
+
+    Returns an empty list when neither cache nor session is available.
     """
-    record = session_manager.get_session(session_id)
-    if not record or record.status != "running" or not record.stdin:
-        raise HTTPException(
-            status_code=404, detail=f"Session {session_id} not found or not running"
-        )
+    # 1. Return cached models (no session needed)
+    if session_manager._cached_models:
+        return [ModelConfig(**m) for m in session_manager._cached_models]
 
-    try:
-        result = await session_manager._send_command_internal(
-            record, {"type": "get_available_models"}, timeout=30.0
-        )
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Pi RPC failed: {exc}")
+    # 2. Cache not ready yet — fall back to RPC if session_id provided
+    if session_id:
+        record = session_manager.get_session(session_id)
+        if record and record.status == "running" and record.stdin:
+            try:
+                result = await session_manager._send_command_internal(
+                    record, {"type": "get_available_models"}, timeout=30.0
+                )
+            except Exception as exc:
+                raise HTTPException(status_code=502, detail=f"Pi RPC failed: {exc}")
 
-    return _parse_rpc_models(result.get("result", result.get("data", result)))
+            return _parse_rpc_models(result.get("result", result.get("data", result)))
+
+    # 3. Nothing available
+    return []
 
 
 # ---------------------------------------------------------------------------

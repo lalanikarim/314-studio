@@ -138,6 +138,116 @@ class SessionManager:
             await self._safe_terminate(sid, "shutdown")
 
     # ------------------------------------------------------------------
+    # ----------------------------------------
+    # Model cache
+    # ----------------------------------------
+
+    _cached_models: list[dict] | None = None  # class-level cache of parsed models
+
+    async def fetch_available_models(self) -> list[dict] | None:
+        """
+        Run ``pi --list-models`` and parse the tabular output.
+        Result is cached at class level so repeated calls are O(1).
+
+        Returns the list of model dicts on success, ``None`` on failure.
+        """
+        if self._cached_models is not None:
+            return self._cached_models
+
+        proc = await asyncio.create_subprocess_exec(
+            "pi",
+            "--list-models",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=15.0)
+        except asyncio.TimeoutError:
+            logger.warning("pi --list-models timed out at startup")
+            return None
+
+        if proc.returncode != 0:
+            stderr_text = stderr.decode(errors="replace")
+            logger.warning(
+                "pi --list-models failed (exit %d): %s",
+                proc.returncode,
+                stderr_text[:200],
+            )
+            return None
+
+        raw = stdout.decode()  # model list goes to stdout
+        if not raw.strip():
+            logger.warning("pi --list-models produced no output")
+            return None
+
+        return self._parse_models_output(raw)
+
+    @staticmethod
+    def _parse_models_output(text: str) -> list[dict] | None:
+        """Parse the tabular output of ``pi --list-models``.
+
+        Output format (space-aligned columns):
+            provider   model   context   max-out   thinking   images
+
+        Model names can contain colons and slashes (e.g. ``hf.co/unsloth/...``),
+        so we compute the model field from the left while parsing context from
+        the right: ``parts[1:-4]`` covers the model field.
+        """
+        models: list[dict] = []
+        known_providers = {
+            "anthropic",
+            "ollama",
+            "aurora",
+            "spark",
+            "vllm",
+            "google",
+        }
+
+        for line in text.splitlines():
+            s = line.strip()
+            if not s or s.startswith("[") or s.startswith("provider"):
+                continue
+
+            parts = s.split()
+            if len(parts) < 6:
+                continue
+
+            provider = parts[0]
+            if provider not in known_providers:
+                continue
+
+            model_id = " ".join(parts[1:-4])
+            context_str = parts[-4]
+
+            context = SessionManager._parse_context(context_str)
+            if context < 0:  # _parse_context returns -1 on failure
+                continue
+
+            models.append(
+                {
+                    "id": model_id,
+                    "provider": provider,
+                    "contextWindow": context,
+                }
+            )
+
+        SessionManager._cached_models = models
+        logger.info("Parsed %d models from ``pi --list-models``", len(models))
+        return models
+
+    @staticmethod
+    def _parse_context(s: str) -> int:
+        """Convert a context string like ``200K``, ``1M``, ``163.8K``, ``512`` into an int."""
+        s = s.strip().upper()
+        if s.endswith("M"):
+            return int(float(s[:-1]) * 1_000_000)
+        if s.endswith("K"):
+            return int(float(s[:-1]) * 1_000)
+        try:
+            return int(s)
+        except ValueError:
+            return -1
+
     # Launch
     # ------------------------------------------------------------------
 

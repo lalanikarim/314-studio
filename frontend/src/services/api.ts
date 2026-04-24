@@ -134,7 +134,7 @@ export interface ModelConfig {
 
 /**
  * List available models.
- * @param sessionId — if provided, queries Pi RPC (falls back to defaults)
+ * No session_id required — server serves cached models from `pi --list-models`.
  */
 export async function listModels(sessionId?: string): Promise<ModelConfig[]> {
 	const qs = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : "";

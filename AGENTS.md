@@ -201,7 +201,7 @@ API_BASE=http://127.0.0.1:8000 WS_BASE=ws://127.0.0.1:8000 uv run run-tests --fl
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/models/` | List available models (`?session_id=...` queries RPC if active) |
+| `GET` | `/api/models/` | List available models — serves cached list (no session required). `session_id` is optional and used for RPC fallback. |
 
 ### WebSocket
 
