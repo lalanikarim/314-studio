@@ -72,7 +72,7 @@ interface UseModelsResult {
  * 1. Check localStorage cache (instant, survives page reload)
  * 2. Call `/api/models` WITHOUT session → uses server-side cache (instant, no session needed)
  * 3. Create Pi RPC session + WebSocket for actual communication
- * 4. RPC polling as final fallback (cache may be stale)
+ * 4. RPC polling as final fallback (only if steps 0-1 both failed)
  *
  * @param projectPath — optional project folder path (triggers session creation)
  * @param existingSessionId — optional existing session id to use instead of creating one
@@ -90,6 +90,8 @@ export function useModels(
 	const launchedRef = useRef(false);
 	const prevProjectRef = useRef<string | null>(null);
 	const abortControllerRef = useRef<AbortController | null>(null);
+	// Track whether models were loaded in steps 0/1, so step 3 can be skipped
+	const modelsLoadedRef = useRef(false);
 
 	useEffect(() => {
 		// Cancel any previous polling cycle (e.g. when projectPath changes)
@@ -100,6 +102,7 @@ export function useModels(
 		// Only reset launch guard when projectPath actually changes
 		if (prevProjectRef.current !== projectPath) {
 			launchedRef.current = false;
+			modelsLoadedRef.current = false;
 			prevProjectRef.current = projectPath ?? null;
 			setSessionId(null);
 			setRunningCount(null);
@@ -121,6 +124,7 @@ export function useModels(
 			if (cachedModels && cachedModels.length > 0) {
 				if (!abortControllerRef.current?.signal.aborted) {
 					setModels(cachedModels);
+					modelsLoadedRef.current = true;
 					// NOTE: Do NOT return here — session must still be created
 				}
 			}
@@ -148,6 +152,7 @@ export function useModels(
 					if (!abortControllerRef.current?.signal.aborted) {
 						setModels(mapped);
 						cacheModels(mapped);
+						modelsLoadedRef.current = true;
 						setLoading(false);
 						setError(null);
 					}
@@ -186,7 +191,11 @@ export function useModels(
 				return;
 			}
 
-			// Step 3: RPC polling as final fallback (use cached models if available)
+			// Step 3: RPC polling as final fallback (only if models weren't loaded in steps 0/1)
+			if (modelsLoadedRef.current) {
+				return; // Models already loaded, no need to poll
+			}
+
 			const deadline = Date.now() + PI_INIT_TIMEOUT_MS;
 			while (
 				Date.now() < deadline &&
@@ -214,6 +223,7 @@ export function useModels(
 							setError(null);
 							cacheModels(mapped); // Cache the models for next load
 							setLoading(false);
+							modelsLoadedRef.current = true;
 							return; // done
 						}
 					}
