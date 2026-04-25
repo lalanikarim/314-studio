@@ -115,13 +115,13 @@ export function useModels(
 				return;
 			}
 
-			// Step 0: Check localStorage cache first
+			// Step 0: Check localStorage cache first (display models immediately,
+			// but still continue to create a session for actual Pi communication)
 			const cachedModels = getCachedModels();
 			if (cachedModels && cachedModels.length > 0) {
 				if (!abortControllerRef.current?.signal.aborted) {
 					setModels(cachedModels);
-					setLoading(false);
-					return; // ✅ immediate — no session needed
+					// NOTE: Do NOT return here — session must still be created
 				}
 			}
 
