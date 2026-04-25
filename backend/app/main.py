@@ -11,6 +11,7 @@ Project identification uses `project_path` as a query parameter (absolute path t
 directory), not as a route parameter.
 """
 
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -53,10 +54,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS - allow Vite dev server
+# CORS - allow Vite dev server (port configurable for worktree isolation)
+_frontend_port = int(os.getenv("FRONTEND_PORT", "5173"))
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=[f"http://localhost:{_frontend_port}"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -78,4 +80,5 @@ app.include_router(chat_router, prefix="/api/projects", tags=["chat"])
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    _backend_port = int(os.getenv("BACKEND_PORT", "8000"))
+    uvicorn.run(app, host="0.0.0.0", port=_backend_port)
