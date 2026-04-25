@@ -129,36 +129,38 @@ export function useModels(
 				}
 			}
 
-			// Step 1: Fetch models WITHOUT creating a session.
+			// Step 1: Fetch models WITHOUT creating a session (skip if already loaded
+			// e.g. from localStorage or during StrictMode re-mount).
 			// The server serves cached models from `pi --list-models` populated at startup.
-			// This is instant — no subprocess, no session required.
-			try {
-				const serverModels = await listModels(); // no session_id → uses cache
-				if (
-					serverModels &&
-					serverModels.length > 0 &&
-					!abortControllerRef.current?.signal.aborted
-				) {
-					// Deduplicate by provider:id composite key
-					const seen = new Set<string>();
-					const mapped: Model[] = [];
-					for (const m of serverModels) {
-						const key = `${m.provider}:${m.id}`;
-						if (!seen.has(key)) {
-							seen.add(key);
-							mapped.push(mapModelConfig(m));
+			if (!modelsLoadedRef.current) {
+				try {
+					const serverModels = await listModels(); // no session_id → uses cache
+					if (
+						serverModels &&
+						serverModels.length > 0 &&
+						!abortControllerRef.current?.signal.aborted
+					) {
+						// Deduplicate by provider:id composite key
+						const seen = new Set<string>();
+						const mapped: Model[] = [];
+						for (const m of serverModels) {
+							const key = `${m.provider}:${m.id}`;
+							if (!seen.has(key)) {
+								seen.add(key);
+								mapped.push(mapModelConfig(m));
+							}
+						}
+						if (!abortControllerRef.current?.signal.aborted) {
+							setModels(mapped);
+							cacheModels(mapped);
+							modelsLoadedRef.current = true;
+							setLoading(false);
+							setError(null);
 						}
 					}
-					if (!abortControllerRef.current?.signal.aborted) {
-						setModels(mapped);
-						cacheModels(mapped);
-						modelsLoadedRef.current = true;
-						setLoading(false);
-						setError(null);
-					}
+				} catch {
+					// Server cache unavailable — ignore, will fall back to RPC polling
 				}
-			} catch {
-				// Server cache unavailable — ignore, will fall back to RPC
 			}
 
 			// Step 2: Launch pi RPC session (model is set later via WS `set_model` on connect)
