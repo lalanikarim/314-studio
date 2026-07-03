@@ -14,7 +14,7 @@ export default function ModelSelector() {
 		setView,
 		setSessionId,
 	} = useApp();
-	const { models, loading, error, sessionId } = useModels(selectedFolder);
+	const { models, loading, error, sessionId, refresh } = useModels(selectedFolder);
 	const [switching, setSwitching] = useState(false);
 	const [search, setSearch] = useState("");
 	const [selectedProviders, setSelectedProviders] = useState<string[]>([]);
@@ -126,6 +126,27 @@ export default function ModelSelector() {
 						Back
 					</button>
 					<h1>Choose a Model</h1>
+					<button
+						className="view-models__refresh"
+						onClick={refresh}
+						disabled={loading}
+						title="Refresh model list"
+					>
+						<svg
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							strokeWidth="2"
+							width="16"
+							height="16"
+						>
+							<path d="M4 4v5h5" />
+							<path d="M20 20v-5h-5" />
+							<path d="M20.49 9A9 9 0 0 0 5.64 5.64L4 4" />
+							<path d="M3.51 15a9 9 0 0 0 14.85 3.36L20 20" />
+						</svg>
+						Refresh
+					</button>
 					<p className="view-models__project">
 						Project: {selectedFolder?.split("/").filter(Boolean).pop()}
 					</p>

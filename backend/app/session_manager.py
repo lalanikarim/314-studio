@@ -194,14 +194,6 @@ class SessionManager:
         the right: ``parts[1:-4]`` covers the model field.
         """
         models: list[dict] = []
-        known_providers = {
-            "anthropic",
-            "ollama",
-            "aurora",
-            "spark",
-            "vllm",
-            "google",
-        }
 
         for line in text.splitlines():
             s = line.strip()
@@ -213,9 +205,6 @@ class SessionManager:
                 continue
 
             provider = parts[0]
-            if provider not in known_providers:
-                continue
-
             model_id = " ".join(parts[1:-4])
             context_str = parts[-4]
 
