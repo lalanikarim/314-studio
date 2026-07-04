@@ -1,0 +1,22 @@
+{
+  "name": "314-studio-litro",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "litro dev",
+    "build": "litro build",
+    "preview": "litro preview"
+  },
+  "dependencies": {
+    "lit": "^3.2.1",
+    "@lit-labs/ssr": "^3.3.0",
+    "@lit-labs/ssr-client": "^1.1.7",
+    "litro": "latest",
+    "h3": "^1.13.0"
+  },
+  "devDependencies": {
+    "nitropack": "^2.10.4",
+    "vite": "^5.4.11",
+    "typescript": "^5.7.3"
+  }
+}
