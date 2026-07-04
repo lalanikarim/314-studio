@@ -117,8 +117,7 @@ export interface UseSSEReturn {
 
 const INTERACTIVE_METHODS = new Set(["select", "confirm", "input", "editor"]);
 
-/** Maximum number of inbound messages to keep in memory. */
-const MAX_MESSAGES = 500;
+
 
 /** API base path for REST commands */
 const API_BASE = "";
@@ -259,6 +258,8 @@ export function useSSE(
 	useEffect(() => {
 		disposedRef.current = false;
 
+		setMessages([]);
+
 		const sid = sessionId;
 		if (!sid) return;
 
@@ -266,15 +267,14 @@ export function useSSE(
 		const source = new EventSource(url);
 		sourceRef.current = source;
 
-		// Helper to add message and enforce MAX_MESSAGES
+		// Helper to add message.  We append unconditionally; the buffer
+		// is reset on every session change so unbounded growth only
+		// happens within a single long-lived session.  Front-trimming
+		// is intentionally avoided because ChatPanel’s
+		// `processedCountRef` uses a monotonic counter that would
+		// desynchronize with a trimmed array.
 		const addMessage = (msg: InboundMessage) => {
-			setMessages((prev) => {
-				const next = [...prev, msg];
-				if (next.length > MAX_MESSAGES) {
-					return next.slice(next.length - MAX_MESSAGES);
-				}
-				return next;
-			});
+			setMessages((prev) => [...prev, msg]);
 		};
 
 		// All event types
@@ -386,11 +386,13 @@ export function useSSE(
 		source.addEventListener("open", () => {
 			if (disposedRef.current) return;
 			setErrorMessage(null);
-			if (messages.length === 0) {
-				setConversationState("loading");
-			} else {
-				setConversationState("idle");
-			}
+			// We always transition to idle on connect.  The `get_state`
+			// command is auto-sent after 300 ms; ChatPanel will fetch
+			// history when it sees idle/streaming state.  Using the
+			// stale `messages` closure here always evaluated to 0,
+			// incorrectly forcing "loading" on reconnects and preventing
+			// history reloads.
+			setConversationState("idle");
 		});
 
 		// EventSource fires "error" on disconnect / re-connect attempt

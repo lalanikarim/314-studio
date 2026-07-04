@@ -451,6 +451,14 @@ export default function ChatPanel() {
 	// ── Progress tracking (how many inbound events we've processed) ──────────
 	const processedCountRef = useRef(0);
 
+	// Reset session-scoped refs whenever the session changes so stale
+	// state from a previous session doesn't leak into the new one.
+	useEffect(() => {
+		processedCountRef.current = 0;
+		historyRequestedRef.current = false;
+		modelSetFromStateRef.current = false;
+	}, [selectedSessionId]);
+
 	// Reset display state on reconnection
 	useEffect(() => {
 		if (sse.state === "disconnected" || sse.state === "error") {
