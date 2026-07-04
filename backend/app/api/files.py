@@ -47,6 +47,10 @@ async def list_files(
     if not target_path.resolve().is_relative_to(base.resolve()):
         raise HTTPException(status_code=403, detail="Access denied: Path outside project root")
 
+    # Only directories can be listed
+    if not target_path.is_dir():
+        raise HTTPException(status_code=400, detail="Path is not a directory")
+
     # List files
     files = []
     count = 0
