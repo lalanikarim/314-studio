@@ -35,7 +35,8 @@ function getCachedModels(): Model[] | null {
 		if (Date.now() - parsed.timestamp > MODELS_MAX_AGE_MS) return null;
 
 		return parsed.models;
-	} catch {
+	} catch (e) {
+		console.warn("Failed to read models cache:", e);
 		return null;
 	}
 }
@@ -47,8 +48,10 @@ function cacheModels(models: Model[]) {
 			timestamp: Date.now(),
 		};
 		localStorage.setItem(MODELS_CACHE_KEY, JSON.stringify(cache));
-	} catch {
-		// Ignore localStorage errors (privacy mode, quota exceeded, etc.)
+	} catch (e) {
+		console.warn("Failed to write models cache:", e);
+		// Continue — localStorage errors (privacy mode, quota exceeded, etc.)
+		// are non-fatal; models will be fetched from the server on next load.
 	}
 }
 
@@ -84,6 +87,7 @@ export function useModels(
 	const [sessionId, setSessionId] = useState<string | null>(null);
 	const [runningCount, setRunningCount] = useState<number | null>(null);
 	const launchedRef = useRef(false);
+	const sessionCreatedRef = useRef(false);
 	const prevProjectRef = useRef<string | null>(null);
 	const prevExistingSessionRef = useRef<string | null>(null);
 	const abortControllerRef = useRef<AbortController | null>(null);
@@ -146,7 +150,7 @@ export function useModels(
 		// This happens regardless of whether models were already loaded.
 		// We need the session for actual communication with Pi.
 		let activeSessionId = existingSessionId || sessionId;
-		if (!launchedRef.current && !existingSessionId && !sessionId) {
+		if (!sessionCreatedRef.current && !existingSessionId && !sessionId) {
 			// Only create a session if we don't have one yet (guard against
 			// StrictMode double-render and other edge cases).
 			launchedRef.current = true;
@@ -154,6 +158,9 @@ export function useModels(
 				const session = await createSession(projectPath!);
 				activeSessionId = session.session_id;
 				setSessionId(session.session_id);
+				// Mark session as created synchronously so subsequent
+				// StrictMode renders don't create another session.
+				sessionCreatedRef.current = true;
 				if (session.running_count !== undefined) {
 					setRunningCount(session.running_count);
 				}
@@ -250,6 +257,7 @@ export function useModels(
 		// the new session; the old `launchedRef` would otherwise block it.
 		if (projectChanged || sessionChanged) {
 			launchedRef.current = false;
+			sessionCreatedRef.current = false;
 			modelsLoadedRef.current = false;
 			prevProjectRef.current = projectPath ?? null;
 			prevExistingSessionRef.current = existingSessionId ?? null;
