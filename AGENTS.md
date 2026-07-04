@@ -8,7 +8,7 @@ FastAPI backend + React (TypeScript) frontend for the Pi coding agent.
 |-------|------------|
 | **Backend** | Python 3.13 · FastAPI · Uvicorn · aiofiles · Pydantic · uv |
 | **Frontend** | React 19 · TypeScript · Vite · Bun · CSS Modules |
-| **Tests** | pytest · pytest-asyncio · httpx · websockets · uv |
+| **Tests** | pytest · pytest-asyncio · httpx · uv |
 
 ## Project Structure
 
@@ -21,7 +21,7 @@ FastAPI backend + React (TypeScript) frontend for the Pi coding agent.
 │   │   ├── session.py           # Close/delete session, model switch
 │   │   ├── files.py             # List/read files with path validation
 │   │   ├── model.py             # List models (RPC-aware + defaults)
-│   │   └── chat.py              # WebSocket bidirectional RPC relay
+│   │   └── chat.py              # SSE stream + REST commands
 │   ├── schemas/                 # Pydantic models
 │   └── session_manager.py       # Core: spawn/manage pi --rpc processes
 ├── frontend/src/
@@ -31,7 +31,7 @@ FastAPI backend + React (TypeScript) frontend for the Pi coding agent.
 │   ├── store/AppContext.tsx     # Shared state (folder, model, file)
 │   ├── types/index.ts           # TypeScript interfaces
 │   ├── services/api.ts          # API client (replaces mock data)
-│   ├── hooks/                   # useFileContent, useModels, useWebSocket
+│   ├── hooks/                   # useFileContent, useModels, useSSE
 │   ├── views/                   # Top-level views
 │   │   ├── FolderSelector.tsx   # Browse & select folder
 │   │   ├── ModelSelector.tsx    # Pick model
@@ -42,7 +42,7 @@ FastAPI backend + React (TypeScript) frontend for the Pi coding agent.
 │       └── ChatPanel.tsx        # Right: chat + model dropdown
 ├── tests/                       # Integration tests (pytest, uv)
 │   ├── conftest.py              # Fixtures + subfixture support
-│   ├── test_utils.py            # Shared HTTP/WS helpers & constants
+│   ├── test_utils.py            # Shared HTTP/SSE helpers & constants
 │   ├── integration_test_harness.py  # CLI entry point (run-tests script)
 │   ├── test_flow1_browse_chat.py       # 12 tests
 │   ├── test_flow2_file_browse.py       # 7 tests
@@ -67,26 +67,27 @@ FastAPI backend + React (TypeScript) frontend for the Pi coding agent.
 
 ## Architecture
 
-### Core Principle: REST = metadata, WebSocket = all Pi RPC actions
+### Core Principle: REST = metadata, SSE = events, REST = commands
 
 ```
-Client ──REST──→ Backend (metadata only: list, create, browse, read)
-       ──WS────→ Backend ──stdin/stdout──→ pi --rpc process
-                       (all Pi RPC: prompt, set_model, compact, etc.)
+Client ──REST──→ Backend (metadata: list, create, browse, read, commands)
+       ──SSE───→ Backend ──stdin/stdout──→ pi --rpc process
+                       (SSE stream: streaming text, tool calls, events)
+Client ──REST──→ Backend (commands: prompt, abort, compact, set_model)
 ```
 
 ### Session Manager
 
-One `pi --mode rpc` process per session. Sessions outlive WebSocket connections.
+One `pi --mode rpc` process per session. Sessions outlive SSE connections.
 
 ```
 Session lifecycle:
   creating ──RPC ready──→ running
      │                       │
-     │                       ├── WS disconnect → running (ws disconnected)
-     │                       ├── WS reconnect  → running (ws reconnected)
-     │                       ├── client message → forwarded to stdin
-     │                       └── process events → event buffer → WS relay
+     │                       ├── SSE disconnect → running (subscribed)
+     │                       ├── SSE reconnect  → running (resubscribed)
+     │                       ├── REST command   → written to stdin
+     │                       └── process events → event buffer → SSE stream
      │
   close(compact) ──→ stopped (process terminated, record removed)
   delete(abort)  ──→ stopped (process terminated, record removed)
@@ -144,13 +145,13 @@ bun run build                    # Production build → dist/
 
 ```bash
 cd tests
-API_BASE=http://127.0.0.1:8000 WS_BASE=ws://127.0.0.1:8000 uv run pytest -v
+API_BASE=http://127.0.0.1:8000 uv run pytest -v
 ```
 
 Or use the harness:
 
 ```bash
-API_BASE=http://127.0.0.1:8000 WS_BASE=ws://127.0.0.1:8000 uv run run-tests --flows flow1
+API_BASE=http://127.0.0.1:8000 uv run run-tests --flows flow1
 ```
 
 ### Development Notes
@@ -281,7 +282,7 @@ python script.py           # ❌ wrong — uses system python, wrong env
 
 > **Model switching** is a 2-step process:
 > 1. REST updates session metadata only (no RPC)
-> 2. Client connects WS — relay auto-sends `set_model` with configured `modelId`
+> 2. Client subscribes to SSE — initial `set_model` event sent with configured `modelId`
 
 ### Files
 
@@ -297,25 +298,33 @@ python script.py           # ❌ wrong — uses system python, wrong env
 |--------|----------|-------------|
 | `GET` | `/api/models/` | List available models — serves cached list (no session required). `session_id` is optional and used for RPC fallback. |
 
-### WebSocket
+### SSE (Server-Sent Events)
 
 | Endpoint | Description |
 |----------|-------------|
-| `WS /api/projects/ws` | Bidirectional JSON relay. Query: `?session_id=...`. Connect → relay sends `set_model` → messages flow both ways. |
+| `GET /api/projects/sse?session_id=...` | SSE stream. First event: `set_model`. Then streaming events. |
+| `POST /api/projects/{session_id}/cmd` | REST command endpoint. Body: `{"command": "...", ...}`. Responses flow back via SSE. |
 
-### WebSocket Protocol
+### Protocol
 
 ```
-Client → Backend (stdin):
-  {"type":"prompt","message":"..."}    # Chat message
-  {"type":"get_state"}                 # Query session state
-  {"type":"compact"}                   # Compact conversation
-  {"type":"abort"}                     # Abort current turn
+SSE Stream (server → client):
+  event: set_model          → Initial model config on connect
+  event: rpc_event          → Streaming text, tool calls
+  event: rpc_response       → Command responses (get_state, compact, etc.)
+  event: extension_ui_request → Interactive UI prompts
+  event: extension_ui_response → Auto-ack relay
+  event: session_terminated → Process exit
 
-Backend → Client (stdout):
-  {"type":"response","id":"..."}       # Command response
-  {"kind":"rpc_event","event":{...}}   # Streaming events
-  {"kind":"extension_ui_request",...}  # Interactive UI prompts
+REST Commands (client → server):
+  POST /api/projects/{id}/cmd  {"command": "prompt", "message": "..."}
+  POST /api/projects/{id}/cmd  {"command": "abort"}
+  POST /api/projects/{id}/cmd  {"command": "compact"}
+  POST /api/projects/{id}/cmd  {"command": "set_model", "modelId": "...", "provider": "..."}
+  POST /api/projects/{id}/cmd  {"command": "get_state"}
+  POST /api/projects/{id}/cmd  {"command": "get_messages"}
+  POST /api/projects/{id}/cmd  {"command": "extension_ui_response", "id": "...", "value": true}
+  POST /api/projects/{id}/cmd  {"command": "set_auto_compaction", "enabled": true}
 ```
 
 ## API Contract (Replaces Planned Table from AGENTS.md)
@@ -340,9 +349,9 @@ All project-scoped endpoints use `project_path` as a query parameter, not a rout
 | **Session Manager** | ✅ Complete — spawns `pi --mode rpc`, manages lifecycle |
 | **Frontend UI** | ✅ Complete — 3-column workspace with file tree, preview, chat |
 | **Frontend/Backend wiring** | ✅ Complete — real API calls replace mock data |
-| **WebSocket relay** | ✅ Complete — bidirectional JSON over `pi --rpc` stdin/stdout |
+| **SSE stream** | ✅ Complete — `text/event-stream` via `sse-starlette` |
 | **Extension UI handling** | ✅ Complete — auto-ack fire-and-forget, forward interactive |
-| **Integration tests** | ✅ 55/55 passing (all 8 flows complete) |
+| **Integration tests** | ✅ Migrated to SSE + REST (all flows use SSE) |
 | **Flow 4: Model Switch** | ✅ 4/4 passing (6 checks + 2 skip path) |
 | **Flow 5: Close/Delete** | ✅ 4/4 passing |
 | **Flow 6: Error Handling** | ✅ 12/12 passing |
