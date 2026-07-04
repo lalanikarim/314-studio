@@ -64,7 +64,7 @@ async def test_close_nonexistent_session(client, result):
     print("\n  T6.2 Close non-existent session")
     resp = await http_post_json(
         client,
-        "/api/projects/fake-session-id-that-does-not-exist/close",
+        "/api/projects/sess_000000000000/close",
     )
     result.check(
         resp.status_code == 404,
@@ -77,7 +77,7 @@ async def test_delete_nonexistent_session(client, result):
     print("\n  T6.2b Delete non-existent session")
     resp = await http_post_json(
         client,
-        "/api/projects/fake-session-id-that-does-not-exist/delete",
+        "/api/projects/sess_000000000000/delete",
     )
     result.check(
         resp.status_code == 404,
@@ -90,7 +90,7 @@ async def test_switch_model_nonexistent_session(client, result):
     print("\n  T6.2c Switch model on non-existent session")
     resp = await http_post_json(
         client,
-        "/api/projects/fake-session-id-that-does-not-exist/model",
+        "/api/projects/sess_000000000000/model",
         params={"model_id": TEST_MODEL_ID, "provider": "vllm"},
     )
     result.check(
@@ -106,7 +106,7 @@ async def test_ws_connect_nonexistent_session(client, result):
         # Use websockets library — it will raise an exception if the connection is rejected
         import asyncio
 
-        ws = await ws_connect("fake-session-id-that-does-not-exist")
+        ws = await ws_connect("sess_000000000000")
         try:
             # Try to receive — if the server closes immediately, we get a close exception
             raw = await asyncio.wait_for(ws.recv(), timeout=3.0)

@@ -11,11 +11,15 @@ Project identification uses `project_path` as a query parameter (absolute path t
 directory), not as a route parameter.
 """
 
+import logging
 import os
+import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api import (
     browse_router,
@@ -25,7 +29,13 @@ from app.api import (
     project_router,
     session_router,
 )
-from app.session_manager import session_manager
+from app.session_manager import SessionManager, session_manager
+from app.utils import RateLimiter, get_remote_key
+
+logger = logging.getLogger(__name__)
+
+# Rate limiter: 60 requests per minute per client IP
+rate_limiter = RateLimiter(max_requests=60, window_seconds=60.0)
 
 
 @asynccontextmanager
@@ -34,9 +44,9 @@ async def lifespan(app: FastAPI):
     # Startup
     await session_manager.initialize()
     await session_manager.fetch_available_models()
-    if session_manager._cached_models:
-        logger = __import__("logging").getLogger(__name__)
-        logger.info("Cached %d models at startup", len(session_manager._cached_models))
+    cached = SessionManager.get_cached_models()
+    if cached:
+        logger.info("Cached %d models at startup", len(cached))
     session_manager.start_cleanup_task()
     yield
     # Shutdown
@@ -54,11 +64,49 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS - allow Vite dev server (port configurable for worktree isolation)
+
+app.add_middleware(GZipMiddleware, minimum_size=500)
+
+
+@app.get("/health")
+async def health_check():
+    """Health check for monitoring and load balancers."""
+    running = len([s for s in session_manager.get_all_sessions() if s.status == "running"])
+    return {
+        "status": "ok",
+        "running_sessions": running,
+    }
+
+
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    """Add a request ID to every request and response."""
+    request.state.request_id = str(uuid.uuid4())[:12]
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request.state.request_id
+    return response
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    """Apply rate limiting to all requests. Disabled when RATE_LIMIT_DISABLED=1."""
+    if os.environ.get("RATE_LIMIT_DISABLED") != "1":
+        try:
+            rate_limiter.check(get_remote_key(request))
+        except HTTPException as exc:
+            return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+    return await call_next(request)
+
+
+# CORS - allow Vite dev server and its proxy target
 _frontend_port = int(os.getenv("FRONTEND_PORT", "5173"))
+_backend_port = int(os.getenv("BACKEND_PORT", "8000"))
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[f"http://localhost:{_frontend_port}"],
+    allow_origins=[
+        f"http://localhost:{_frontend_port}",
+        f"http://localhost:{_backend_port}",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

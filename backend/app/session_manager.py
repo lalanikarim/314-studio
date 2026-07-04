@@ -38,10 +38,9 @@ import asyncio
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
 from typing import Any, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from .schemas import SessionRecord
 
 logger = logging.getLogger(__name__)
 
@@ -77,32 +76,7 @@ def _make_extension_ui_response(req_id: str) -> dict:
 # ---------------------------------------------------------------------------
 # Session record
 # ---------------------------------------------------------------------------
-
-
-class SessionRecord(BaseModel):
-    """State for one pi --rpc session."""
-
-    model_config = ConfigDict(from_attributes=True, arbitrary_types_allowed=True)
-
-    session_id: str
-    project_path: str
-    name: str
-    model_id: Optional[str] = None
-    status: str = "creating"  # creating | running | closing | stopped
-    pid: Optional[int] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    ws_session_id: Optional[str] = None
-    ws_connected: bool = False
-
-    # Runtime-only fields — excluded from JSON serialization
-    process: Any = Field(default=None, exclude=True)  # noqa: ANN401
-    stdin: Any = Field(default=None, exclude=True)  # noqa: ANN401
-    stdout: Any = Field(default=None, exclude=True)  # noqa: ANN401
-    stdout_task: Optional[asyncio.Task] = Field(default=None, exclude=True)  # noqa: ANN401
-    ws_to_stdin_queue: Optional[asyncio.Queue] = Field(default=None, exclude=True)  # noqa: ANN401
-    pending_requests: dict[str, asyncio.Future] = Field(default_factory=dict, exclude=True)  # noqa: ANN401
-    event_buffer: asyncio.Queue = Field(default_factory=asyncio.Queue, exclude=True)  # noqa: ANN401
-
+# SessionRecord is imported from app.schemas.session
 
 # ---------------------------------------------------------------------------
 # SessionManager (singleton)
@@ -133,6 +107,13 @@ class SessionManager:
         logger.info("SessionManager shutting down all sessions")
         if not self._initialized:
             return
+        # Cancel the background cleanup task if running
+        if self._cleanup_task and not self._cleanup_task.done():
+            self._cleanup_task.cancel()
+            try:
+                await self._cleanup_task
+            except asyncio.CancelledError:
+                pass
         ids = [sid for sid, s in self._sessions.items() if s.status == "running"]
         for sid in ids:
             await self._safe_terminate(sid, "shutdown")
@@ -143,6 +124,19 @@ class SessionManager:
     # ----------------------------------------
 
     _cached_models: list[dict] | None = None  # class-level cache of parsed models
+
+    @classmethod
+    def get_cached_models(cls) -> list[dict] | None:
+        """Return the cached model list (or None if not yet fetched)."""
+        return cls._cached_models
+
+    async def refresh_models(self) -> list[dict] | None:
+        """Force refresh the model cache by clearing it and re-fetching.
+
+        Returns the list of model dicts on success, ``None`` on failure.
+        """
+        SessionManager._cached_models = None
+        return await self.fetch_available_models()
 
     async def fetch_available_models(self) -> list[dict] | None:
         """
@@ -194,6 +188,7 @@ class SessionManager:
         the right: ``parts[1:-4]`` covers the model field.
         """
         models: list[dict] = []
+        skipped = 0
 
         for line in text.splitlines():
             s = line.strip()
@@ -202,6 +197,8 @@ class SessionManager:
 
             parts = s.split()
             if len(parts) < 6:
+                skipped += 1
+                logger.warning("Skipping unparseable model line (%d parts): %r", len(parts), s)
                 continue
 
             provider = parts[0]
@@ -222,6 +219,8 @@ class SessionManager:
 
         SessionManager._cached_models = models
         logger.info("Parsed %d models from ``pi --list-models``", len(models))
+        if skipped:
+            logger.warning("Skipped %d unparseable model lines", skipped)
         return models
 
     @staticmethod
@@ -414,16 +413,20 @@ class SessionManager:
     # ------------------------------------------------------------------
 
     def get_session(self, session_id: str) -> SessionRecord | None:
-        return self._sessions.get(session_id)
+        # Snapshot to avoid races with concurrent _safe_terminate
+        sessions = dict(self._sessions)
+        return sessions.get(session_id)
 
     def get_sessions(self, project_path: str) -> list[SessionRecord]:
-        return [s for s in self._sessions.values() if s.project_path == project_path]
+        sessions = dict(self._sessions)
+        return [s for s in sessions.values() if s.project_path == project_path]
 
     def get_all_sessions(self) -> list[SessionRecord]:
-        return list(self._sessions.values())
+        return list(dict(self._sessions).values())
 
     def get_running_instances(self) -> list[SessionRecord]:
-        return [s for s in self._sessions.values() if s.status == "running"]
+        sessions = dict(self._sessions)
+        return [s for s in sessions.values() if s.status == "running"]
 
     # ------------------------------------------------------------------
     # Relay helpers (called from WS relay in chat.py)

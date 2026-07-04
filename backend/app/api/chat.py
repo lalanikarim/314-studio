@@ -28,6 +28,7 @@ from typing import Any
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
 from ..session_manager import session_manager
+from ..utils import validate_session_id
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -53,6 +54,8 @@ async def ws_endpoint(websocket: WebSocket, session_id: str = Query(...)) -> Non
     Query params:
         session_id: the session to connect to
     """
+    validate_session_id(session_id)
+
     # Validate session exists and is running
     ok = await session_manager.connect_ws(session_id, str(websocket))
     if not ok:
@@ -92,11 +95,12 @@ async def ws_endpoint(websocket: WebSocket, session_id: str = Query(...)) -> Non
 
 async def _relay_messages(session_id: str, websocket: WebSocket) -> None:
     """Bidirectional relay between WebSocket and session's stdin (stdout via event_buffer)."""
+    closed = asyncio.Event()
 
     async def _outbound() -> None:
         """Session stdout → WebSocket."""
         try:
-            while True:
+            while not closed.is_set():
                 event = await session_manager.get_next_event(session_id)
                 if event is None:
                     # EOF — process exited
@@ -106,14 +110,15 @@ async def _relay_messages(session_id: str, websocket: WebSocket) -> None:
                 else:
                     await websocket.send_text(json.dumps(event, ensure_ascii=False))
         except WebSocketDisconnect:
-            pass
+            closed.set()
         except Exception as exc:
             logger.error("Outbound relay error for %s: %s", session_id, exc)
+            closed.set()
 
     async def _inbound() -> None:
         """WebSocket → session stdin."""
         try:
-            while True:
+            while not closed.is_set():
                 data = await websocket.receive_text()
                 if not data:
                     continue
@@ -166,7 +171,9 @@ async def _relay_messages(session_id: str, websocket: WebSocket) -> None:
     out_task = asyncio.create_task(_outbound(), name=f"ws_out_{session_id}")
     in_task = asyncio.create_task(_inbound(), name=f"ws_in_{session_id}")
 
+    # Wait for either task to finish; the closed event ensures the other exits cleanly
     done, pending = await asyncio.wait({out_task, in_task}, return_when=asyncio.FIRST_COMPLETED)
+    closed.set()
     for task in pending:
         task.cancel()
         try:
@@ -174,23 +181,31 @@ async def _relay_messages(session_id: str, websocket: WebSocket) -> None:
         except (asyncio.CancelledError, Exception):
             pass
 
-    await asyncio.gather(*pending, return_exceptions=True)
-
 
 async def _write_stdin(session_id: str, payload: dict) -> None:
     """Write a JSON command to the session's stdin."""
     record = session_manager.get_session(session_id)
     if not record or record.status != "running" or record.stdin is None:
+        logger.warning("Session %s not available for stdin write", session_id)
         return
     line = json.dumps(payload, ensure_ascii=False) + "\n"
-    record.stdin.write(line.encode("utf-8"))
-    await record.stdin.drain()
+    try:
+        record.stdin.write(line.encode("utf-8"))
+        await record.stdin.drain()
+    except (BrokenPipeError, ConnectionResetError) as exc:
+        logger.warning("Session %s stdin broken: %s", session_id, exc)
+        raise
 
 
 async def _write_stdin_raw(session_id: str, raw: str) -> None:
     """Write raw bytes to the session's stdin."""
     record = session_manager.get_session(session_id)
     if not record or record.status != "running" or record.stdin is None:
+        logger.warning("Session %s not available for stdin write", session_id)
         return
-    record.stdin.write(raw.encode("utf-8"))
-    await record.stdin.drain()
+    try:
+        record.stdin.write(raw.encode("utf-8"))
+        await record.stdin.drain()
+    except (BrokenPipeError, ConnectionResetError) as exc:
+        logger.warning("Session %s stdin broken: %s", session_id, exc)
+        raise
