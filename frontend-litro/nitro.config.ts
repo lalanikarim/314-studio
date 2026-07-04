@@ -56,5 +56,14 @@ export default defineNitroConfig({
     '/_litro/**': {
       headers: { 'cache-control': 'public, max-age=31536000, immutable' },
     },
+    // Proxy all backend API calls to the FastAPI dev server.
+    // In production, put a reverse proxy (nginx, caddy, etc.) in front of
+    // both services instead.
+    // Forward /api/** to the FastAPI backend, preserving the /api prefix.
+    // Nitro's routeRules `**` captures only the portion after /api/, so we
+    // re-add /api in the target. Query strings are preserved.
+    '/api/**': {
+      proxy: `${process.env.BACKEND_URL ?? 'http://localhost:8000'}/api/**`,
+    },
   },
 });

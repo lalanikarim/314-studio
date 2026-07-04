@@ -1,0 +1,109 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   314 Studio — global theme
+   ─────────────────────────────────────────────────────────────────────────
+   This stylesheet is linked once in the document <head> (see
+   server/routes/[...].ts). CSS *custom properties* inherit through Shadow DOM
+   boundaries, so the variables below resolve inside every Lit component's
+   shadow root. Plain element styles (box-sizing, font, scrollbar) only apply
+   to the light DOM, but are mirrored by each component's own `static styles`.
+   ───────────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* Typography */
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  font-weight: 400;
+  font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  line-height: 1.5;
+
+  /* Monospace stack (used by FilePreview / code blocks) */
+  --font-mono: 'SF Mono', 'JetBrains Mono', Monaco, Menlo, Consolas, monospace;
+
+  /* Backgrounds */
+  --bg-primary: #0f172a;
+  --bg-secondary: #1e293b;
+  --bg-tertiary: #253348;
+  --bg-hover: #292e42;
+  --bg-active: #3b4261;
+  --bg-selected: #1e3a5f;
+
+  /* Borders */
+  --border-color: #334155;
+  --border: #334155;
+  --border-light: #475569;
+
+  /* Text */
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --text-placeholder: #e2e8f0;
+  --text-error: #f7768e;
+
+  /* Accents */
+  --accent: #3b82f6;
+  --accent-hover: #2563eb;
+  --accent-light: #60a5fa;
+  --accent-bg: #93c5fd;
+
+  /* Status */
+  --success: #22c55e;
+  --warning: #eab308;
+  --info: #0ea5e9;
+  --danger: #ef4444;
+  --danger-bg: #fca5a5;
+  --danger-border: #dc2626;
+  --danger-bg-dark: #991b1b;
+  --warning-bg: #fca5a5;
+  --warning-dark: #b45309;
+  --info-dark: #0369a1;
+
+  /* Code */
+  --code-bg: #1c1217;
+  --selected-bg: #1e3a5f;
+  --selected-border: #1e40af;
+
+  color-scheme: dark;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: inherit;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Thin, themed scrollbars (light DOM + adopted into shadow roots by Lit). */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-light) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: var(--border-light);
+  border-radius: 4px;
+}
+
+/* Links default to inheritance so LitroLink stays subtle. */
+a {
+  color: inherit;
+  text-decoration: none;
+}
+a:hover {
+  color: var(--accent-light);
+}

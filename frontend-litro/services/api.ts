@@ -1,9 +1,22 @@
 const API_BASE = '/api';
 
-export async function fetchFolders(): Promise<Array<{ name: string; path: string }>> {
-  const resp = await fetch(`${API_BASE}/`);
+export interface DirNode {
+  path: string;
+  name: string;
+  isDirectory: boolean;
+}
+
+/** Browse a directory tree (defaults to ~/Projects root). */
+export async function browseDirectories(path = ''): Promise<DirNode[]> {
+  const qs = path ? `?path=${encodeURIComponent(path)}` : '';
+  const resp = await fetch(`${API_BASE}/browse${qs}`);
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   return resp.json();
+}
+
+/** Back-compat alias used by the FolderSelector page. */
+export async function fetchFolders(): Promise<DirNode[]> {
+  return browseDirectories('');
 }
 
 export async function fetchProjectInfo(projectPath: string) {
@@ -80,25 +93,57 @@ export async function readFile(projectPath: string, filePath: string) {
   return resp.json();
 }
 
+// Send a command to a session via the REST cmd endpoint.
+// The backend expects `session_id` as a query param and a JSON body whose
+// top-level `command` field names the RPC command; remaining fields are the
+// command payload. Responses arrive over the SSE stream (rpc_response events).
+export async function sendCommand(sessionId: string, body: Record<string, any>) {
+  const resp = await fetch(
+    `${API_BASE}/projects/cmd?session_id=${encodeURIComponent(sessionId)}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+  );
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp.json();
+}
+
 // SSE + REST command helpers
 export class SSEClient {
   private eventSource: EventSource | null = null;
-  private callbacks: Map<string, Array<(data: any) => void>> = new Map();
+  private sessionId = '';
+  private listeners: Map<string, Set<(data: any) => void>> = new Map();
 
   connect(sessionId: string) {
+    this.sessionId = sessionId;
     return new Promise<void>((resolve, reject) => {
       const url = `${API_BASE}/projects/sse?session_id=${encodeURIComponent(sessionId)}`;
       this.eventSource = new EventSource(url);
 
-      this.eventSource.onopen = () => {
-        resolve();
-      };
-
+      this.eventSource.onopen = () => resolve();
       this.eventSource.onerror = (err) => {
         this.eventSource?.close();
         this.eventSource = null;
         reject(err);
       };
+
+      // Re-dispatch every named event to registered listeners. The data field
+      // is JSON for rpc_event/rpc_response/set_model; some events send a bare
+      // string, so parse defensively.
+      const dispatch = (event: string, raw: string) => {
+        let data: any = raw;
+        try { data = JSON.parse(raw); } catch { /* keep raw string */ }
+        this.listeners.get(event)?.forEach((cb) => cb(data));
+      };
+      for (const evt of [
+        'set_model', 'rpc_event', 'rpc_response',
+        'extension_ui_request', 'extension_ui_response',
+        'session_terminated', 'error',
+      ]) {
+        this.eventSource.addEventListener(evt, (e) => dispatch(evt, (e as MessageEvent).data));
+      }
     });
   }
 
@@ -108,62 +153,35 @@ export class SSEClient {
   }
 
   on(event: string, callback: (data: any) => void) {
-    if (!this.callbacks.has(event)) {
-      this.callbacks.set(event, []);
-    }
-    this.callbacks.get(event)!.push(callback);
-
-    if (this.eventSource) {
-      this.eventSource.addEventListener(event, (e) => {
-        const data = JSON.parse((e as MessageEvent).data);
-        this.callbacks.get(event)!.forEach((cb) => cb(data));
-      });
-    }
+    if (!this.listeners.has(event)) this.listeners.set(event, new Set());
+    this.listeners.get(event)!.add(callback);
   }
 
-  async sendCommand(command: string, payload: Record<string, any> = {}) {
-    const resp = await fetch(`${API_BASE}/projects/cmd?session_id=TODO`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ command, ...payload }),
-    });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    return resp.json();
+  off(event: string, callback: (data: any) => void) {
+    this.listeners.get(event)?.delete(callback);
   }
 
-  async prompt(message: string, streamingBehavior?: string) {
-    const cmd: Record<string, any> = { command: 'prompt', message };
-    if (streamingBehavior) cmd.streamingBehavior = streamingBehavior;
-    return this.sendCommand(cmd.command, cmd);
+  send(command: string, payload: Record<string, any> = {}) {
+    return sendCommand(this.sessionId, { command, ...payload });
   }
 
-  async abort() {
-    return this.sendCommand('abort');
+  prompt(message: string, streamingBehavior?: string) {
+    const body: Record<string, any> = { message };
+    if (streamingBehavior) body.streamingBehavior = streamingBehavior;
+    return this.send('prompt', body);
   }
 
-  async compact(customInstructions?: string) {
-    const cmd: Record<string, any> = { command: 'compact' };
-    if (customInstructions) cmd.customInstructions = customInstructions;
-    return this.sendCommand(cmd.command, cmd);
+  abort() { return this.send('abort'); }
+  compact(customInstructions?: string) {
+    const body: Record<string, any> = {};
+    if (customInstructions) body.customInstructions = customInstructions;
+    return this.send('compact', body);
   }
-
-  async getState() {
-    return this.sendCommand('get_state');
-  }
-
-  async getMessages() {
-    return this.sendCommand('get_messages');
-  }
-
-  async setModel(modelId: string, provider: string) {
-    return this.sendCommand('set_model', { modelId, provider });
-  }
-
-  async setAutoCompaction(enabled: boolean) {
-    return this.sendCommand('set_auto_compaction', { enabled });
-  }
-
-  async respondToExtensionUI(id: string, value: any, cancelled: boolean = false) {
-    return this.sendCommand('extension_ui_response', { id, value, cancelled });
+  getState() { return this.send('get_state'); }
+  getMessages() { return this.send('get_messages'); }
+  setModel(modelId: string, provider: string) { return this.send('set_model', { modelId, provider }); }
+  setAutoCompaction(enabled: boolean) { return this.send('set_auto_compaction', { enabled }); }
+  respondToExtensionUI(id: string, value: any, cancelled = false) {
+    return this.send('extension_ui_response', { id, value, cancelled });
   }
 }

@@ -309,6 +309,22 @@ private get folderPath(): string {
 
 **Rule of thumb:** Only access `window`/`document`/`localStorage` inside event handlers (`@click`, `@input`, etc.) or in `updated()` lifecycle — never in `render()` or getters called during `render()`.
 
+### Litro: Backend API proxy — Nitro `routeRules` (not Vite proxy)
+
+The Litro dev server runs through Nitro, **not** Vite's dev middleware. The custom `server/middleware/vite-dev.ts` creates Vite with inline config (it does **not** load `vite.config.ts`), so a `server.proxy` entry in `vite.config.ts` is never consulted. Configure the backend proxy in `nitro.config.ts` instead:
+
+```ts
+export default defineNitroConfig({
+  routeRules: {
+    // Nitro's `**` captures only the portion AFTER /api/, so re-add /api in
+    // the target. Query strings are preserved automatically.
+    '/api/**': { proxy: 'http://localhost:8000/api/**' },
+  },
+});
+```
+
+A common mistake is `proxy: 'http://localhost:8000/**'` — that strips the `/api` prefix, so `/api/browse` becomes `/browse` on the backend and returns 404. Always include `/api` in the target.
+
 ### Litro: Port names use `[...].ts` not `[...catchAll].ts`
 
 The catch-all route file in Litro/Nitro must be named `[...].ts` (not `[...catchAll].ts`). Nitro treats any file matching `[...].ts` as the catch-all handler.
@@ -328,6 +344,19 @@ If your project doesn't use the content layer (Markdown/blog), remove the `litro
 ### Litro: Use `bun`, not `npm`
 
 The project uses Bun for the frontend. Always use `bun install`, `bun run`, etc. Don't mix npm and bun.
+
+### Litro/Lit: Global styles + Shadow DOM — use CSS custom properties
+
+Lit components render inside **Shadow DOM**, which isolates them from document-level CSS. A `<link>` to a global stylesheet in `<head>` does **not** style anything inside a component's shadow root — `body { font-family: ... }`, `* { box-sizing }`, scrollbar rules, etc. only apply to the light DOM.
+
+**What DOES penetrate Shadow DOM: CSS custom properties (variables).** Inherited properties (including custom properties) cross the shadow boundary. So the working pattern is:
+
+1. Define the entire theme as `:root { --bg-primary: #0f172a; --text-primary: #f1f5f9; ... }` in a single global stylesheet (`public/theme.css`).
+2. Inject it once into the document `<head>` via the Litro shell — pass `routeMeta: { head: '<link rel="stylesheet" href="/theme.css" />' }` from `server/routes/[...].ts` (Litro serves `public/` at `/`, and `createPageHandler` forwards `routeMeta.head` to the shell builder).
+3. In each Lit component, reference variables with `var(--bg-primary)` inside `static styles`. These resolve because the variables inherit from `:root` through the shadow boundary.
+4. Component-local plain styles (background of the `:host`, layout, borders) go in each component's own `static styles = css\`...\`` — they are scoped automatically.
+
+Don't try to style shadow content from a global stylesheet with element selectors (`page-home .folder-item { ... }`) — it will silently do nothing. Only `var(--*)` references and the component's own `static styles` work.
 
 ### Litro: Always kill old server processes
 
