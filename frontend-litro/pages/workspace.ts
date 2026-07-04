@@ -2,6 +2,28 @@ import { html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { LitroPage } from '@beatzball/litro/runtime';
 
+
+// Use a global signal pattern to share state across component instances
+let globalSelectedFile: string | null = null;
+
+// Create an event target for notifications
+const selectedFileEventTarget = new EventTarget();
+
+export function getSelectedFile(): string | null {
+  return globalSelectedFile;
+}
+
+export function setSelectedFile(path: string | null): void {
+  globalSelectedFile = path;
+  selectedFileEventTarget.dispatchEvent(new Event('selectedfilechange'));
+}
+
+// Listen for changes and update all instances
+selectedFileEventTarget.addEventListener('selectedfilechange', () => {
+  // This will be called on all instances when the global state changes
+  // Each instance will update its own state in the callback
+});
+
 @customElement('page-workspace')
 export class WorkspacePage extends LitroPage {
   static styles = css`
@@ -153,6 +175,29 @@ export class WorkspacePage extends LitroPage {
   @state() chatExpanded = false;
   @state() selectedFile: string | null = null;
 
+  connectedCallback() {
+    super.connectedCallback();
+    const saved = getSelectedFile();
+    if (saved) {
+      this.selectedFile = saved;
+    }
+    
+    // Listen for changes to the global selected file
+    this._selectedFileListener = () => {
+      this.selectedFile = getSelectedFile();
+    };
+    selectedFileEventTarget.addEventListener('selectedfilechange', this._selectedFileListener);
+  }
+  
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    if (this._selectedFileListener) {
+      selectedFileEventTarget.removeEventListener('selectedfilechange', this._selectedFileListener);
+    }
+  }
+  
+  private _selectedFileListener: EventListener | null = null;
+
   private get folderPath(): string {
     if (typeof window === 'undefined') return '';
     return new URLSearchParams(window.location.search).get('folder') || '';
@@ -163,7 +208,9 @@ export class WorkspacePage extends LitroPage {
     // The tree-node component checks isDirectory before calling onSelect,
     // but the path format is the full path so we can't easily tell here.
     // We'll let file-preview attempt to load and handle errors.
+    setSelectedFile(path);
     this.selectedFile = path;
+    this.requestUpdate();
   }
 
   render() {

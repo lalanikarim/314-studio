@@ -161,7 +161,11 @@ export class TreeNodeComponent extends LitElement {
     if (this.node.isDirectory) {
       this.expanded = !this.expanded;
     } else {
-      this.onSelect(this.node.path);
+      if (this.onSelect) {
+        this.onSelect(this.node.path);
+      } else {
+        console.warn('[tree-node] onSelect is not a function');
+      }
     }
   }
 

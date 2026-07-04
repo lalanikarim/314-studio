@@ -35,8 +35,8 @@ class FilePreviewElement extends LitElement {
     if (!this.projectPath || !this.filePath) return;
     this.loading = true;
     try {
-      const result = await readFile(this.projectPath, this.filePath);
-      this.content = result.content || '';
+      const content = await readFile(this.projectPath, this.filePath);
+      this.content = content || '';
       this.fileName = this.filePath.split('/').filter(Boolean).pop() || 'Untitled';
     } catch (err) {
       this.error = err instanceof Error ? err.message : 'Failed';

@@ -90,7 +90,7 @@ export async function readFile(projectPath: string, filePath: string) {
     `${API_BASE}/projects/files/read?project_path=${encodeURIComponent(projectPath)}&file_path=${encodeURIComponent(filePath)}`
   );
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-  return resp.json();
+  return await resp.text();
 }
 
 // Send a command to a session via the REST cmd endpoint.
