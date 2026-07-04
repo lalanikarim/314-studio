@@ -26,7 +26,7 @@ import { Server } from 'node:http';
 import nodeCrypto from 'node:crypto';
 import { parentPort, threadId } from 'node:worker_threads';
 import { createPageHandler } from 'file:///Users/karim/Projects/314-studio/frontend-litro/node_modules/@beatzball/litro/dist/runtime/create-page-handler.js';
-import { html } from 'file:///Users/karim/Projects/314-studio/frontend-litro/node_modules/lit/index.js';
+import { html, css } from 'file:///Users/karim/Projects/314-studio/frontend-litro/node_modules/lit/index.js';
 import { state, customElement } from 'file:///Users/karim/Projects/314-studio/frontend-litro/node_modules/lit/decorators.js';
 import { LitroPage } from 'file:///Users/karim/Projects/314-studio/frontend-litro/node_modules/@beatzball/litro/dist/runtime/index.js';
 
@@ -1350,14 +1350,14 @@ async function fetchModels(sessionId) {
   return resp.json();
 }
 
-var __defProp$1 = Object.defineProperty;
-var __getOwnPropDesc$1 = Object.getOwnPropertyDescriptor;
-var __decorateClass$1 = (decorators, target, key, kind) => {
-  var result = kind > 1 ? void 0 : kind ? __getOwnPropDesc$1(target, key) : target;
+var __defProp$2 = Object.defineProperty;
+var __getOwnPropDesc$2 = Object.getOwnPropertyDescriptor;
+var __decorateClass$2 = (decorators, target, key, kind) => {
+  var result = kind > 1 ? void 0 : kind ? __getOwnPropDesc$2(target, key) : target;
   for (var i = decorators.length - 1, decorator; i >= 0; i--)
     if (decorator = decorators[i])
       result = (kind ? decorator(target, key, result) : decorator(result)) || result;
-  if (kind && result) __defProp$1(target, key, result);
+  if (kind && result) __defProp$2(target, key, result);
   return result;
 };
 let HomePage = class extends LitroPage {
@@ -1407,16 +1407,16 @@ let HomePage = class extends LitroPage {
     `;
   }
 };
-__decorateClass$1([
+__decorateClass$2([
   state()
 ], HomePage.prototype, "folders", 2);
-__decorateClass$1([
+__decorateClass$2([
   state()
 ], HomePage.prototype, "loading", 2);
-__decorateClass$1([
+__decorateClass$2([
   state()
 ], HomePage.prototype, "error", 2);
-HomePage = __decorateClass$1([
+HomePage = __decorateClass$2([
   customElement("page-home")
 ], HomePage);
 const HomePage_default = HomePage;
@@ -1427,14 +1427,14 @@ const _page0 = /*#__PURE__*/Object.freeze({
   default: HomePage_default
 });
 
-var __defProp = Object.defineProperty;
-var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
-var __decorateClass = (decorators, target, key, kind) => {
-  var result = kind > 1 ? void 0 : kind ? __getOwnPropDesc(target, key) : target;
+var __defProp$1 = Object.defineProperty;
+var __getOwnPropDesc$1 = Object.getOwnPropertyDescriptor;
+var __decorateClass$1 = (decorators, target, key, kind) => {
+  var result = kind > 1 ? void 0 : kind ? __getOwnPropDesc$1(target, key) : target;
   for (var i = decorators.length - 1, decorator; i >= 0; i--)
     if (decorator = decorators[i])
       result = (kind ? decorator(target, key, result) : decorator(result)) || result;
-  if (kind && result) __defProp(target, key, result);
+  if (kind && result) __defProp$1(target, key, result);
   return result;
 };
 let ModelSelectorPage = class extends LitroPage {
@@ -1638,31 +1638,31 @@ let ModelSelectorPage = class extends LitroPage {
     `;
   }
 };
-__decorateClass([
+__decorateClass$1([
   state()
 ], ModelSelectorPage.prototype, "models", 2);
-__decorateClass([
+__decorateClass$1([
   state()
 ], ModelSelectorPage.prototype, "loading", 2);
-__decorateClass([
+__decorateClass$1([
   state()
 ], ModelSelectorPage.prototype, "error", 2);
-__decorateClass([
+__decorateClass$1([
   state()
 ], ModelSelectorPage.prototype, "selectedModel", 2);
-__decorateClass([
+__decorateClass$1([
   state()
 ], ModelSelectorPage.prototype, "search", 2);
-__decorateClass([
+__decorateClass$1([
   state()
 ], ModelSelectorPage.prototype, "selectedProviders", 2);
-__decorateClass([
+__decorateClass$1([
   state()
 ], ModelSelectorPage.prototype, "switching", 2);
-__decorateClass([
+__decorateClass$1([
   state()
 ], ModelSelectorPage.prototype, "sessionId", 2);
-ModelSelectorPage = __decorateClass([
+ModelSelectorPage = __decorateClass$1([
   customElement("page-models")
 ], ModelSelectorPage);
 const ModelSelectorPage_default = ModelSelectorPage;
@@ -1671,6 +1671,197 @@ const _page1 = /*#__PURE__*/Object.freeze({
   __proto__: null,
   get ModelSelectorPage () { return ModelSelectorPage; },
   default: ModelSelectorPage_default
+});
+
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __decorateClass = (decorators, target, key, kind) => {
+  var result = kind > 1 ? void 0 : kind ? __getOwnPropDesc(target, key) : target;
+  for (var i = decorators.length - 1, decorator; i >= 0; i--)
+    if (decorator = decorators[i])
+      result = (kind ? decorator(target, key, result) : decorator(result)) || result;
+  if (kind && result) __defProp(target, key, result);
+  return result;
+};
+let WorkspacePage = class extends LitroPage {
+  constructor() {
+    super(...arguments);
+    this.sidebarCollapsed = false;
+    this.chatExpanded = false;
+  }
+  render() {
+    return html`
+      <div class="view-workspace">
+        <header class="view-workspace__header">
+          <div class="view-workspace__header-left">
+            <button class="icon-btn" @click=${() => {
+      this.sidebarCollapsed = !this.sidebarCollapsed;
+    }} title="Toggle file tree">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <path d="M9 3v18" />
+              </svg>
+            </button>
+            <span class="view-workspace__project">Workspace</span>
+          </div>
+          <div class="view-workspace__header-center">
+            <span class="view-workspace__project-title" @click=${() => {
+      window.location.href = "/";
+    }}>
+              314 Studio
+            </span>
+          </div>
+          <div class="view-workspace__header-right">
+            <button
+              class="icon-btn ${this.chatExpanded ? "icon-btn--active" : ""}"
+              @click=${() => {
+      this.chatExpanded = !this.chatExpanded;
+    }}
+              title="${this.chatExpanded ? "Collapse chat to full width" : "Expand chat"}"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+                ${this.chatExpanded ? html`<path d="M18 6L6 18M6 6l12 12" />` : html`<>
+                      <rect x="3" y="3" width="18" height="18" rx="2" />
+                      <path d="M9 3v18" />
+                    </>`}
+              </svg>
+            </button>
+          </div>
+        </header>
+
+        <div class="view-workspace__body ${this.chatExpanded ? "view-workspace__body--chat-expanded" : ""}">
+          <div class="view-workspace__sidebar ${this.sidebarCollapsed ? "view-workspace__sidebar--collapsed" : ""} ${this.chatExpanded ? "view-workspace__sidebar--hidden" : ""}">
+            <project-tree></project-tree>
+          </div>
+
+          <div class="view-workspace__preview ${this.chatExpanded ? "view-workspace__preview--hidden" : ""}">
+            <file-preview></file-preview>
+          </div>
+
+          <div class="view-workspace__chat ${this.chatExpanded ? "view-workspace__chat--expanded" : ""}">
+            <!-- TODO: <chat-panel></chat-panel> -->
+            <div style="padding: 2rem; color: var(--text-muted); text-align: center;">ChatPanel — coming soon</div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+};
+WorkspacePage.styles = css`
+    :host {
+      display: block;
+      height: 100vh;
+      background: var(--bg-primary, #1a1b26);
+    }
+    .view-workspace {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+    .view-workspace__header {
+      display: flex;
+      align-items: center;
+      padding: 0.5rem 1rem;
+      border-bottom: 1px solid var(--border-color, #3b4261);
+      background: var(--bg-secondary, #16161e);
+    }
+    .view-workspace__header-left,
+    .view-workspace__header-center,
+    .view-workspace__header-right {
+      display: flex;
+      align-items: center;
+    }
+    .view-workspace__header-left {
+      flex: 0 0 auto;
+    }
+    .view-workspace__header-center {
+      flex: 1;
+      justify-content: center;
+    }
+    .view-workspace__header-right {
+      flex: 0 0 auto;
+    }
+    .icon-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      border-radius: 4px;
+      background: transparent;
+      color: var(--text-secondary, #a9b1d6);
+      cursor: pointer;
+      padding: 6px;
+      transition: background 0.15s;
+    }
+    .icon-btn:hover {
+      background: var(--bg-hover, #292e42);
+    }
+    .icon-btn--active {
+      background: var(--bg-active, #3b4261);
+    }
+    .view-workspace__project {
+      margin-left: 0.75rem;
+      font-size: 0.875rem;
+      color: var(--text-secondary, #a9b1d6);
+    }
+    .view-workspace__project-title {
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--text-primary, #c0caf5);
+      cursor: pointer;
+    }
+    .view-workspace__project-title:hover {
+      text-decoration: underline;
+    }
+    .view-workspace__body {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+    .view-workspace__body--chat-expanded .view-workspace__sidebar,
+    .view-workspace__body--chat-expanded .view-workspace__preview {
+      display: none;
+    }
+    .view-workspace__sidebar {
+      flex: 0 0 250px;
+      overflow: hidden;
+      border-right: 1px solid var(--border-color, #3b4261);
+    }
+    .view-workspace__sidebar--collapsed {
+      flex: 0 0 0;
+      overflow: hidden;
+    }
+    .view-workspace__preview {
+      flex: 1;
+      overflow: hidden;
+      border-right: 1px solid var(--border-color, #3b4261);
+    }
+    .view-workspace__preview--hidden {
+      display: none;
+    }
+    .view-workspace__chat {
+      flex: 0 0 400px;
+      overflow: hidden;
+    }
+    .view-workspace__chat--expanded {
+      flex: 1;
+    }
+  `;
+__decorateClass([
+  state()
+], WorkspacePage.prototype, "sidebarCollapsed", 2);
+__decorateClass([
+  state()
+], WorkspacePage.prototype, "chatExpanded", 2);
+WorkspacePage = __decorateClass([
+  customElement("page-workspace")
+], WorkspacePage);
+const WorkspacePage_default = WorkspacePage;
+
+const _page2 = /*#__PURE__*/Object.freeze({
+  __proto__: null,
+  get WorkspacePage () { return WorkspacePage; },
+  default: WorkspacePage_default
 });
 
 // @ts-nocheck
@@ -1692,6 +1883,13 @@ const routes = [
     "componentTag": "page-models",
     "isDynamic": false,
     "isCatchAll": false
+  },
+  {
+    "path": "/workspace",
+    "filePath": "/Users/karim/Projects/314-studio/frontend-litro/pages/workspace.ts",
+    "componentTag": "page-workspace",
+    "isDynamic": false,
+    "isCatchAll": false
   }
 ];
 
@@ -1699,7 +1897,8 @@ const routes = [
 // Allows the catch-all handler to access pageData without a .ts runtime import.
 const pageModules = {
   "/Users/karim/Projects/314-studio/frontend-litro/pages/index.ts": _page0,
-  "/Users/karim/Projects/314-studio/frontend-litro/pages/models.ts": _page1
+  "/Users/karim/Projects/314-studio/frontend-litro/pages/models.ts": _page1,
+  "/Users/karim/Projects/314-studio/frontend-litro/pages/workspace.ts": _page2
 };
 
 function matchRoute(pathname) {

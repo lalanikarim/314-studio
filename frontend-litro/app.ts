@@ -1,6 +1,3 @@
-// CRITICAL: must be first — patches LitElement before any component is loaded.
-import '@lit-labs/ssr-client/lit-element-hydrate-support.js';
-
 // Client runtime: router outlet and link custom elements.
 import '@beatzball/litro/runtime/LitroOutlet.js';
 import '@beatzball/litro/runtime/LitroLink.js';
