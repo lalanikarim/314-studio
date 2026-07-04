@@ -262,6 +262,50 @@ uv run python script.py    # ✅ correct
 python script.py           # ❌ wrong — uses system python, wrong env
 ```
 
+### Litro: `window` not available during SSR
+
+Litro uses SSR (Server-Side Rendering) by default. Any code that accesses `window`, `document`, or `localStorage` **during the initial render** will crash the server with `ReferenceError: window is not defined`.
+
+**Fix:** Guard client-only code:
+```typescript
+// ❌ CRASHES during SSR
+private get folderPath(): string {
+  return new URLSearchParams(window.location.search).get('folder') || '';
+}
+
+// ✅ Safe
+private get folderPath(): string {
+  if (typeof window === 'undefined') return '';
+  return new URLSearchParams(window.location.search).get('folder') || '';
+}
+```
+
+**Rule of thumb:** Only access `window`/`document`/`localStorage` inside event handlers (`@click`, `@input`, etc.) or in `updated()` lifecycle — never in `render()` or getters called during `render()`.
+
+### Litro: Port names use `[...].ts` not `[...catchAll].ts`
+
+The catch-all route file in Litro/Nitro must be named `[...].ts` (not `[...catchAll].ts`). Nitro treats any file matching `[...].ts` as the catch-all handler.
+
+### Litro: Package name is `@beatzball/litro`, not `litro`
+
+The npm package is `@beatzball/litro`. Using `litro` as a dependency name will fail with "No matching version found".
+
+### Litro: `{{ROOT}}` placeholder in page-manifest.ts
+
+The scaffolded `server/stubs/page-manifest.ts` contains `{{ROOT}}` placeholders that must be replaced with the actual absolute path before the catch-all route handler can resolve page modules.
+
+### Litro: Content plugin causes `litro:` import errors
+
+If your project doesn't use the content layer (Markdown/blog), remove the `litroContentPlugin` from `vite.config.ts` AND remove `server/api/posts.ts` and `content/` directory. Otherwise Nitro will fail to resolve `litro:content` imports during build.
+
+### Litro: Use `bun`, not `npm`
+
+The project uses Bun for the frontend. Always use `bun install`, `bun run`, etc. Don't mix npm and bun.
+
+### Litro: Always kill old server processes
+
+Litro dev server uses dynamic port allocation (3000, then 3001, 3002... if 3000 is in use). Always `pkill -f "litro dev"` before starting a new instance to avoid port conflicts.
+
 ## API Endpoints
 
 ### Projects
