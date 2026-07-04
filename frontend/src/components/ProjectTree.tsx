@@ -172,7 +172,10 @@ export default function ProjectTree() {
 
   // Fetch root directory when selectedFolder changes
   useEffect(() => {
-    const controller = new AbortController();
+    // Skip if we've already fetched this folder (guard against
+    // StrictMode double-mount and other edge cases)
+    if (folderRef.current === selectedFolder) return;
+    folderRef.current = selectedFolder;
 
     const doFetch = async () => {
       if (!selectedFolder) return;
@@ -194,18 +197,7 @@ export default function ProjectTree() {
       }
     };
 
-    // Wrap in Promise to avoid "setState in effect" lint rule
-    // (this is the recommended React data-fetching pattern)
-    new Promise<void>((resolve) => {
-      if (folderRef.current === selectedFolder) return resolve();
-      folderRef.current = selectedFolder;
-      if (selectedFolder) doFetch();
-      resolve();
-    }).catch(() => {});
-
-    return () => {
-      controller.abort();
-    };
+    doFetch();
   }, [selectedFolder]);
 
   const handleSelect = (path: string) => {
