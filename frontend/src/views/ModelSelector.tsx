@@ -103,7 +103,7 @@ export default function ModelSelector() {
 		);
 	}
 
-	// Persist sessionId so ChatPanel can use it for WebSocket URL
+	// Persist sessionId so ChatPanel can use it for SSE URL
 	useEffect(() => {
 		if (sessionId) setSessionId(sessionId);
 	}, [sessionId, setSessionId]);
@@ -112,7 +112,7 @@ export default function ModelSelector() {
 		if (!selectedModel || !selectedFolder) return;
 		setSwitching(true);
 		try {
-			// Switch model on backend (session_id is generated when WebSocket connects)
+			// Switch model on backend (session_id is generated when SSE connects)
 			// For now, we switch on connect in the Workspace — this sets the UI selection
 			switchModel(selectedModel);
 			setCurrentModel(selectedModel);

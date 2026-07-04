@@ -85,7 +85,7 @@ function SessionRow({
 		project_path: string;
 		model_id: string;
 		status: string;
-		ws_connected: boolean;
+		sse_connected: boolean;
 		created_at: string;
 	};
 	onClick: () => void;
@@ -106,7 +106,7 @@ function SessionRow({
 				<div className="session-row__info">
 					<span className="session-row__name">
 						<span
-							className={`session-row__status ${session.ws_connected ? "session-row__status--connected" : session.status === "running" ? "session-row__status--running" : ""}`}
+							className={`session-row__status ${session.sse_connected ? "session-row__status--connected" : session.status === "running" ? "session-row__status--running" : ""}`}
 						/>
 						{session.name || projectName}
 					</span>
@@ -335,7 +335,7 @@ export default function FolderSelector() {
 			project_path: string;
 			model_id: string;
 			status: string;
-			ws_connected: boolean;
+			sse_connected: boolean;
 			created_at: string;
 		}>
 	>([]);
@@ -381,7 +381,7 @@ export default function FolderSelector() {
 		model_id: string;
 		name: string;
 		status: string;
-		ws_connected: boolean;
+		sse_connected: boolean;
 		created_at: string;
 	}) => {
 		setSelectedSession({
@@ -390,7 +390,7 @@ export default function FolderSelector() {
 			project_path: session.project_path,
 			model_id: session.model_id,
 			status: session.status,
-			ws_connected: session.ws_connected,
+			sse_connected: session.sse_connected,
 			created_at: session.created_at,
 		});
 		setSelectedFolder(session.project_path);

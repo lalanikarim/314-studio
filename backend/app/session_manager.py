@@ -1,11 +1,11 @@
 """
-Session Manager — orchestrates `pi --mode rpc` processes and WebSocket relays.
+Session Manager — orchestrates `pi --mode rpc` processes and SSE relays.
 
 Architecture:
   - One `pi --mode rpc` process per session (not per project).
-  - Sessions persist independently of WebSocket connections.
-  - WebSocket is a thin relay channel; reconnect swaps the channel without
-    touching the underlying RPC process.
+  - Sessions persist independently of SSE connections.
+  - SSE is a unidirectional event stream (server → client); client commands
+    are sent via REST to the command endpoint.
   - Session close = compact + abort + terminate process.
   - Session delete = abort + terminate process (no compact).
 
@@ -15,17 +15,17 @@ Usage:
   # Create a new session (spawns pi --rpc)
   record = await session_manager.launch_session(project_path, name)
 
-  # Connect a WebSocket to an existing session
-  await session_manager.connect_ws(session_id, websocket_id)
+  # Subscribe to SSE events for a session
+  await session_manager.subscribe_sse(session_id)
 
-  # Send a command (compact, abort, set_model, etc.) via WS relay
-  session_manager.send_to_session(session_id, {"type": "compact"})
+  # Send a command (compact, abort, set_model, etc.) via REST
+  await session_manager.send_command(session_id, {"type": "compact"})
 
   # Close / delete a session
   await session_manager.close_session(session_id)       # compact + abort + terminate
   await session_manager.delete_session(session_id)       # abort + terminate
 
-  # Switch model (updates metadata; actual RPC sent on WS connect)
+  # Switch model (updates metadata; actual RPC sent on SSE subscribe)
   await session_manager.switch_model(session_id, model_id, provider)
 
   # Shutdown all (called on app shutdown)
@@ -387,26 +387,49 @@ class SessionManager:
             return record.model_id if record else None
 
     # ------------------------------------------------------------------
-    # WebSocket management
+    # SSE management
     # ------------------------------------------------------------------
 
-    async def connect_ws(self, session_id: str, websocket_id: str) -> bool:
-        """Mark a session as having an active WebSocket. Returns False if not found/running."""
+    async def subscribe_sse(self, session_id: str) -> bool:
+        """Mark a session as having an active SSE subscriber.
+
+        Only one SSE connection is allowed per session. If a connection
+        already exists, it is closed and replaced (EventSource auto-reconnect
+        handles the client-side retry).
+
+        Returns False if session not found or not running.
+        """
         async with self._lock:
             record = self._sessions.get(session_id)
             if not record or record.status != "running":
                 return False
-            record.ws_session_id = websocket_id
-            record.ws_connected = True
+            record.sse_connected = True
+            record.sse_cancelled = False
             return True
 
-    async def disconnect_ws(self, session_id: str, websocket_id: str) -> None:
-        """Clear WebSocket tracking (only if this specific websocket_id)."""
+    async def unsubscribe_sse(self, session_id: str) -> None:
+        """Clear SSE tracking for a session."""
         async with self._lock:
             record = self._sessions.get(session_id)
-            if record and record.ws_session_id == websocket_id:
-                record.ws_session_id = None
-                record.ws_connected = False
+            if record:
+                record.sse_connected = False
+                record.sse_cancelled = True
+
+    # ------------------------------------------------------------------
+    # Command sending (replaces send_to_session for REST-based commands)
+    # ------------------------------------------------------------------
+
+    async def send_command(self, session_id: str, payload: dict, timeout: float | None = None) -> dict:
+        """Send a command and wait for the matching response.
+
+        This is used by the REST command endpoint to send Pi RPC commands
+        directly to the process stdin (no WebSocket relay needed).
+        """
+        async with self._lock:
+            record = self._sessions.get(session_id)
+            if not record or record.status != "running":
+                raise RuntimeError(f"Session {session_id} not running")
+        return await self._send_command_internal(record, payload, timeout=timeout)
 
     # ------------------------------------------------------------------
     # Query
@@ -440,14 +463,15 @@ class SessionManager:
         return await record.event_buffer.get()
 
     def send_to_session(self, session_id: str, payload: dict) -> None:
-        """Enqueue a WebSocket message to be sent to the session's stdin by the relay task.
+        """Enqueue a message to be sent to the session's stdin by the relay task.
 
-        This is a low-level enqueue — the WS relay task reads from this and writes to stdin.
+        Kept for backward compatibility with any remaining WS relay callers.
+        The REST command path uses send_command() instead.
         """
         record = self._sessions.get(session_id)
         if not record or record.status != "running":
             return
-        # We use a special marker queue for WS→stdin messages
+        # We use a special marker queue for relay→stdin messages
         if record.ws_to_stdin_queue is None:
             record.ws_to_stdin_queue = asyncio.Queue()
         record.ws_to_stdin_queue.put_nowait(payload)

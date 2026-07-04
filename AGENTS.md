@@ -167,6 +167,100 @@ API_BASE=http://127.0.0.1:8000 WS_BASE=ws://127.0.0.1:8000 uv run run-tests --fl
   - **For bash**: use `gtimeout` from `coreutils` (`brew install coreutils`), or spawn a background process with a delayed `kill`.
   - **For uv runs**: pass `--timeout` if supported, or wrap in a Python-based timeout.
 
+## Common Gotchas
+
+### React StrictMode double-render in development
+
+React 19's `StrictMode` (enabled in `frontend/src/main.tsx`) **mounts every component twice** in development. This means:
+
+- **`useEffect` runs twice** — any side effect (API calls, session creation, etc.) will execute twice
+- **Refs persist** across the two renders — `useRef` values survive, but state (`useState`) does not propagate between them
+- **Effect cleanup runs between renders** — the cleanup from the first mount runs before the second mount's effect starts
+
+**Classic bug pattern:** An async operation inside `useEffect` (e.g., creating a session) sets a guard ref after the `await`. The second StrictMode effect runs before the first `await` completes, so the guard is still `false`, and the operation runs again — creating duplicate sessions, double API calls, etc.
+
+**The fix:** Set any deduplication guard **synchronously before the `await`**, not after. Use a `useRef` (not `useState`) since refs persist across StrictMode's double-render while state does not propagate:
+
+```ts
+// ❌ WRONG — ref set after await, second StrictMode render sees false
+if (!guard.current) {
+  guard.current = true;
+  const result = await someAsyncCall(); // ← second effect runs before this completes
+  // guard.current = true;  ← too late
+}
+
+// ✅ CORRECT — ref set synchronously before the await
+if (!guard.current) {
+  guard.current = true;  // ← set NOW, before any async work
+  try {
+    const result = await someAsyncCall();
+    // ... handle result
+  } catch {
+    guard.current = false;  // ← reset on failure so retry is possible
+  }
+}
+```
+
+This pattern is used in `frontend/src/hooks/useModels.ts` (`sessionCreatedRef`) to prevent duplicate `POST /api/projects/` calls during session creation.
+
+**Another StrictMode gotcha: effect cleanup cancelling in-flight fetches.**
+
+When a `useEffect` cleanup sets a `cancelled` flag, StrictMode's double-mount causes the first cleanup to run before the second effect. If the second effect has a guard that skips re-execution (e.g., `if (ref.current === value) return`), the first fetch is cancelled and never completes — leaving the UI stuck in a "Loading…" state.
+
+**Fix:** If you have a guard that prevents re-execution, don't cancel in-flight work in the cleanup. The guard is sufficient to prevent duplicate work.
+
+### Integration test sessions leak if cleanup is not in `try/finally`
+
+The integration tests create `pi --rpc` sessions via `POST /api/projects/`. If a test fails **before** reaching the cleanup code (which is not in `try/finally` blocks), the session is left running indefinitely — consuming a Pi process and cluttering the session list.
+
+**Fix:** Always wrap session-creating test flows in `try/finally` and close sessions in the `finally` block:
+
+```python
+async def run(result):
+    async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+        session_id = None
+        try:
+            # ... test steps that may create a session ...
+            session_id = await create_session(client, result)
+            # ... more tests ...
+        finally:
+            if session_id:
+                try:
+                    await client.post(f"{API_BASE}/api/projects/{session_id}/close")
+                except Exception:
+                    pass  # Best-effort cleanup
+```
+
+This ensures sessions are always cleaned up, even when tests fail mid-flow.
+
+**Quick cleanup command** (if you ever see orphaned sessions):
+```bash
+cd tests && API_BASE=http://127.0.0.1:8000 python3 -c "
+import asyncio, httpx, os
+async def cleanup():
+    base = os.environ.get('API_BASE', 'http://127.0.0.1:8000')
+    async with httpx.AsyncClient(timeout=30) as c:
+        for s in (await c.get(f'{base}/api/projects/sessions')).json():
+            await c.post(f'{base}/api/projects/{s[\"session_id\"]}/close')
+asyncio.run(cleanup())
+"
+```
+
+### macOS: no `timeout` command
+
+The Unix `timeout` command is not available on macOS. Use these alternatives:
+- **For asyncio code**: use `asyncio.wait_for(coro, timeout=N)`
+- **For bash**: use `gtimeout` from `coreutils` (`brew install coreutils`)
+- **For uv runs**: pass `--timeout` if supported, or wrap in a Python-based timeout
+
+### Never run `python` directly
+
+Always use `uv run` to execute Python code to ensure the correct virtual environment:
+```bash
+uv run python script.py    # ✅ correct
+python script.py           # ❌ wrong — uses system python, wrong env
+```
+
 ## API Endpoints
 
 ### Projects

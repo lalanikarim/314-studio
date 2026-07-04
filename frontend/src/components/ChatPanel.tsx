@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useApp } from "../store/AppContext";
-import { useWebSocket } from "../hooks/useWebSocket";
+import { useSSE } from "../hooks/useSSE";
 import { deriveModelName } from "../utils/model";
 import {
 	closeSession,
@@ -374,20 +374,23 @@ export default function ChatPanel() {
 		switchModel,
 		setSelectedModel,
 		setView,
-		selectedFolder,
 		sessionId: selectedSessionId,
 		models,
 	} = useApp();
 
-	// Model ref — kept in sync with currentModel so the WS hook always
+	// Model ref — kept in sync with currentModel so the SSE hook always
 	// knows which model to send `set_model` with on connect.
 	const modelRef = useRef<Model | null>(currentModel);
 	useEffect(() => {
 		modelRef.current = currentModel;
 	}, [currentModel]);
 
-	// WebSocket connection (one per project — uses sessionId for WS URL)
-	const ws = useWebSocket(selectedFolder, modelRef, selectedSessionId);
+	// Track previous streaming state to detect when streaming ends
+	// Updated synchronously by the SSE hook whenever isStreaming changes
+	const prevIsStreamingRef = useRef(false);
+
+	// SSE connection (one per session — uses sessionId for SSE URL)
+	const sse = useSSE(selectedSessionId, modelRef, prevIsStreamingRef);
 
 	// ── Display state: finalized messages (sorted by timestamp) ──────────────
 	const [displayMessages, setDisplayMessages] = useState<DisplayMessage[]>([]);
@@ -395,8 +398,9 @@ export default function ChatPanel() {
 	// ── Streaming state ─────────────────────────────────────────────────────
 	const [streamingContent, setStreamingContent] = useState("");
 	const [toolCalls, setToolCalls] = useState<ToolCallEntry[]>([]);
-	const isStreaming =
-		streamingContent.trim().length > 0 || toolCalls.length > 0;
+	// Use SSE hook's isStreaming for authoritative streaming state
+	const isStreamingFromHook = sse.isStreaming;
+	const isStreaming = isStreamingFromHook || (streamingContent.trim().length > 0 || toolCalls.length > 0);
 
 	// Track if history load has been requested (ref to avoid effect cycles)
 	const historyRequestedRef = useRef(false);
@@ -446,34 +450,47 @@ export default function ChatPanel() {
 
 	// ── Progress tracking (how many inbound events we've processed) ──────────
 	const processedCountRef = useRef(0);
-	const prevConnectionSeqRef = useRef(ws.connectionSequence);
+
+	// Reset session-scoped refs whenever the session changes so stale
+	// state from a previous session doesn't leak into the new one.
+	useEffect(() => {
+		processedCountRef.current = 0;
+		historyRequestedRef.current = false;
+		modelSetFromStateRef.current = false;
+	}, [selectedSessionId]);
 
 	// Reset display state on reconnection
 	useEffect(() => {
-		if (ws.connectionSequence !== prevConnectionSeqRef.current) {
+		if (sse.state === "disconnected" || sse.state === "error") {
 			setDisplayMessages([]);
 			setStreamingContent("");
 			setToolCalls([]);
-			prevConnectionSeqRef.current = ws.connectionSequence;
 			historyRequestedRef.current = false;
 			processedCountRef.current = 0;
 		}
-	}, [ws.connectionSequence]);
+	}, [sse.state]);
 
-	// Load chat history when WS connects
+	// Load chat history when SSE connects
 	useEffect(() => {
 		if (
-			ws.state !== "connected" ||
+			(sse.state !== "idle" && sse.state !== "streaming") ||
 			historyRequestedRef.current ||
 			!selectedSessionId
 		) {
 			return;
 		}
 
-		// Send get_messages RPC to fetch historical messages
-		ws.send({ type: "get_messages" });
+		// Send get_messages command via REST to fetch historical messages
+		const sid = selectedSessionId;
+		if (sid) {
+			fetch(`/api/projects/cmd?session_id=${encodeURIComponent(sid)}`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ command: "get_messages" }),
+			}).catch(() => {});
+		}
 		historyRequestedRef.current = true;
-	}, [ws.state, ws.send, selectedSessionId]);
+	}, [sse.state, selectedSessionId]);
 
 	// Scroll to bottom whenever messages or streaming content changes
 	useEffect(() => {
@@ -482,16 +499,15 @@ export default function ChatPanel() {
 
 	// ── Process new RPC events from the hook ─────────────────────────────────
 	useEffect(() => {
-		// Reset processing on reconnection
-		if (ws.connectionSequence !== prevConnectionSeqRef.current) {
-			prevConnectionSeqRef.current = ws.connectionSequence;
-			processedCountRef.current = 0;
-		}
+		if (sse.messages.length <= processedCountRef.current) return;
 
-		if (ws.messages.length <= processedCountRef.current) return;
+		const newMessages = sse.messages.slice(processedCountRef.current);
+		// Capture the previous streaming state BEFORE any updates in this batch
+		const wasStreaming = prevIsStreamingRef.current;
+		const streamingEnded = !sse.isStreaming && wasStreaming;
 
-		const newMessages = ws.messages.slice(processedCountRef.current);
-
+		// First pass: process all text/tool events (accumulate content)
+		let hasFinalizer = false;
 		for (const msg of newMessages) {
 			// ── Handle get_messages responses (chat history) ───────────────
 			if (msg.kind === "rpc_response") {
@@ -550,34 +566,9 @@ export default function ChatPanel() {
 
 			const event = msg.event as Record<string, unknown>;
 
-			// ── End-of-stream marker → finalize current turn ───────────────
+			// ── Check for finalizer (but don't finalize yet) ─────────────
 			if (isStreamFinalizer(event)) {
-				if (streamingContent.trim() || toolCalls.length > 0) {
-					const toolLines = toolCalls
-						.map((tc) => {
-							const argsLine = tc.args ? `\n  args: ${tc.args}` : "";
-							const resultLine = tc.result ? `\n  result: ${tc.result}` : "";
-							return `> ${tc.name}${argsLine}${resultLine}`;
-						})
-						.filter(Boolean);
-					const lines = [...toolLines, streamingContent.trim()].filter(Boolean);
-
-					if (lines.length) {
-						// eslint-disable-next-line react-hooks/set-state-in-effect
-						setDisplayMessages((prev) => [
-							...prev,
-							{
-								id: `assistant-${Date.now()}`,
-								role: "assistant",
-								content: lines.join("\n\n"),
-								toolCalls: [...toolCalls],
-								timestamp: Date.now(),
-							},
-						]);
-					}
-				}
-				setStreamingContent("");
-				setToolCalls([]);
+				hasFinalizer = true;
 				continue;
 			}
 
@@ -606,8 +597,38 @@ export default function ChatPanel() {
 			}
 		}
 
-		processedCountRef.current = ws.messages.length;
-	}, [ws.messages]);
+		// Second pass: finalize if streaming ended
+		if (streamingEnded && hasFinalizer) {
+			if (streamingContent.trim() || toolCalls.length > 0) {
+				const toolLines = toolCalls
+					.map((tc) => {
+						const argsLine = tc.args ? `\n  args: ${tc.args}` : "";
+						const resultLine = tc.result ? `\n  result: ${tc.result}` : "";
+						return `> ${tc.name}${argsLine}${resultLine}`;
+					})
+					.filter(Boolean);
+				const lines = [...toolLines, streamingContent.trim()].filter(Boolean);
+
+				if (lines.length) {
+					// eslint-disable-next-line react-hooks/set-state-in-effect
+					setDisplayMessages((prev) => [
+						...prev,
+						{
+							id: `assistant-${Date.now()}`,
+							role: "assistant",
+							content: lines.join("\n\n"),
+							toolCalls: [...toolCalls],
+							timestamp: Date.now(),
+						},
+					]);
+				}
+			}
+			setStreamingContent("");
+			setToolCalls([]);
+		}
+
+		processedCountRef.current = sse.messages.length;
+	}, [sse.messages]);
 
 	// ── Send handler ─────────────────────────────────────────────────────────
 	const handleSend = useCallback(() => {
@@ -640,6 +661,7 @@ export default function ChatPanel() {
 		}
 		setStreamingContent("");
 		setToolCalls([]);
+		prevIsStreamingRef.current = false; // Reset streaming state for new turn
 
 		// Add user message to display
 		const userMsg: DisplayMessage = {
@@ -653,9 +675,9 @@ export default function ChatPanel() {
 		setInput("");
 		inputRef.current?.focus();
 
-		// Forward to Pi via WebSocket
-		ws.send(trimmed);
-	}, [input, streamingContent, toolCalls, ws]);
+		// Forward to Pi via SSE command
+		sse.prompt(trimmed);
+	}, [input, streamingContent, toolCalls]);
 
 	// ── Model switcher ───────────────────────────────────────────────────────
 	const handleSwitchModel = useCallback(
@@ -671,14 +693,23 @@ export default function ChatPanel() {
 				);
 			}
 
-			// Send set_model RPC through the WS relay for immediate effect
-			ws.send({
-				type: "set_model",
-				provider: model.provider,
-				modelId: model.id,
-			});
+			// Send set_model command via REST for immediate effect
+			const sid = selectedSessionId;
+			if (sid) {
+				fetch(`/api/projects/cmd?session_id=${encodeURIComponent(sid)}`, {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						command: "set_model",
+						modelId: model.id,
+						provider: model.provider,
+					}),
+				}).catch((err) =>
+					console.warn("Failed to switch model via SSE:", err),
+				);
+			}
 		},
-		[switchModel, setSelectedModel, ws, selectedSessionId],
+		[switchModel, setSelectedModel, selectedSessionId],
 	);
 
 	// ── Session close/delete ─────────────────────────────────────────────────
@@ -711,14 +742,14 @@ export default function ChatPanel() {
 		if (closingState !== "none") return;
 		setClosingState("compact");
 		try {
-			ws.compact();
+			sse.compact();
 			// State resets when the RPC response arrives (handled in the
 			// message processing effect below).
 		} catch (err) {
 			console.error("Failed to compact:", err);
 			setClosingState("none");
 		}
-	}, [closingState, ws]);
+	}, [closingState, sse]);
 
 	// ── Key handling ─────────────────────────────────────────────────────────
 	const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -730,36 +761,42 @@ export default function ChatPanel() {
 
 	// ── Connection status label ──────────────────────────────────────────────
 	const connectionLabel = (() => {
-		switch (ws.state) {
-			case "connected":
+		switch (sse.state) {
+			case "idle":
 				return "Connected";
+			case "streaming":
+				return "Thinking…";
+			case "loading":
+				return "Connecting…";
 			case "connecting":
 				return "Connecting…";
-			case "error":
-				return "Connection Error";
 			case "disconnected":
 				return "Disconnected";
+			case "error":
+				return "Error";
 		}
 	})();
 
 	const connectionColor = (() => {
-		switch (ws.state) {
-			case "connected":
+		switch (sse.state) {
+			case "idle":
 				return "#22c55e";
+			case "streaming":
+				return "#3b82f6";
+			case "loading":
 			case "connecting":
 				return "#eab308";
+			case "disconnected":
 			case "error":
 				return "#ef4444";
-			case "disconnected":
-				return "#475569";
 		}
 	})();
 
 	// ── Pending UI request banner ────────────────────────────────────────────
 	const renderPendingUi = () => {
-		if (!ws.pendingUiRequest) return null;
+		if (!sse.pendingUiRequest) return null;
 
-		const req = ws.pendingUiRequest;
+		const req = sse.pendingUiRequest;
 		const paramsText =
 			typeof req.params === "string"
 				? req.params
@@ -772,13 +809,13 @@ export default function ChatPanel() {
 				<div className="ui-prompt-banner__actions">
 					<button
 						className="btn btn--sm"
-						onClick={() => ws.respondToUi(req.id, null, false)}
+						onClick={() => sse.respondToUi(req.id, null, false)}
 					>
 						Cancel
 					</button>
 					<button
 						className="btn btn--sm btn--primary"
-						onClick={() => ws.respondToUi(req.id, true, false)}
+						onClick={() => sse.respondToUi(req.id, true, false)}
 					>
 						Accept
 					</button>
@@ -818,31 +855,14 @@ export default function ChatPanel() {
 							}}
 						/>
 						{connectionLabel}
-						{ws.state === "error" && (
-							<button
-								className="btn btn--sm btn--reconnect"
-								onClick={() => ws.reconnect()}
-								title="Reconnect"
-							>
-								<svg
-									viewBox="0 0 24 24"
-									fill="none"
-									stroke="currentColor"
-									strokeWidth="2"
-									width="14"
-									height="14"
-								>
-									<path d="M1 4v6h6M23 20v-6h-6" />
-									<path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15" />
-								</svg>
-								Reconnect
-							</button>
+						{sse.state === "connecting" && (
+							<span className="chat-connecting-hint">Reconnecting…</span>
 						)}
 					</span>
 				</div>
 
 				{/* Error message banner */}
-				{ws.errorMessage && (
+				{sse.errorMessage && (
 					<div className="chat-error-banner">
 						<svg
 							viewBox="0 0 24 24"
@@ -856,7 +876,7 @@ export default function ChatPanel() {
 							<line x1="12" y1="8" x2="12" y2="12" />
 							<line x1="12" y1="16" x2="12.01" y2="16" />
 						</svg>
-						<span>{ws.errorMessage}</span>
+						<span>{sse.errorMessage}</span>
 					</div>
 				)}
 
@@ -866,7 +886,7 @@ export default function ChatPanel() {
 						className="model-picker__trigger"
 						onClick={() => setModelDropdownOpen(!modelDropdownOpen)}
 						title="Switch model"
-						disabled={ws.state !== "connected"}
+						disabled={sse.state === "disconnected" || sse.state === "error"}
 					>
 						<svg
 							viewBox="0 0 24 24"
@@ -1115,12 +1135,12 @@ export default function ChatPanel() {
 					value={input}
 					onChange={(e) => setInput(e.target.value)}
 					onKeyDown={handleKeyDown}
-					disabled={ws.state !== "connected" || isStreaming}
+					disabled={sse.state === "disconnected" || sse.state === "error" || isStreaming}
 				/>
 				{isStreaming ? (
 					<button
 						className="btn btn--abort"
-						onClick={() => ws.abort()}
+						onClick={() => sse.abort()}
 						title="Abort current turn"
 					>
 						<svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
@@ -1131,7 +1151,7 @@ export default function ChatPanel() {
 					<button
 						className="btn btn--send"
 						onClick={handleSend}
-						disabled={!input.trim() || ws.state !== "connected"}
+						disabled={!input.trim() || sse.state === "disconnected" || sse.state === "error" || isStreaming}
 					>
 						<svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
 							<path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />

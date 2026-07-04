@@ -2,7 +2,7 @@
  * API service for communicating with the FastAPI backend.
  * All fetch calls use relative URLs (Vite proxy or same-origin).
  *
- * Architecture: REST = metadata only, WebSocket = all Pi RPC actions.
+ * Architecture: REST = metadata + commands, SSE = event streaming.
  * Project-scoped endpoints use `project_path` as a query parameter.
  */
 
@@ -62,8 +62,7 @@ export interface SessionListItem {
 	status: string;
 	pid?: number;
 	created_at: string;
-	ws_session_id?: string;
-	ws_connected: boolean;
+	sse_connected: boolean;
 }
 
 /** List project folder names under ~/Projects */
@@ -101,8 +100,7 @@ export interface SessionRecord {
 	status: string;
 	pid?: number;
 	created_at: string;
-	ws_session_id?: string;
-	ws_connected: boolean;
+	sse_connected: boolean;
 	running_count?: number;
 }
 
@@ -143,7 +141,7 @@ export async function listModels(sessionId?: string): Promise<ModelConfig[]> {
 
 /**
  * Switch model for a session (updates session metadata).
- * The actual set_model RPC is sent via WebSocket on next connect.
+ * The actual set_model RPC is sent via SSE on next connect.
  */
 export interface ModelSwitchResponse {
 	message: string;

@@ -26,6 +26,12 @@ interface ModelsCache {
 const MODELS_CACHE_KEY = "pi_models_cache";
 const MODELS_MAX_AGE_MS = 30 * 60 * 1000; // 30 minutes
 
+/** Module-level Set tracking which project paths have had sessions created.
+ *  Using a module-level Set (not a ref) because React StrictMode creates
+ *  separate component instances, each with their own useRef state. A ref
+ *  set in one instance is invisible to the other instance. */
+const sessionCreatedProjects = new Set<string>();
+
 function getCachedModels(): Model[] | null {
 	try {
 		const cached = localStorage.getItem(MODELS_CACHE_KEY);
@@ -35,7 +41,8 @@ function getCachedModels(): Model[] | null {
 		if (Date.now() - parsed.timestamp > MODELS_MAX_AGE_MS) return null;
 
 		return parsed.models;
-	} catch {
+	} catch (e) {
+		console.warn("Failed to read models cache:", e);
 		return null;
 	}
 }
@@ -47,8 +54,10 @@ function cacheModels(models: Model[]) {
 			timestamp: Date.now(),
 		};
 		localStorage.setItem(MODELS_CACHE_KEY, JSON.stringify(cache));
-	} catch {
-		// Ignore localStorage errors (privacy mode, quota exceeded, etc.)
+	} catch (e) {
+		console.warn("Failed to write models cache:", e);
+		// Continue — localStorage errors (privacy mode, quota exceeded, etc.)
+		// are non-fatal; models will be fetched from the server on next load.
 	}
 }
 
@@ -67,12 +76,12 @@ interface UseModelsResult {
  * Flow:
  * 1. Check localStorage cache (instant, survives page reload)
  * 2. Call `/api/models` WITHOUT session → uses server-side cache (instant, no session needed)
- * 3. Create Pi RPC session + WebSocket for actual communication
+ * 3. Create Pi RPC session for actual communication
  * 4. RPC polling as final fallback (only if steps 0-1 both failed)
  *
  * @param projectPath — optional project folder path (triggers session creation)
  * @param existingSessionId — optional existing session id to use instead of creating one
- * @returns models list, loading state, error message, and session_id for WS connection
+ * @returns models list, loading state, error message, and session_id for SSE connection
  */
 export function useModels(
 	projectPath?: string | null,
@@ -146,10 +155,18 @@ export function useModels(
 		// This happens regardless of whether models were already loaded.
 		// We need the session for actual communication with Pi.
 		let activeSessionId = existingSessionId || sessionId;
-		if (!launchedRef.current && !existingSessionId && !sessionId) {
+		// Use module-level Set instead of ref because React StrictMode creates
+		// separate component instances, each with their own useRef state.
+		const projectKey = projectPath || "";
+		const alreadyHasSession = sessionCreatedProjects.has(projectKey);
+		const shouldCreate = !alreadyHasSession && !existingSessionId && !sessionId;
+		if (shouldCreate) {
 			// Only create a session if we don't have one yet (guard against
 			// StrictMode double-render and other edge cases).
 			launchedRef.current = true;
+			// Mark this project as having a session (module-level, persists
+			// across StrictMode's separate component instances).
+			sessionCreatedProjects.add(projectKey);
 			try {
 				const session = await createSession(projectPath!);
 				activeSessionId = session.session_id;
@@ -158,6 +175,8 @@ export function useModels(
 					setRunningCount(session.running_count);
 				}
 			} catch {
+				// Reset on failure so the next attempt can try again
+				sessionCreatedProjects.delete(projectKey);
 				if (!abortControllerRef.current?.signal.aborted) {
 					setError("Failed to connect to Pi. No models available.");
 					setLoading(false);
@@ -250,6 +269,10 @@ export function useModels(
 		// the new session; the old `launchedRef` would otherwise block it.
 		if (projectChanged || sessionChanged) {
 			launchedRef.current = false;
+			// Clear the module-level set so a new project can create a session
+			if (projectChanged && projectPath) {
+				sessionCreatedProjects.delete(projectPath);
+			}
 			modelsLoadedRef.current = false;
 			prevProjectRef.current = projectPath ?? null;
 			prevExistingSessionRef.current = existingSessionId ?? null;

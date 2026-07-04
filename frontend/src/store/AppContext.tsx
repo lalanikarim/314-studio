@@ -16,8 +16,7 @@ export interface SessionRecord {
 	status: string;
 	pid?: number;
 	created_at: string;
-	ws_session_id?: string;
-	ws_connected: boolean;
+	sse_connected: boolean;
 }
 
 const initialAppState: AppState = {
