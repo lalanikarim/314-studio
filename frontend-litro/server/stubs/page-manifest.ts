@@ -4,6 +4,7 @@
 // It is re-generated on every build and dev-reload.
 import * as _page0 from "../../pages/index.js";
 import * as _page1 from "../../pages/models.js";
+import * as _page2 from "../../pages/workspace.js";
 
 export const routes = [
   {
@@ -19,6 +20,13 @@ export const routes = [
     "componentTag": "page-models",
     "isDynamic": false,
     "isCatchAll": false
+  },
+  {
+    "path": "/workspace",
+    "filePath": "/Users/karim/Projects/314-studio/frontend-litro/pages/workspace.ts",
+    "componentTag": "page-workspace",
+    "isDynamic": false,
+    "isCatchAll": false
   }
 ];
 
@@ -26,7 +34,8 @@ export const routes = [
 // Allows the catch-all handler to access pageData without a .ts runtime import.
 const _pageModules = {
   "/Users/karim/Projects/314-studio/frontend-litro/pages/index.ts": _page0,
-  "/Users/karim/Projects/314-studio/frontend-litro/pages/models.ts": _page1
+  "/Users/karim/Projects/314-studio/frontend-litro/pages/models.ts": _page1,
+  "/Users/karim/Projects/314-studio/frontend-litro/pages/workspace.ts": _page2
 };
 export const pageModules: Record<string, Record<string, unknown>> = _pageModules;
 
