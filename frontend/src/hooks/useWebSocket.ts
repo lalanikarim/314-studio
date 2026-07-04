@@ -127,6 +127,15 @@ export interface UseWebSocketReturn {
 
 const INTERACTIVE_METHODS = new Set(["select", "confirm", "input", "editor"]);
 
+/** Maximum number of inbound messages to keep in memory. Older messages are
+ *  discarded once processed to prevent unbounded growth during long sessions. */
+const MAX_MESSAGES = 500;
+
+/** Reconnection backoff: base delay, max delay, and max exponent. */
+const BACKOFF_BASE_MS = 2_000;
+const BACKOFF_MAX_MS = 30_000;
+const BACKOFF_MAX_EXP = 4; // 2^4 = 16 → capped at BACKOFF_MAX_MS
+
 // ── Hook ───────────────────────────────────────────────────────────────────
 
 /**
@@ -157,6 +166,8 @@ export function useWebSocket(
 	const disposedRef = useRef(false);
 	// Track whether the user explicitly requested disconnect (to prevent unwanted reconnection)
 	const shouldDisconnectRef = useRef(false);
+	// Exponential backoff counter for reconnection attempts
+	const backoffIndexRef = useRef(0);
 
 	// Stable refs so doConnect can read current values without being recreated.
 	// doConnect reads from these refs instead of the closure, giving it stable deps.
@@ -272,6 +283,7 @@ export function useWebSocket(
 		ws.onopen = () => {
 			if (disposedRef.current) return;
 			setState("connected");
+			backoffIndexRef.current = 0; // Reset backoff on successful connection
 			// Note: Do NOT call setMessages([]) here to avoid breaking message processing
 
 			// Send initial get_state to trigger the streaming pipeline
@@ -297,7 +309,13 @@ export function useWebSocket(
 
 				if (parsed.kind === "rpc_event") {
 					// Streaming event from Pi (message content, tool calls, etc.)
-					setMessages((prev) => [...prev, parsed as RpcEventMessage]);
+					setMessages((prev) => {
+						const next = [...prev, parsed as RpcEventMessage];
+						if (next.length > MAX_MESSAGES) {
+							return next.slice(next.length - MAX_MESSAGES);
+						}
+						return next;
+					});
 				} else if (parsed.kind === "extension_ui_request") {
 					const extReq = parsed as ExtensionUiRequestMessage;
 					if (INTERACTIVE_METHODS.has(extReq.method)) {
@@ -318,26 +336,44 @@ export function useWebSocket(
 					}
 				} else if (parsed.kind === "extension_ui_response") {
 					// Extension got a response — just log it
-					setMessages((prev) => [
-						...prev,
-						parsed as ExtensionUiResponseMessage,
-					]);
+					setMessages((prev) => {
+						const next = [
+							...prev,
+							parsed as ExtensionUiResponseMessage,
+						];
+						if (next.length > MAX_MESSAGES) {
+							return next.slice(next.length - MAX_MESSAGES);
+						}
+						return next;
+					});
 				} else if (parsed.type === "response") {
 					// RPC response (get_state, set_model, etc.) — relay to frontend
-					setMessages((prev) => [
-						...prev,
-						{
-							kind: "rpc_response",
-							response: parsed as Record<string, unknown>,
-						},
-					]);
+					setMessages((prev) => {
+						const next = [
+							...prev,
+							{
+								kind: "rpc_response",
+								response: parsed as Record<string, unknown>,
+							} as RpcResponseMessage,
+						];
+						if (next.length > MAX_MESSAGES) {
+							return next.slice(next.length - MAX_MESSAGES);
+						}
+						return next;
+					});
 				}
 			} catch {
 				// Non-JSON — treat as raw event
-				setMessages((prev) => [
-					...prev,
-					{ kind: "rpc_event", event: { raw: event.data } },
-				]);
+				setMessages((prev) => {
+					const next = [
+						...prev,
+						{ kind: "rpc_event", event: { raw: event.data } } as RpcEventMessage,
+					];
+					if (next.length > MAX_MESSAGES) {
+						return next.slice(next.length - MAX_MESSAGES);
+					}
+					return next;
+				});
 			}
 		};
 
@@ -367,11 +403,19 @@ export function useWebSocket(
 			// Only attempt reconnection if not intentional disconnect
 			// and not a clean close (1000 = Normal closure)
 			if (!shouldDisconnectRef.current && event.code !== 1000) {
+				const delay = Math.min(
+					BACKOFF_BASE_MS * 2 ** backoffIndexRef.current,
+					BACKOFF_MAX_MS,
+				);
+				backoffIndexRef.current = Math.min(
+					backoffIndexRef.current + 1,
+					BACKOFF_MAX_EXP,
+				);
 				reconnectTimerRef.current = setTimeout(() => {
 					if (!disposedRef.current && !shouldDisconnectRef.current) {
 						doConnectRef.current();
 					}
-				}, 2000);
+				}, delay);
 			}
 		};
 	}, [send]);

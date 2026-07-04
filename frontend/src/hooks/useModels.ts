@@ -2,12 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import type { Model } from "../types";
 import { createSession, listModels } from "../services/api";
 import type { ModelConfig } from "../services/api";
-
-/** Derive a display name from provider + model id, e.g. "Anthropic – claude-sonnet-4-20250514" */
-function deriveModelName(modelId: string, provider: string): string {
-	const providerName = provider.charAt(0).toUpperCase() + provider.slice(1);
-	return `${providerName} – ${modelId}`;
-}
+import { deriveModelName } from "../utils/model";
 
 /** Convert a ModelConfig into the frontend Model type */
 function mapModelConfig(config: ModelConfig): Model {
@@ -31,6 +26,12 @@ interface ModelsCache {
 const MODELS_CACHE_KEY = "pi_models_cache";
 const MODELS_MAX_AGE_MS = 30 * 60 * 1000; // 30 minutes
 
+/** Module-level Set tracking which project paths have had sessions created.
+ *  Using a module-level Set (not a ref) because React StrictMode creates
+ *  separate component instances, each with their own useRef state. A ref
+ *  set in one instance is invisible to the other instance. */
+const sessionCreatedProjects = new Set<string>();
+
 function getCachedModels(): Model[] | null {
 	try {
 		const cached = localStorage.getItem(MODELS_CACHE_KEY);
@@ -40,7 +41,8 @@ function getCachedModels(): Model[] | null {
 		if (Date.now() - parsed.timestamp > MODELS_MAX_AGE_MS) return null;
 
 		return parsed.models;
-	} catch {
+	} catch (e) {
+		console.warn("Failed to read models cache:", e);
 		return null;
 	}
 }
@@ -52,8 +54,10 @@ function cacheModels(models: Model[]) {
 			timestamp: Date.now(),
 		};
 		localStorage.setItem(MODELS_CACHE_KEY, JSON.stringify(cache));
-	} catch {
-		// Ignore localStorage errors (privacy mode, quota exceeded, etc.)
+	} catch (e) {
+		console.warn("Failed to write models cache:", e);
+		// Continue — localStorage errors (privacy mode, quota exceeded, etc.)
+		// are non-fatal; models will be fetched from the server on next load.
 	}
 }
 
@@ -89,8 +93,8 @@ export function useModels(
 	const [sessionId, setSessionId] = useState<string | null>(null);
 	const [runningCount, setRunningCount] = useState<number | null>(null);
 	const launchedRef = useRef(false);
-	const sessionCreatedRef = useRef(false);
 	const prevProjectRef = useRef<string | null>(null);
+	const prevExistingSessionRef = useRef<string | null>(null);
 	const abortControllerRef = useRef<AbortController | null>(null);
 	// Track whether models were loaded in steps 0/1, so step 3 can be skipped
 	const modelsLoadedRef = useRef(false);
@@ -108,6 +112,7 @@ export function useModels(
 		if (cachedModels && cachedModels.length > 0) {
 			if (!abortControllerRef.current?.signal.aborted) {
 				setModels(cachedModels);
+				setLoading(false);
 				modelsLoadedRef.current = true;
 			}
 		}
@@ -150,14 +155,18 @@ export function useModels(
 		// This happens regardless of whether models were already loaded.
 		// We need the session for actual communication with Pi.
 		let activeSessionId = existingSessionId || sessionId;
-		if (!sessionCreatedRef.current && !existingSessionId && !sessionId) {
+		// Use module-level Set instead of ref because React StrictMode creates
+		// separate component instances, each with their own useRef state.
+		const projectKey = projectPath || "";
+		const alreadyHasSession = sessionCreatedProjects.has(projectKey);
+		const shouldCreate = !alreadyHasSession && !existingSessionId && !sessionId;
+		if (shouldCreate) {
 			// Only create a session if we don't have one yet (guard against
 			// StrictMode double-render and other edge cases).
 			launchedRef.current = true;
-			// Mark session as being created synchronously so subsequent
-			// StrictMode renders don't try to create another session while
-			// this async call is still in flight.
-			sessionCreatedRef.current = true;
+			// Mark this project as having a session (module-level, persists
+			// across StrictMode's separate component instances).
+			sessionCreatedProjects.add(projectKey);
 			try {
 				const session = await createSession(projectPath!);
 				activeSessionId = session.session_id;
@@ -166,8 +175,8 @@ export function useModels(
 					setRunningCount(session.running_count);
 				}
 			} catch {
-				// Reset the flag on failure so the next attempt can try again
-				sessionCreatedRef.current = false;
+				// Reset on failure so the next attempt can try again
+				sessionCreatedProjects.delete(projectKey);
 				if (!abortControllerRef.current?.signal.aborted) {
 					setError("Failed to connect to Pi. No models available.");
 					setLoading(false);
@@ -252,12 +261,21 @@ export function useModels(
 		const abortController = new AbortController();
 		abortControllerRef.current = abortController;
 
-		// Only reset launch guard when projectPath actually changes
-		if (prevProjectRef.current !== projectPath) {
+		const projectChanged = prevProjectRef.current !== projectPath;
+		const sessionChanged = prevExistingSessionRef.current !== existingSessionId;
+
+		// Reset launch guard when projectPath or existingSessionId changes.
+		// Switching sessions without changing project must re-fetch models for
+		// the new session; the old `launchedRef` would otherwise block it.
+		if (projectChanged || sessionChanged) {
 			launchedRef.current = false;
-			sessionCreatedRef.current = false;
+			// Clear the module-level set so a new project can create a session
+			if (projectChanged && projectPath) {
+				sessionCreatedProjects.delete(projectPath);
+			}
 			modelsLoadedRef.current = false;
 			prevProjectRef.current = projectPath ?? null;
+			prevExistingSessionRef.current = existingSessionId ?? null;
 			setSessionId(null);
 			setRunningCount(null);
 			setModels([]);
@@ -270,7 +288,7 @@ export function useModels(
 		return () => {
 			abortControllerRef.current?.abort();
 		};
-	}, [projectPath]);
+	}, [projectPath, existingSessionId]);
 
 	return { models, loading, error, sessionId, runningCount, refresh };
 }

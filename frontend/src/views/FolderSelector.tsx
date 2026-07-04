@@ -6,6 +6,7 @@ import {
 	closeSession,
 	deleteSession,
 } from "../services/api";
+import { deriveModelName, extractProvider } from "../utils/model";
 import "./views.css";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -15,30 +16,6 @@ type Tab = "projects" | "sessions";
 interface DirItem {
 	path: string;
 	name: string;
-}
-
-/** Derive a display name from provider + model id, e.g. "Anthropic – claude-sonnet-4-20250514" */
-function deriveModelName(modelId: string, provider: string): string {
-	const providerName = provider.charAt(0).toUpperCase() + provider.slice(1);
-	return `${providerName} – ${modelId}`;
-}
-
-/** Extract provider from model_id if it uses provider/id format */
-function extractProvider(modelId: string | null | undefined): string {
-	if (!modelId) return "";
-	if (modelId.includes("/")) return modelId.split("/")[0];
-	for (const p of [
-		"anthropic",
-		"openai",
-		"google",
-		"deepseek",
-		"mistral",
-		"groq",
-		"together",
-	]) {
-		if (modelId.toLowerCase().startsWith(p)) return p;
-	}
-	return "anthropic";
 }
 
 // ---------------------------------------------------------------------------
@@ -367,19 +344,29 @@ export default function FolderSelector() {
 		name: string;
 	} | null>(null);
 	const [shuttingDown, setShuttingDown] = useState(false);
+	const [sessionLoadError, setSessionLoadError] = useState<string | null>(null);
 	const sessionsFetched = useRef(false);
 
-	// Fetch active sessions on mount (always, so the Sessions tab can appear)
+	// Fetch active sessions — on mount and whenever user switches to
+	// the sessions tab (picks up sessions created/deleted from Workspace).
 	useEffect(() => {
+		if (activeTab !== "sessions") {
+			sessionsFetched.current = false; // Reset for next time sessions tab opens
+			return;
+		}
 		if (sessionsFetched.current) return;
 		sessionsFetched.current = true;
+		setSessionLoadError(null);
 		listSessions()
 			.then((s) => {
 				const running = s.filter((item) => item.status === "running");
 				setSessions(running);
 			})
-			.catch(() => {});
-	}, []);
+			.catch((e) => {
+				console.warn("Failed to load sessions:", e);
+				setSessionLoadError("Failed to load sessions. Please try again.");
+			});
+	}, [activeTab]);
 
 	const handleOpen = (path: string) => {
 		setSelectedFolder(path);
@@ -529,9 +516,12 @@ export default function FolderSelector() {
 						</>
 					) : (
 						<>
-							{sessions.length === 0 ? (
-								<div className="folder-tree__empty">No active sessions</div>
-							) : (
+							{sessionLoadError && (
+							<div className="folder-tree__error">{sessionLoadError}</div>
+						)}
+						{sessions.length === 0 ? (
+							<div className="folder-tree__empty">No active sessions</div>
+						) : (
 								sessions.map((session) => (
 									<SessionRow
 										key={session.session_id}

@@ -15,9 +15,13 @@ export function useFileContent(projectPath: string, filePath: string): FileConte
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isMountedRef = useRef(true);
+  // Track the expected filePath so stale responses from rapid file switches
+  // don't overwrite the current content with data for a previous file.
+  const expectedPathRef = useRef('');
 
   useEffect(() => {
     isMountedRef.current = true;
+    expectedPathRef.current = filePath;
 
     if (!filePath || !projectPath) {
       setContent('');
@@ -36,13 +40,13 @@ export function useFileContent(projectPath: string, filePath: string): FileConte
 
     readFile(projectPath, filePath)
       .then((text) => {
-        if (isMountedRef.current) {
+        if (expectedPathRef.current === filePath && isMountedRef.current) {
           setContent(text);
           setLoading(false);
         }
       })
       .catch((e) => {
-        if (isMountedRef.current) {
+        if (expectedPathRef.current === filePath && isMountedRef.current) {
           setError(e instanceof Error ? e.message : 'Failed to load file');
           setContent('');
           setLoading(false);

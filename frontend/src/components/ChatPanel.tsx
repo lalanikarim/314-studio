@@ -2,8 +2,8 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useApp } from "../store/AppContext";
-import { useModels } from "../hooks/useModels";
 import { useWebSocket } from "../hooks/useWebSocket";
+import { deriveModelName } from "../utils/model";
 import {
 	closeSession,
 	deleteSession,
@@ -376,8 +376,8 @@ export default function ChatPanel() {
 		setView,
 		selectedFolder,
 		sessionId: selectedSessionId,
+		models,
 	} = useApp();
-	const { models } = useModels(selectedFolder, selectedSessionId);
 
 	// Model ref — kept in sync with currentModel so the WS hook always
 	// knows which model to send `set_model` with on connect.
@@ -403,12 +403,6 @@ export default function ChatPanel() {
 
 	// Track if we've already set the model from get_state (to avoid duplicates)
 	const modelSetFromStateRef = useRef(false);
-
-	// ── Derive a display name from provider + model id ───────────────────────
-	function deriveModelName(modelId: string, provider: string): string {
-		const providerName = provider.charAt(0).toUpperCase() + provider.slice(1);
-		return `${providerName} – ${modelId}`;
-	}
 
 	// ── Match a raw model object against the fetched models list ─────────────
 	function matchModelFromState(
@@ -536,6 +530,18 @@ export default function ChatPanel() {
 							modelSetFromStateRef.current = true;
 						}
 					}
+				}
+				// ── Handle compact responses — reset closing indicator ──────
+				if (
+					response.type === "response" &&
+					response.command === "compact" &&
+					closingState === "compact"
+				) {
+					setClosingState("none");
+				}
+				// Unhandled RPC responses (set_model, etc.) — log for debugging
+				if (response.type === "response" && typeof response.command === "string") {
+					console.debug("Unhandled RPC response:", response.command);
 				}
 				continue;
 			}
@@ -706,8 +712,8 @@ export default function ChatPanel() {
 		setClosingState("compact");
 		try {
 			ws.compact();
-			// Compact is async — reset state after a delay
-			setTimeout(() => setClosingState("none"), 3000);
+			// State resets when the RPC response arrives (handled in the
+			// message processing effect below).
 		} catch (err) {
 			console.error("Failed to compact:", err);
 			setClosingState("none");
