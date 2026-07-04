@@ -45,7 +45,7 @@ from .schemas import SessionRecord
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Extension UI handling (shared with chat.py WS relay)
+# Extension UI handling (shared with chat.py SSE endpoint)
 # ---------------------------------------------------------------------------
 
 _FIRE_AND_FORGET_METHODS = frozenset(
@@ -370,8 +370,7 @@ class SessionManager:
         """Update the model metadata for a session.
 
         This only records the desired model in the session record. The actual
-        set_model RPC command is sent over WebSocket when the client connects
-        (ensuring all Pi actions go through WS, never direct HTTP→stdin).
+        set_model RPC command is sent as an SSE event when the client subscribes.
         """
         async with self._lock:
             record = self._sessions.get(session_id)
@@ -416,14 +415,14 @@ class SessionManager:
                 record.sse_cancelled = True
 
     # ------------------------------------------------------------------
-    # Command sending (replaces send_to_session for REST-based commands)
+    # Command sending (REST-based)
     # ------------------------------------------------------------------
 
     async def send_command(self, session_id: str, payload: dict, timeout: float | None = None) -> dict:
         """Send a command and wait for the matching response.
 
         This is used by the REST command endpoint to send Pi RPC commands
-        directly to the process stdin (no WebSocket relay needed).
+        directly to the process stdin (no relay needed).
         """
         async with self._lock:
             record = self._sessions.get(session_id)
@@ -452,7 +451,7 @@ class SessionManager:
         return [s for s in sessions.values() if s.status == "running"]
 
     # ------------------------------------------------------------------
-    # Relay helpers (called from WS relay in chat.py)
+    # Relay helpers (called from SSE endpoint in chat.py)
     # ------------------------------------------------------------------
 
     async def get_next_event(self, session_id: str) -> dict | None:
@@ -461,20 +460,6 @@ class SessionManager:
         if not record:
             return None
         return await record.event_buffer.get()
-
-    def send_to_session(self, session_id: str, payload: dict) -> None:
-        """Enqueue a message to be sent to the session's stdin by the relay task.
-
-        Kept for backward compatibility with any remaining WS relay callers.
-        The REST command path uses send_command() instead.
-        """
-        record = self._sessions.get(session_id)
-        if not record or record.status != "running":
-            return
-        # We use a special marker queue for relay→stdin messages
-        if record.ws_to_stdin_queue is None:
-            record.ws_to_stdin_queue = asyncio.Queue()
-        record.ws_to_stdin_queue.put_nowait(payload)
 
     # ------------------------------------------------------------------
     # Internal: command sending
@@ -527,7 +512,7 @@ class SessionManager:
         Routes:
           - "response" with matching id → resolves pending_request Future
           - "extension_ui_request" → auto-reply (fire-and-forget) or queue in event_buffer
-          - Everything else → queues in event_buffer for WS relay
+          - Everything else → queues in event_buffer for SSE stream
         """
         try:
             while True:
@@ -586,7 +571,7 @@ class SessionManager:
                         except Exception:
                             pass
 
-                # Everything else goes to event buffer for WS relay
+                # Everything else goes to event buffer for SSE stream
                 elif msg_type == "response":
                     # Response without matching pending_request — still relay to WS
                     wrapped = data
