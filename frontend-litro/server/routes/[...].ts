@@ -7,9 +7,11 @@ function matchRoute(
   pathname: string,
 ): { route: LitroRoute; params: Record<string, string> } | undefined {
   for (const route of routes) {
+    console.log('[matchRoute] checking route:', route.path, 'isDynamic:', route.isDynamic, 'isCatchAll:', route.isCatchAll);
     if (route.isCatchAll) return { route, params: {} };
 
     if (!route.isDynamic) {
+      console.log('[matchRoute] comparing:', pathname, '===', route.path, '=', pathname === route.path);
       if (pathname === route.path) return { route, params: {} };
       continue;
     }
@@ -34,6 +36,8 @@ function matchRoute(
 
 export default defineEventHandler(async (event) => {
   const pathname = getRequestURL(event).pathname;
+  console.log('[catchAll] pathname:', pathname);
+  console.log('[catchAll] routes:', JSON.stringify(routes));
   const result = matchRoute(pathname);
 
   if (!result) {

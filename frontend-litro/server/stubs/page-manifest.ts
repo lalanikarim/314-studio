@@ -3,6 +3,7 @@
 // This is the #litro/page-manifest virtual module.
 // It is re-generated on every build and dev-reload.
 import * as _page0 from "../../pages/index.js";
+import * as _page1 from "../../pages/models.js";
 
 export const routes = [
   {
@@ -11,13 +12,21 @@ export const routes = [
     "componentTag": "page-home",
     "isDynamic": false,
     "isCatchAll": false
+  },
+  {
+    "path": "/models",
+    "filePath": "/Users/karim/Projects/314-studio/frontend-litro/pages/models.ts",
+    "componentTag": "page-models",
+    "isDynamic": false,
+    "isCatchAll": false
   }
 ];
 
 // Module registry — maps filePath strings to bundled module objects.
 // Allows the catch-all handler to access pageData without a .ts runtime import.
 const _pageModules = {
-  "/Users/karim/Projects/314-studio/frontend-litro/pages/index.ts": _page0
+  "/Users/karim/Projects/314-studio/frontend-litro/pages/index.ts": _page0,
+  "/Users/karim/Projects/314-studio/frontend-litro/pages/models.ts": _page1
 };
 export const pageModules: Record<string, Record<string, unknown>> = _pageModules;
 

@@ -1329,15 +1329,35 @@ async function fetchFolders() {
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   return resp.json();
 }
+async function createSession(projectPath, modelId, name) {
+  const body = {};
+  if (modelId) body.model_id = modelId;
+  const resp = await fetch(
+    `${API_BASE}/projects/?project_path=${encodeURIComponent(projectPath)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    }
+  );
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp.json();
+}
+async function fetchModels(sessionId) {
+  const url = `${API_BASE}/models/`;
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp.json();
+}
 
-var __defProp = Object.defineProperty;
-var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
-var __decorateClass = (decorators, target, key, kind) => {
-  var result = kind > 1 ? void 0 : kind ? __getOwnPropDesc(target, key) : target;
+var __defProp$1 = Object.defineProperty;
+var __getOwnPropDesc$1 = Object.getOwnPropertyDescriptor;
+var __decorateClass$1 = (decorators, target, key, kind) => {
+  var result = kind > 1 ? void 0 : kind ? __getOwnPropDesc$1(target, key) : target;
   for (var i = decorators.length - 1, decorator; i >= 0; i--)
     if (decorator = decorators[i])
       result = (kind ? decorator(target, key, result) : decorator(result)) || result;
-  if (kind && result) __defProp(target, key, result);
+  if (kind && result) __defProp$1(target, key, result);
   return result;
 };
 let HomePage = class extends LitroPage {
@@ -1387,16 +1407,16 @@ let HomePage = class extends LitroPage {
     `;
   }
 };
-__decorateClass([
+__decorateClass$1([
   state()
 ], HomePage.prototype, "folders", 2);
-__decorateClass([
+__decorateClass$1([
   state()
 ], HomePage.prototype, "loading", 2);
-__decorateClass([
+__decorateClass$1([
   state()
 ], HomePage.prototype, "error", 2);
-HomePage = __decorateClass([
+HomePage = __decorateClass$1([
   customElement("page-home")
 ], HomePage);
 const HomePage_default = HomePage;
@@ -1405,6 +1425,252 @@ const _page0 = /*#__PURE__*/Object.freeze({
   __proto__: null,
   get HomePage () { return HomePage; },
   default: HomePage_default
+});
+
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __decorateClass = (decorators, target, key, kind) => {
+  var result = kind > 1 ? void 0 : kind ? __getOwnPropDesc(target, key) : target;
+  for (var i = decorators.length - 1, decorator; i >= 0; i--)
+    if (decorator = decorators[i])
+      result = (kind ? decorator(target, key, result) : decorator(result)) || result;
+  if (kind && result) __defProp(target, key, result);
+  return result;
+};
+let ModelSelectorPage = class extends LitroPage {
+  constructor() {
+    super(...arguments);
+    this.models = [];
+    this.loading = false;
+    this.error = null;
+    this.selectedModel = null;
+    this.search = "";
+    this.selectedProviders = [];
+    this.switching = false;
+    this.sessionId = null;
+    this.sseClient = null;
+  }
+  connectedCallback() {
+    super.connectedCallback();
+    this.loadModels();
+  }
+  disconnectedCallback() {
+    var _a;
+    super.disconnectedCallback();
+    (_a = this.sseClient) == null ? void 0 : _a.close();
+  }
+  get folderPath() {
+    return "";
+  }
+  async loadModels() {
+    this.loading = true;
+    this.error = null;
+    try {
+      this.models = await fetchModels();
+    } catch (err) {
+      this.error = err instanceof Error ? err.message : "Failed to load models";
+    } finally {
+      this.loading = false;
+    }
+  }
+  get providers() {
+    const providerSet = new Set(this.models.map((m) => m.provider));
+    return Array.from(providerSet).sort();
+  }
+  toggleProvider(provider) {
+    this.selectedProviders = this.selectedProviders.includes(provider) ? this.selectedProviders.filter((p) => p !== provider) : [...this.selectedProviders, provider];
+  }
+  get filteredModels() {
+    let result = this.models;
+    if (this.selectedProviders.length > 0) {
+      result = result.filter((m) => this.selectedProviders.includes(m.provider));
+    }
+    if (this.search.trim()) {
+      const q = this.search.toLowerCase();
+      result = result.filter((m) => m.id.toLowerCase().includes(q));
+    }
+    return result;
+  }
+  get hasActiveFilters() {
+    return this.search.trim() || this.selectedProviders.length > 0 && this.selectedProviders.length < this.providers.length;
+  }
+  clearFilters() {
+    this.search = "";
+    this.selectedProviders = [...this.providers];
+  }
+  highlightMatch(text, search) {
+    if (!search.trim()) return text;
+    const q = search.toLowerCase();
+    const idx = text.toLowerCase().indexOf(q);
+    if (idx < 0) return text;
+    return `${text.slice(0, idx)}<mark class="view-models__mark">${text.slice(idx, idx + search.length)}</mark>${text.slice(idx + search.length)}`;
+  }
+  async handleSwitch() {
+    if (!this.selectedModel || !this.folderPath) return;
+    this.switching = true;
+    try {
+      const session = await createSession(this.folderPath, this.selectedModel.id);
+      this.sessionId = session.session_id;
+      window.location.href = `/workspace?session_id=${encodeURIComponent(this.sessionId)}`;
+    } catch (e) {
+      console.error("Failed to switch model:", e);
+      this.error = e instanceof Error ? e.message : "Failed to switch model";
+    } finally {
+      this.switching = false;
+    }
+  }
+  render() {
+    return html`
+      <div class="view-models">
+        <div class="view-models__inner">
+          <div class="view-models__header">
+            <button class="view-models__back" @click=${() => window.location.href = "/"}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+                <path d="M19 12H5M12 19l-7-7 7-7" />
+              </svg>
+              Back
+            </button>
+            <h1>Choose a Model</h1>
+            <button class="view-models__refresh" @click=${this.loadModels} disabled=${this.loading} title="Refresh model list">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                <path d="M4 4v5h5" />
+                <path d="M20 20v-5h-5" />
+                <path d="M20.49 9A9 9 0 0 0 5.64 5.64L4 4" />
+                <path d="M3.51 15a9 9 0 0 0 14.85 3.36L20 20" />
+              </svg>
+              Refresh
+            </button>
+            <p class="view-models__project">
+              Project: ${this.folderPath.split("/").filter(Boolean).pop()}
+            </p>
+          </div>
+
+          <div class="view-models__search">
+            <svg class="view-models__search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8" />
+              <path d="m21 21-4.35-4.35" />
+            </svg>
+            <input
+              type="text"
+              placeholder="Search models…"
+              .value=${this.search}
+              @input=${(e) => {
+      this.search = e.target.value;
+    }}
+            />
+          </div>
+
+          ${!this.loading && this.providers.length > 0 ? html`
+            <div class="view-models__providers">
+              ${this.providers.map((provider) => html`
+                <button
+                  key=${provider}
+                  class="view-models__provider-btn ${this.selectedProviders.includes(provider) ? "view-models__provider-btn--active" : ""}"
+                  @click=${() => this.toggleProvider(provider)}
+                >
+                  ${provider}
+                  <span class="view-models__provider-count">
+                    ${this.models.filter((m) => m.provider === provider).length}
+                  </span>
+                </button>
+              `)}
+              ${this.hasActiveFilters ? html`
+                <button class="view-models__clear-btn" @click=${this.clearFilters} title="Clear all filters">
+                  ✕
+                </button>
+              ` : ""}
+            </div>
+          ` : ""}
+
+          ${this.loading ? html`
+            <div class="view-models__loading">
+              <svg class="view-models__spinner" viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+              </svg>
+              <p>${this.error || "Fetching models..."}</p>
+            </div>
+          ` : html`
+            ${this.error ? html`<p class="view-models__error">${this.error}</p>` : ""}
+            <div class="view-models__list">
+              ${this.filteredModels.map((model) => {
+      var _a, _b;
+      return html`
+                <div
+                  key=${model.provider}:${model.id}
+                  class="view-models__card ${((_a = this.selectedModel) == null ? void 0 : _a.id) === model.id ? "view-models__card--selected" : ""}"
+                  @click=${() => {
+        this.selectedModel = model;
+      }}
+                >
+                  <div class="view-models__card-header">
+                    <div class="view-models__card-name" innerHTML=${this.highlightMatch(model.id, this.search)}></div>
+                    ${((_b = this.selectedModel) == null ? void 0 : _b.id) === model.id ? html`
+                      <span class="view-models__badge">Selected</span>
+                    ` : ""}
+                  </div>
+                  <div class="view-models__card-meta">
+                    <span>${model.provider}</span>
+                    ${model.contextWindow > 0 ? html`
+                      <span class="view-models__divider">&middot;</span>
+                      <span>${model.contextWindow.toLocaleString()} context</span>
+                    ` : ""}
+                  </div>
+                </div>
+              `;
+    })}
+              ${this.filteredModels.length === 0 && this.models.length > 0 ? html`
+                <div class="view-models__empty">No matching models</div>
+              ` : ""}
+            </div>
+
+            <div class="view-models__actions">
+              <button
+                class="btn btn--primary btn--lg"
+                ?disabled=${!this.selectedModel || this.switching}
+                @click=${this.handleSwitch}
+              >
+                ${this.switching ? "Switching..." : "Switch Model & Open"}
+              </button>
+            </div>
+          `}
+        </div>
+      </div>
+    `;
+  }
+};
+__decorateClass([
+  state()
+], ModelSelectorPage.prototype, "models", 2);
+__decorateClass([
+  state()
+], ModelSelectorPage.prototype, "loading", 2);
+__decorateClass([
+  state()
+], ModelSelectorPage.prototype, "error", 2);
+__decorateClass([
+  state()
+], ModelSelectorPage.prototype, "selectedModel", 2);
+__decorateClass([
+  state()
+], ModelSelectorPage.prototype, "search", 2);
+__decorateClass([
+  state()
+], ModelSelectorPage.prototype, "selectedProviders", 2);
+__decorateClass([
+  state()
+], ModelSelectorPage.prototype, "switching", 2);
+__decorateClass([
+  state()
+], ModelSelectorPage.prototype, "sessionId", 2);
+ModelSelectorPage = __decorateClass([
+  customElement("page-models")
+], ModelSelectorPage);
+const ModelSelectorPage_default = ModelSelectorPage;
+
+const _page1 = /*#__PURE__*/Object.freeze({
+  __proto__: null,
+  get ModelSelectorPage () { return ModelSelectorPage; },
+  default: ModelSelectorPage_default
 });
 
 // @ts-nocheck
@@ -1419,20 +1685,30 @@ const routes = [
     "componentTag": "page-home",
     "isDynamic": false,
     "isCatchAll": false
+  },
+  {
+    "path": "/models",
+    "filePath": "/Users/karim/Projects/314-studio/frontend-litro/pages/models.ts",
+    "componentTag": "page-models",
+    "isDynamic": false,
+    "isCatchAll": false
   }
 ];
 
 // Module registry — maps filePath strings to bundled module objects.
 // Allows the catch-all handler to access pageData without a .ts runtime import.
 const pageModules = {
-  "/Users/karim/Projects/314-studio/frontend-litro/pages/index.ts": _page0
+  "/Users/karim/Projects/314-studio/frontend-litro/pages/index.ts": _page0,
+  "/Users/karim/Projects/314-studio/frontend-litro/pages/models.ts": _page1
 };
 
 function matchRoute(pathname) {
   var _a;
   for (const route of routes) {
+    console.log("[matchRoute] checking route:", route.path, "isDynamic:", route.isDynamic, "isCatchAll:", route.isCatchAll);
     if (route.isCatchAll) return { route, params: {} };
     if (!route.isDynamic) {
+      console.log("[matchRoute] comparing:", pathname, "===", route.path, "=", pathname === route.path);
       if (pathname === route.path) return { route, params: {} };
       continue;
     }
@@ -1447,6 +1723,8 @@ function matchRoute(pathname) {
 }
 const _____ = defineEventHandler(async (event) => {
   const pathname = getRequestURL(event).pathname;
+  console.log("[catchAll] pathname:", pathname);
+  console.log("[catchAll] routes:", JSON.stringify(routes));
   const result = matchRoute(pathname);
   if (!result) {
     setResponseHeader(event, "content-type", "text/html; charset=utf-8");

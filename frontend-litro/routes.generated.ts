@@ -11,4 +11,9 @@ export const routes: Route[] = [
     action: async () => { await import("./pages/index.js"); },
     component: "page-home",
   },
+  {
+    path: "/models",
+    action: async () => { await import("./pages/models.js"); },
+    component: "page-models",
+  },
 ];
