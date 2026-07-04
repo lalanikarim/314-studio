@@ -5,7 +5,7 @@ class FilePreviewElement extends LitElement {
   static styles = css`
     :host { display: block; height: 100%; }
     .panel { display: flex; flex-direction: column; height: 100%; }
-    .empty { display: flex; align-items: center; justify-content: center; height: 100%; color: #565f89; }
+    .empty { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); }
     .content { padding: 1rem; white-space: pre; font-family: monospace; }
   `;
 

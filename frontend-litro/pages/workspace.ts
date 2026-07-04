@@ -8,7 +8,7 @@ export class WorkspacePage extends LitroPage {
     :host {
       display: block;
       height: 100vh;
-      background: var(--bg-primary, #1a1b26);
+      background: var(--bg-primary);
     }
     .view-workspace {
       display: flex;
@@ -18,9 +18,12 @@ export class WorkspacePage extends LitroPage {
     .view-workspace__header {
       display: flex;
       align-items: center;
-      padding: 0.5rem 1rem;
-      border-bottom: 1px solid var(--border-color, #3b4261);
-      background: var(--bg-secondary, #16161e);
+      justify-content: space-between;
+      height: 48px;
+      padding: 0 12px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-secondary);
+      flex-shrink: 0;
     }
     .view-workspace__header-left,
     .view-workspace__header-center,
@@ -38,37 +41,53 @@ export class WorkspacePage extends LitroPage {
     .view-workspace__header-right {
       flex: 0 0 auto;
     }
+    .view-workspace__header-left,
+    .view-workspace__header-center,
+    .view-workspace__header-right {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .view-workspace__header-left { flex: 0 0 auto; }
+    .view-workspace__header-center { flex: 1; justify-content: center; }
+    .view-workspace__header-right { flex: 0 0 auto; }
     .icon-btn {
       display: inline-flex;
       align-items: center;
       justify-content: center;
       border: none;
-      border-radius: 4px;
+      border-radius: 6px;
       background: transparent;
-      color: var(--text-secondary, #a9b1d6);
+      color: var(--text-secondary);
       cursor: pointer;
       padding: 6px;
-      transition: background 0.15s;
+      transition: all 0.15s ease;
     }
     .icon-btn:hover {
-      background: var(--bg-hover, #292e42);
+      background: var(--border);
+      color: var(--text-placeholder);
     }
     .icon-btn--active {
-      background: var(--bg-active, #3b4261);
+      color: var(--accent-light);
     }
     .view-workspace__project {
-      margin-left: 0.75rem;
-      font-size: 0.875rem;
-      color: var(--text-secondary, #a9b1d6);
+      margin-left: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-placeholder);
     }
     .view-workspace__project-title {
-      font-size: 0.875rem;
+      font-size: 16px;
       font-weight: 600;
-      color: var(--text-primary, #c0caf5);
+      color: var(--text-secondary);
       cursor: pointer;
+      padding: 4px 12px;
+      border-radius: 6px;
+      transition: color 0.15s ease, background 0.15s ease;
     }
     .view-workspace__project-title:hover {
-      text-decoration: underline;
+      color: var(--text-placeholder);
+      background: rgba(255, 255, 255, 0.06);
     }
     .view-workspace__body {
       display: flex;
@@ -79,29 +98,54 @@ export class WorkspacePage extends LitroPage {
     .view-workspace__body--chat-expanded .view-workspace__preview {
       display: none;
     }
+    .view-workspace__body--chat-expanded .view-workspace__chat {
+      flex: 1;
+      width: 100%;
+    }
     .view-workspace__sidebar {
-      flex: 0 0 250px;
+      width: 260px;
+      flex: 0 0 260px;
+      min-width: 0;
       overflow: hidden;
-      border-right: 1px solid var(--border-color, #3b4261);
+      border-right: 1px solid var(--border);
+      transition: width 0.2s ease, flex 0.2s ease;
     }
     .view-workspace__sidebar--collapsed {
+      width: 0;
       flex: 0 0 0;
-      overflow: hidden;
+      border-right: none;
+    }
+    .view-workspace__sidebar--hidden {
+      display: none;
     }
     .view-workspace__preview {
       flex: 1;
+      min-width: 0;
       overflow: hidden;
-      border-right: 1px solid var(--border-color, #3b4261);
+      border-right: 1px solid var(--border);
     }
     .view-workspace__preview--hidden {
       display: none;
     }
     .view-workspace__chat {
       flex: 0 0 400px;
+      width: 400px;
+      min-width: 0;
       overflow: hidden;
+      transition: width 0.2s ease, flex 0.2s ease;
     }
     .view-workspace__chat--expanded {
       flex: 1;
+    }
+    .view-workspace__chat-placeholder {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      padding: 2rem;
+      color: var(--text-muted);
+      text-align: center;
+      font-size: 14px;
     }
   `;
 
@@ -156,7 +200,7 @@ export class WorkspacePage extends LitroPage {
 
           <div class="view-workspace__chat ${this.chatExpanded ? 'view-workspace__chat--expanded' : ''}">
             <!-- TODO: <chat-panel></chat-panel> -->
-            <div style="padding: 2rem; color: var(--text-muted); text-align: center;">ChatPanel — coming soon</div>
+            <div class="view-workspace__chat-placeholder">ChatPanel — coming soon</div>
           </div>
         </div>
       </div>

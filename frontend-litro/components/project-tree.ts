@@ -44,7 +44,7 @@ export class TreeNodeComponent extends LitElement {
       background: var(--bg-hover, #292e42);
     }
     .tree-node__row--selected {
-      background: var(--bg-selected, #334e68);
+      background: var(--selected-bg, #1e3a5f);
     }
     .tree-node__icon {
       display: flex;
@@ -82,7 +82,7 @@ export class TreeNodeComponent extends LitElement {
       display: inline-block;
       width: 12px;
       height: 12px;
-      border: 2px solid var(--border-color, #3b4261);
+      border: 2px solid var(--border, #334155);
       border-top-color: var(--text-secondary, #a9b1d6);
       border-radius: 50%;
       animation: spin 0.6s linear infinite;
@@ -165,7 +165,7 @@ export class TreeNodeComponent extends LitElement {
       : html`<span class="tree-node__icon"><span class="tree-node__file-icon">${getFileExtensionIcon(this.node.name)}</span></span>`;
 
     return html`
-      <div class="tree-node__row" style="padding-left: ${this.depth * 16 + 8}px" class="${isSelected ? 'tree-node__row--selected' : ''}" @click=${this.handleClick}>
+      <div class="tree-node__row ${isSelected ? 'tree-node__row--selected' : ''}" style="padding-left: ${this.depth * 16 + 8}px" @click=${this.handleClick}>
         ${icon}
         <span class="tree-node__name">${this.node.name}</span>
         ${this.node.isDirectory ? html`
@@ -221,7 +221,7 @@ export class ProjectTreeComponent extends LitElement {
       display: flex;
       align-items: center;
       padding: 0.5rem 0.75rem;
-      border-bottom: 1px solid var(--border-color, #3b4261);
+      border-bottom: 1px solid var(--border, #334155);
       font-size: 0.875rem;
       font-weight: 600;
       color: var(--text-secondary, #a9b1d6);
