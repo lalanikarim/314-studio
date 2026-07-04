@@ -112,9 +112,18 @@ export class TreeNodeComponent extends LitElement {
   @property({ type: String }) projectRoot = '';
 
   private fetchCalled = false;
+  private firstRender = true;
 
   updated(changedProperties: Map<string, any>) {
+    // Auto-expand the root node on first render so the folder contents load immediately.
+    if (this.firstRender && this.depth === 0 && !this.expanded) {
+      console.log('[tree-node] first render, auto-expanding root');
+      this.expanded = true;
+      this.firstRender = false;
+      return;
+    }
     if (changedProperties.has('expanded') && this.expanded && !this.fetchCalled) {
+      console.log('[tree-node] expanded, loading children');
       this.fetchCalled = true;
       this.loadChildren();
     } else if (!this.expanded) {

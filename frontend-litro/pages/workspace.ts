@@ -151,8 +151,23 @@ export class WorkspacePage extends LitroPage {
 
   @state() sidebarCollapsed = false;
   @state() chatExpanded = false;
+  @state() selectedFile: string | null = null;
+
+  private get folderPath(): string {
+    if (typeof window === 'undefined') return '';
+    return new URLSearchParams(window.location.search).get('folder') || '';
+  }
+
+  private handleFileSelect(path: string) {
+    // Only set selectedFile for files (not directories).
+    // The tree-node component checks isDirectory before calling onSelect,
+    // but the path format is the full path so we can't easily tell here.
+    // We'll let file-preview attempt to load and handle errors.
+    this.selectedFile = path;
+  }
 
   render() {
+    const projectRoot = this.folderPath;
     return html`
       <div class="view-workspace">
         <header class="view-workspace__header">
@@ -167,7 +182,7 @@ export class WorkspacePage extends LitroPage {
           </div>
           <div class="view-workspace__header-center">
             <span class="view-workspace__project-title" @click=${() => { window.location.href = '/'; }}>
-              314 Studio
+              ${projectRoot ? projectRoot.split('/').filter(Boolean).pop() : '314 Studio'}
             </span>
           </div>
           <div class="view-workspace__header-right">
@@ -191,11 +206,18 @@ export class WorkspacePage extends LitroPage {
 
         <div class="view-workspace__body ${this.chatExpanded ? 'view-workspace__body--chat-expanded' : ''}">
           <div class="view-workspace__sidebar ${this.sidebarCollapsed ? 'view-workspace__sidebar--collapsed' : ''} ${this.chatExpanded ? 'view-workspace__sidebar--hidden' : ''}">
-            <project-tree></project-tree>
+            <project-tree
+              .projectPath=${projectRoot}
+              .selectedFile=${this.selectedFile}
+              onSelect=${this.handleFileSelect}
+            ></project-tree>
           </div>
 
           <div class="view-workspace__preview ${this.chatExpanded ? 'view-workspace__preview--hidden' : ''}">
-            <file-preview></file-preview>
+            <file-preview
+              .projectPath=${projectRoot}
+              .filePath=${this.selectedFile || ''}
+            ></file-preview>
           </div>
 
           <div class="view-workspace__chat ${this.chatExpanded ? 'view-workspace__chat--expanded' : ''}">

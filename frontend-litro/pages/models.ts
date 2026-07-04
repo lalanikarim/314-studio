@@ -364,7 +364,8 @@ export class ModelSelectorPage extends LitroPage {
     this.switching = true;
     try {
       const session = await createSession(this.folderPath, this.selectedModel.id);
-      window.location.href = `/workspace?session_id=${encodeURIComponent(session.session_id)}`;
+      // Pass both session_id (for chat) and folder (for file loading) in the URL.
+      window.location.href = `/workspace?session_id=${encodeURIComponent(session.session_id)}&folder=${encodeURIComponent(this.folderPath)}`;
     } catch (e) {
       console.error('Failed to switch model:', e);
       this.error = e instanceof Error ? e.message : 'Failed to switch model';
