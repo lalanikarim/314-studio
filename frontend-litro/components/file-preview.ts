@@ -6,7 +6,33 @@ class FilePreviewElement extends LitElement {
     :host { display: block; height: 100%; }
     .panel { display: flex; flex-direction: column; height: 100%; }
     .empty { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); }
-    .content { padding: 1rem; white-space: pre; font-family: monospace; }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.5rem 1rem;
+      border-bottom: 1px solid var(--border, #334155);
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--text-secondary, #94a3b8);
+      background: var(--bg-secondary, #1e293b);
+      flex-shrink: 0;
+    }
+    .header__name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .content { 
+      flex: 1; 
+      overflow: auto; 
+      padding: 1rem; 
+      white-space: pre; 
+      font-family: var(--font-mono, 'SF Mono', 'JetBrains Mono', Monaco, Menlo, Consolas, monospace);
+      font-size: 0.875rem;
+      line-height: 1.6;
+      color: var(--text-primary, #f1f5f9);
+    }
   `;
 
   static properties = {
@@ -55,7 +81,12 @@ class FilePreviewElement extends LitElement {
     if (this.loading) {
       return html`<div class="panel"><div class="content">Loading...</div></div>`;
     }
-    return html`<div class="panel"><div class="content">${this.fileName}: ${this.content}</div></div>`;
+    return html`
+      <div class="panel">
+        ${this.fileName ? html`<div class="header"><span class="header__name">${this.fileName}</span></div>` : ''}
+        <div class="content">${this.content}</div>
+      </div>
+    `;
   }
 }
 
