@@ -1,12 +1,13 @@
 import { html } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
-import { LitroPage } from 'litro/runtime';
+import { LitroPage } from '@beatzball/litro/runtime';
 import { fetchFolders } from '../services/api';
-import type { Folder } from '../types';
 
-@customElement('page-index')
-export class FolderSelectorPage extends LitroPage {
-  @state() folders: Folder[] = [];
+
+
+@customElement('page-home')
+export class HomePage extends LitroPage {
+  @state() folders: Array<{ name: string; path: string }> = [];
   @state() loading = false;
   @state() error: string | null = null;
 
@@ -55,4 +56,4 @@ export class FolderSelectorPage extends LitroPage {
   }
 }
 
-export default FolderSelectorPage;
+export default HomePage;

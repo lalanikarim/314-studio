@@ -1,9 +1,16 @@
 import { defineConfig } from 'vite';
-import litroContentPlugin from 'litro/vite';
 
 export default defineConfig({
-  plugins: [litroContentPlugin()],
+  plugins: [],
   base: '/_litro/',
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+    },
+  },
   resolve: {
     conditions: ['source', 'browser', 'module', 'import', 'default'],
   },
