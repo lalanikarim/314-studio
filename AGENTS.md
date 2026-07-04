@@ -262,6 +262,33 @@ uv run python script.py    # ✅ correct
 python script.py           # ❌ wrong — uses system python, wrong env
 ```
 
+### Litro/Lit: Components using `@property`/`@state` MUST extend `LitElement`, not `HTMLElement`
+
+This is the #1 cause of `Uncaught TypeError: i.constructor.createProperty is not a function`.
+
+Lit's `@property()` and `@state()` decorators call `target.constructor.createProperty(name, options)` at class-definition time. `createProperty` is a **static method on `LitElement` (via `ReactiveElement`)**, not on the plain `HTMLElement` constructor. If your component extends `HTMLElement` directly, the prototype chain does not include `createProperty`, and the decorator throws at module load.
+
+```typescript
+// ❌ WRONG — throws `createProperty is not a function`
+import { customElement, property } from 'lit/decorators.js';
+@customElement('my-el')
+export class MyEl extends HTMLElement {       // ← missing LitElement
+   @property() foo = '';
+ }
+
+// ✅ CORRECT
+import { LitElement } from 'lit';
+import { customElement, property } from 'lit/decorators.js';
+@customElement('my-el')
+export class MyEl extends LitElement {       // ← has createProperty
+   @property() foo = '';
+ }
+```
+
+**Rule:** Any class that uses ANY Lit decorator (`@property`, `@state`, `@query`, etc.) MUST extend `LitElement`. `customElements.define('tag', HTMLElementSubclass)` alone is fine only if you also avoid decorators and use the static `properties` block.
+
+**Note on esbuild/swc:** esbuild's experimental decorator support (enabled via `tsconfigRaw.experimentalDecorators` in the Litro Vite adapter) is sufficient. Do NOT add `vite-plugin-swc` — it causes its own parse errors on TypeScript `as` expressions and is not needed.
+
 ### Litro: `window` not available during SSR
 
 Litro uses SSR (Server-Side Rendering) by default. Any code that accesses `window`, `document`, or `localStorage` **during the initial render** will crash the server with `ReferenceError: window is not defined`.
