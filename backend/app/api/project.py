@@ -12,35 +12,9 @@ from fastapi import APIRouter, HTTPException, Query
 
 from ..schemas import SessionCreateRequest
 from ..session_manager import SessionRecord, session_manager
+from ..utils import resolve_project_path
 
 router = APIRouter(redirect_slashes=False)
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _resolve_project_path(project_path: Optional[str]) -> Path:
-    """Resolve the project path string to a Path object.
-
-    Handles absolute paths, paths starting with ~, and bare project names
-    under ~/Projects.
-    """
-    if not project_path:
-        raise HTTPException(
-            status_code=400, detail="Missing required query parameter: project_path"
-        )
-
-    resolved = Path(project_path).expanduser()
-
-    # If it's not absolute and doesn't exist, try ~/Projects/{name}
-    if not resolved.is_absolute() and not resolved.exists():
-        candidate = Path.home() / "Projects" / project_path
-        if candidate.exists():
-            resolved = candidate
-
-    return resolved
 
 
 # ---------------------------------------------------------------------------
@@ -83,7 +57,7 @@ async def get_project_info(
     project_path: str = Query(..., description="Absolute path to the project directory"),
 ) -> dict:
     """Get project information including all active sessions."""
-    resolved = _resolve_project_path(project_path)
+    resolved = resolve_project_path(project_path)
 
     if not resolved.exists():
         raise HTTPException(status_code=404, detail=f"Project not found: {resolved}")
@@ -115,7 +89,7 @@ async def create_session(
     (get_available_models, set_model) are made during launch; they happen
     only when explicitly requested by the client.
     """
-    resolved = _resolve_project_path(project_path)
+    resolved = resolve_project_path(project_path)
 
     if not resolved.exists():
         raise HTTPException(status_code=404, detail=f"Project not found: {resolved}")

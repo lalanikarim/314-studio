@@ -10,6 +10,8 @@ from typing import List, Optional
 
 from fastapi import APIRouter
 
+from ..utils import PROJECTS_ROOT, resolve_project_path
+
 router = APIRouter()
 
 
@@ -17,10 +19,13 @@ router = APIRouter()
 async def browse(path: Optional[str] = None) -> List[dict]:
     """List subdirectories at the given path (defaults to ~/Projects)."""
     if path:
-        # Resolve relative paths against home
-        target = Path(path).expanduser()
+        target = resolve_project_path(path)
     else:
-        target = Path.home() / "Projects"
+        target = PROJECTS_ROOT
+
+    # Confine browsing to ~/Projects
+    if not target.resolve().is_relative_to(PROJECTS_ROOT.resolve()):
+        return []
 
     if not target.exists():
         return []

@@ -12,31 +12,84 @@ from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
-from ..schemas import ModelConfig
-from ..session_manager import session_manager
+import logging
+from typing import Any, List, Optional
 
+from fastapi import APIRouter, HTTPException, Query
+
+from ..schemas import ModelConfig
+from ..session_manager import session_manager, SessionManager
+
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
 def _parse_rpc_models(raw: Optional[dict]) -> List[ModelConfig]:
-    """Parse model objects from a Pi RPC get_available_models response dict."""
+    """Parse model objects from a Pi RPC ``get_available_models`` response dict.
+
+    Expected response shape (one of):
+        - A list of model dicts directly
+        - ``{"models": [...]}``
+        - ``{"data": [...]}``
+
+    Each model dict should have ``modelId`` (or ``id``), ``provider``, and
+    optionally ``contextWindow`` and ``maxTokens``.
+    """
     if not raw:
         return []
 
     models: List[ModelConfig] = []
-    items = raw if isinstance(raw, list) else raw.get("models", raw.get("data", []))
-    if isinstance(items, list):
-        for item in items:
-            if isinstance(item, dict):
-                models.append(
-                    ModelConfig(
-                        id=item.get("modelId", item.get("id", "unknown")),
-                        provider=item.get("provider", "unknown"),
-                        contextWindow=item.get("contextWindow"),
-                        maxTokens=item.get("maxTokens"),
-                    )
+
+    if isinstance(raw, list):
+        items: Any = raw
+    elif isinstance(raw, dict):
+        items = raw.get("models", raw.get("data", None))
+        if items is None:
+            logger.warning(
+                "Unexpected RPC model response format (expected 'models' or 'data' key): %r",
+                {k: type(v).__name__ for k, v in raw.items()},
+            )
+            return []
+    else:
+        logger.warning("Unexpected RPC model response type: %r", type(raw).__name__)
+        return []
+
+    if not isinstance(items, list):
+        logger.warning("RPC model response 'items' is not a list: %r", type(items).__name__)
+        return []
+
+    for item in items:
+        if isinstance(item, dict):
+            models.append(
+                ModelConfig(
+                    id=item.get("modelId", item.get("id", "unknown")),
+                    provider=item.get("provider", "unknown"),
+                    contextWindow=item.get("contextWindow"),
+                    maxTokens=item.get("maxTokens"),
                 )
+            )
+
     return models
+
+
+# ---------------------------------------------------------------------------
+# POST /refresh — force refresh the model cache
+# ---------------------------------------------------------------------------
+
+
+@router.post("/refresh")
+async def refresh_models() -> dict:
+    """Force refresh the model cache by re-running ``pi --list-models``."""
+    models = await session_manager.refresh_models()
+    if models is None:
+        raise HTTPException(
+            status_code=502,
+            detail="Failed to refresh models (pi --list-models failed).",
+        )
+    return {
+        "message": f"Refreshed {len(models)} models",
+        "count": len(models),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -60,8 +113,14 @@ async def list_models(
     Returns an empty list when neither cache nor session is available.
     """
     # 1. Return cached models (no session needed)
-    if session_manager._cached_models:
-        return [ModelConfig(**m) for m in session_manager._cached_models]
+    cached = SessionManager.get_cached_models()
+    if cached:
+        return [ModelConfig(**m) for m in cached]
+
+    # 2. Cache not ready yet — try a one-time fetch
+    models = await session_manager.fetch_available_models()
+    if models:
+        return [ModelConfig(**m) for m in models]
 
     # 2. Cache not ready yet — fall back to RPC if session_id provided
     if session_id:

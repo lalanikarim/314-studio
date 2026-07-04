@@ -12,22 +12,9 @@ import aiofiles
 from fastapi import APIRouter, HTTPException, Query
 
 from ..schemas import FileInfo
+from ..utils import resolve_project_path
 
 router = APIRouter()
-
-
-def _resolve_project_path(project_path_str: Optional[str]) -> Path:
-    """Resolve the project path string to a Path object."""
-    if not project_path_str:
-        raise HTTPException(
-            status_code=400, detail="Missing required query parameter: project_path"
-        )
-    resolved = Path(project_path_str).expanduser()
-    if not resolved.is_absolute() and not resolved.exists():
-        candidate = Path.home() / "Projects" / project_path_str
-        if candidate.exists():
-            resolved = candidate
-    return resolved
 
 
 # ---------------------------------------------------------------------------
@@ -39,11 +26,13 @@ def _resolve_project_path(project_path_str: Optional[str]) -> Path:
 async def list_files(
     project_path: str = Query(..., description="Absolute path to the project directory"),
     path: Optional[str] = Query("/", description="Sub-directory path within the project"),
+    limit: int = Query(500, ge=1, le=5000, description="Max files to return"),
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
 ) -> list[FileInfo]:
     """
-    List files in a directory.
+    List files in a directory with optional pagination.
     """
-    base = _resolve_project_path(project_path)
+    base = resolve_project_path(project_path)
 
     if not base.exists():
         raise HTTPException(status_code=404, detail=f"Project not found: {base}")
@@ -60,6 +49,7 @@ async def list_files(
 
     # List files
     files = []
+    count = 0
     for entry in target_path.iterdir():
         if entry.name.startswith(".") or entry.name.startswith("_"):
             continue
@@ -77,7 +67,10 @@ async def list_files(
             except OSError:
                 pass
 
-        files.append(file_info)
+        if count >= offset:
+            if len(files) < limit:
+                files.append(file_info)
+        count += 1
 
     return files
 
@@ -95,7 +88,7 @@ async def read_file(
     """
     Read file contents.
     """
-    base = _resolve_project_path(project_path)
+    base = resolve_project_path(project_path)
 
     if not base.exists():
         raise HTTPException(status_code=404, detail=f"Project not found: {base}")
@@ -113,8 +106,24 @@ async def read_file(
     if target_path.is_dir():
         raise HTTPException(status_code=400, detail="Path is a directory, not a file")
 
-    # Read file asynchronously
-    async with aiofiles.open(target_path, "r") as f:
-        content = await f.read()
+    # Read file — detect binary content first
+    async with aiofiles.open(target_path, "rb") as f:
+        sample = await f.read(8192)
+        if b"\x00" in sample:
+            raise HTTPException(
+                status_code=400,
+                detail="File appears to be binary and cannot be displayed as text.",
+            )
+        # Seek back and read the full content as text
+        await f.seek(0)
+        content_bytes = await f.read()
+
+    try:
+        content = content_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        raise HTTPException(
+            status_code=400,
+            detail="File is not valid UTF-8 text.",
+        )
 
     return content

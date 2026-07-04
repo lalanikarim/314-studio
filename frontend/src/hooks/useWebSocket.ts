@@ -377,8 +377,8 @@ export function useWebSocket(
 	}, [send]);
 
 	// ── Lifecycle ──────────────────────────────────────────────────────────
-	// Note: Use empty dep array to prevent re-connection loops
 	// doConnect and disconnect are stored in refs, not closure deps
+	// We watch sessionId + projectFolder so reconnect happens when they change.
 	useEffect(() => {
 		disposedRef.current = false;
 		shouldDisconnectRef.current = false; // Reset on mount
@@ -389,10 +389,19 @@ export function useWebSocket(
 			clearTimeout(reconnectTimerRef.current);
 			reconnectTimerRef.current = null;
 		}
-		doConnect();
+
+		// Small delay to let Vite proxy & backend be fully ready on first mount.
+		// This avoids the "interrupted while the page was loading" error.
+		const timer = setTimeout(() => {
+			if (!disposedRef.current && !shouldDisconnectRef.current) {
+				doConnectRef.current();
+			}
+		}, 300);
+
 		return () => {
 			disposedRef.current = true;
 			shouldDisconnectRef.current = true; // Set flag in cleanup
+			clearTimeout(timer);
 			// Clean up reconnect timer
 			if (reconnectTimerRef.current) {
 				clearTimeout(reconnectTimerRef.current);
@@ -400,7 +409,7 @@ export function useWebSocket(
 			}
 			disconnect();
 		};
-	}, []); // Empty deps - use refs instead of closure variables
+	}, [sessionId, projectFolder]);
 
 	// ── Clear messages helper ──────────────────────────────────────────────
 

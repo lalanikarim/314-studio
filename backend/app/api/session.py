@@ -11,6 +11,7 @@ pi --rpc processes. These endpoints provide the REST surface for:
 from fastapi import APIRouter, HTTPException, Query
 
 from ..session_manager import session_manager
+from ..utils import validate_session_id
 
 router = APIRouter()
 
@@ -27,6 +28,7 @@ async def close_session(session_id: str) -> dict:
 
     Compact saves the conversation state before terminating the process.
     """
+    validate_session_id(session_id)
     try:
         return await session_manager.close_session(session_id)
     except ValueError as exc:
@@ -47,6 +49,7 @@ async def delete_session(session_id: str) -> dict:
 
     Unlike close(), no compact is performed — the conversation state is lost.
     """
+    validate_session_id(session_id)
     try:
         return await session_manager.delete_session(session_id)
     except ValueError as exc:
@@ -71,6 +74,7 @@ async def switch_model(
     The actual set_model RPC command is sent over WebSocket when the client
     connects. This endpoint only records the desired model in the session record.
     """
+    validate_session_id(session_id)
     result = await session_manager.switch_model(session_id, model_id, provider)
     if not result:
         raise HTTPException(
