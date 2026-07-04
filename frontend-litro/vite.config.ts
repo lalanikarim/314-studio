@@ -1,7 +1,16 @@
 import { defineConfig } from 'vite';
+import { vitePluginSwc } from 'vite-plugin-swc';
 
 export default defineConfig({
-  plugins: [],
+  plugins: [
+    vitePluginSwc({
+      // Use experimental decorators for Lit compatibility
+      decorator: {
+        legacy: true,
+        metadata: false,
+      },
+    }),
+  ],
   base: '/_litro/',
   esbuild: {
     // Force experimental decorators for Lit compatibility
