@@ -10,6 +10,7 @@ from typing import Optional
 
 import aiofiles
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import PlainTextResponse
 
 from ..schemas import FileInfo
 from ..utils import resolve_project_path
@@ -130,4 +131,4 @@ async def read_file(
             detail="File is not valid UTF-8 text.",
         )
 
-    return content
+    return PlainTextResponse(content=content)
