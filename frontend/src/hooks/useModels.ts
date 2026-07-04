@@ -146,7 +146,9 @@ export function useModels(
 		// This happens regardless of whether models were already loaded.
 		// We need the session for actual communication with Pi.
 		let activeSessionId = existingSessionId || sessionId;
-		if (!launchedRef.current && !existingSessionId) {
+		if (!launchedRef.current && !existingSessionId && !sessionId) {
+			// Only create a session if we don't have one yet (guard against
+			// StrictMode double-render and other edge cases).
 			launchedRef.current = true;
 			try {
 				const session = await createSession(projectPath!);
