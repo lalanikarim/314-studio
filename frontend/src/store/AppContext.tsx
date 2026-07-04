@@ -28,6 +28,10 @@ const initialAppState: AppState = {
 	selectedFile: null,
 	sessionId: null,
 	selectedSession: null,
+	models: [],
+	modelsLoading: false,
+	modelsError: null,
+	refreshModels: null,
 };
 
 interface AppContextType extends AppState {
@@ -39,6 +43,10 @@ interface AppContextType extends AppState {
 	setSelectedFile: (path: string | null) => void;
 	setSessionId: (id: string | null) => void;
 	setSelectedSession: (session: SessionRecord | null) => void;
+	setModels: (models: Model[]) => void;
+	setModelsLoading: (loading: boolean) => void;
+	setModelsError: (error: string | null) => void;
+	setRefreshModels: (refresh: (() => void) | null) => void;
 }
 
 const AppContext = createContext<AppContextType>(
@@ -89,6 +97,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
 		}));
 	}, []);
 
+	const setModels = useCallback((models: Model[]) => {
+		setState((prev) => ({ ...prev, models }));
+	}, []);
+
+	const setModelsLoading = useCallback((loading: boolean) => {
+		setState((prev) => ({ ...prev, modelsLoading: loading }));
+	}, []);
+
+	const setModelsError = useCallback((error: string | null) => {
+		setState((prev) => ({ ...prev, modelsError: error }));
+	}, []);
+
+	const setRefreshModels = useCallback((refresh: (() => void) | null) => {
+		setState((prev) => ({ ...prev, refreshModels: refresh }));
+	}, []);
+
 	return (
 		<AppContext.Provider
 			value={{
@@ -101,6 +125,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
 				setSelectedFile,
 				setSessionId,
 				setSelectedSession,
+				setModels,
+				setModelsLoading,
+				setModelsError,
+				setRefreshModels,
 			}}
 		>
 			{children}

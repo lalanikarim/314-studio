@@ -39,4 +39,8 @@ export interface AppState {
 		ws_connected: boolean;
 		created_at: string;
 	} | null;
+	models: Model[];
+	modelsLoading: boolean;
+	modelsError: string | null;
+	refreshModels: (() => void) | null;
 }

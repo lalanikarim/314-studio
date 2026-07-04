@@ -2,12 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import type { Model } from "../types";
 import { createSession, listModels } from "../services/api";
 import type { ModelConfig } from "../services/api";
-
-/** Derive a display name from provider + model id, e.g. "Anthropic – claude-sonnet-4-20250514" */
-function deriveModelName(modelId: string, provider: string): string {
-	const providerName = provider.charAt(0).toUpperCase() + provider.slice(1);
-	return `${providerName} – ${modelId}`;
-}
+import { deriveModelName } from "../utils/model";
 
 /** Convert a ModelConfig into the frontend Model type */
 function mapModelConfig(config: ModelConfig): Model {
@@ -90,6 +85,7 @@ export function useModels(
 	const [runningCount, setRunningCount] = useState<number | null>(null);
 	const launchedRef = useRef(false);
 	const prevProjectRef = useRef<string | null>(null);
+	const prevExistingSessionRef = useRef<string | null>(null);
 	const abortControllerRef = useRef<AbortController | null>(null);
 	// Track whether models were loaded in steps 0/1, so step 3 can be skipped
 	const modelsLoadedRef = useRef(false);
@@ -107,6 +103,7 @@ export function useModels(
 		if (cachedModels && cachedModels.length > 0) {
 			if (!abortControllerRef.current?.signal.aborted) {
 				setModels(cachedModels);
+				setLoading(false);
 				modelsLoadedRef.current = true;
 			}
 		}
@@ -149,7 +146,9 @@ export function useModels(
 		// This happens regardless of whether models were already loaded.
 		// We need the session for actual communication with Pi.
 		let activeSessionId = existingSessionId || sessionId;
-		if (!launchedRef.current && !existingSessionId) {
+		if (!launchedRef.current && !existingSessionId && !sessionId) {
+			// Only create a session if we don't have one yet (guard against
+			// StrictMode double-render and other edge cases).
 			launchedRef.current = true;
 			try {
 				const session = await createSession(projectPath!);
@@ -243,11 +242,17 @@ export function useModels(
 		const abortController = new AbortController();
 		abortControllerRef.current = abortController;
 
-		// Only reset launch guard when projectPath actually changes
-		if (prevProjectRef.current !== projectPath) {
+		const projectChanged = prevProjectRef.current !== projectPath;
+		const sessionChanged = prevExistingSessionRef.current !== existingSessionId;
+
+		// Reset launch guard when projectPath or existingSessionId changes.
+		// Switching sessions without changing project must re-fetch models for
+		// the new session; the old `launchedRef` would otherwise block it.
+		if (projectChanged || sessionChanged) {
 			launchedRef.current = false;
 			modelsLoadedRef.current = false;
 			prevProjectRef.current = projectPath ?? null;
+			prevExistingSessionRef.current = existingSessionId ?? null;
 			setSessionId(null);
 			setRunningCount(null);
 			setModels([]);
@@ -260,7 +265,7 @@ export function useModels(
 		return () => {
 			abortControllerRef.current?.abort();
 		};
-	}, [projectPath]);
+	}, [projectPath, existingSessionId]);
 
 	return { models, loading, error, sessionId, runningCount, refresh };
 }
