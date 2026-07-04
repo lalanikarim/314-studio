@@ -89,6 +89,7 @@ export function useModels(
 	const [sessionId, setSessionId] = useState<string | null>(null);
 	const [runningCount, setRunningCount] = useState<number | null>(null);
 	const launchedRef = useRef(false);
+	const sessionCreatedRef = useRef(false);
 	const prevProjectRef = useRef<string | null>(null);
 	const abortControllerRef = useRef<AbortController | null>(null);
 	// Track whether models were loaded in steps 0/1, so step 3 can be skipped
@@ -149,8 +150,14 @@ export function useModels(
 		// This happens regardless of whether models were already loaded.
 		// We need the session for actual communication with Pi.
 		let activeSessionId = existingSessionId || sessionId;
-		if (!launchedRef.current && !existingSessionId) {
+		if (!sessionCreatedRef.current && !existingSessionId && !sessionId) {
+			// Only create a session if we don't have one yet (guard against
+			// StrictMode double-render and other edge cases).
 			launchedRef.current = true;
+			// Mark session as being created synchronously so subsequent
+			// StrictMode renders don't try to create another session while
+			// this async call is still in flight.
+			sessionCreatedRef.current = true;
 			try {
 				const session = await createSession(projectPath!);
 				activeSessionId = session.session_id;
@@ -159,6 +166,8 @@ export function useModels(
 					setRunningCount(session.running_count);
 				}
 			} catch {
+				// Reset the flag on failure so the next attempt can try again
+				sessionCreatedRef.current = false;
 				if (!abortControllerRef.current?.signal.aborted) {
 					setError("Failed to connect to Pi. No models available.");
 					setLoading(false);
@@ -246,6 +255,7 @@ export function useModels(
 		// Only reset launch guard when projectPath actually changes
 		if (prevProjectRef.current !== projectPath) {
 			launchedRef.current = false;
+			sessionCreatedRef.current = false;
 			modelsLoadedRef.current = false;
 			prevProjectRef.current = projectPath ?? null;
 			setSessionId(null);
