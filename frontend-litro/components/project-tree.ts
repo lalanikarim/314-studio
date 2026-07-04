@@ -116,14 +116,16 @@ export class TreeNodeComponent extends LitElement {
 
   updated(changedProperties: Map<string, any>) {
     // Auto-expand directory nodes on first render so the folder contents load immediately.
-    if (this.firstRender && this.depth === 0 && !this.expanded && this.node.isDirectory) {
-      console.log('[tree-node] first render, auto-expanding root');
-      this.expanded = true;
+    if (this.firstRender) {
+      if (this.depth === 0 && !this.expanded && this.node?.isDirectory) {
+        this.expanded = true;
+        this.firstRender = false;
+        return;
+      }
       this.firstRender = false;
       return;
     }
     if (changedProperties.has('expanded') && this.expanded && !this.fetchCalled) {
-      console.log('[tree-node] expanded, loading children');
       this.fetchCalled = true;
       this.loadChildren();
     } else if (!this.expanded) {
@@ -285,11 +287,15 @@ export class ProjectTreeComponent extends LitElement {
   onSelect!: (path: string) => void;
 
   private folderFetched = false;
+  private firstUpdate = true;
 
   updated(changedProperties: Map<string, any>) {
-    if (changedProperties.has('projectPath') && this.projectPath && !this.folderFetched) {
+    // Load roots on first update when projectPath is available.
+    if (this.firstUpdate && this.projectPath) {
+      this.firstUpdate = false;
       this.folderFetched = true;
       this.loadRoots();
+      return;
     }
   }
 
