@@ -385,7 +385,7 @@ export class ModelSelectorPage extends LitroPage {
             </button>
             <h1>Choose a Model</h1>
             <button class="view-models__refresh" ?disabled=${this.loading} @click=${this.loadModels} title="Refresh model list">
-              <svg class="view-models__spinner" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M4 4v5h5" />
                 <path d="M20 20v-5h-5" />
                 <path d="M20.49 9A9 9 0 0 0 5.64 5.64L4 4" />
