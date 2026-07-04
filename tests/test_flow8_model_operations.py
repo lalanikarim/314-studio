@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-Flow 8: Model Operations — Fetch, Switch, Chat
+Flow 8: Model Operations — Fetch, Switch, Chat via SSE
 
 Covers: T8.1–T8.5
 Tests:
   - T8.1: Fetch available models via GET /api/models?session_id=...
   - T8.2: Verify expected models (vllm + aurora) are present
   - T8.3: Switch model via POST /api/projects/{id}/model?model_id=...&provider=...
-  - T8.4: Chat on original session and verify response
-  - T8.5: Chat after model switch and verify response
+  - T8.4: Chat on original session and verify response (via SSE)
+  - T8.5: Chat after model switch and verify response (via SSE)
 
 Environment variables:
     TEST_MODEL_ID          — primary model (default: Qwen/Qwen3.6-35B-A3B)
@@ -28,12 +28,13 @@ from test_utils import (
     API_BASE,
     TESTS_DIR,
     TIMEOUT,
+    SSE_TIMEOUT,
     http_get,
     http_post_json,
-    ws_collect,
-    ws_connect,
-    ws_receive,
-    ws_send,
+    sse_collect,
+    sse_connect,
+    send_prompt,
+    send_set_model,
 )
 
 # Model config — override from env, fall back to sensible defaults
@@ -192,54 +193,48 @@ async def test_switch_model(client, result, session_id: str):
 async def test_chat_original_model(client, result, session_id: str):
     """T8.4 — Chat on session (before model switch) and verify response.
 
-    Connects WS, verifies initial set_model response, sends prompt, collects response.
-    Prints request/response.
+    Connects SSE, verifies initial set_model event, sends prompt via REST, collects response.
     """
     print("\n  T8.4 Chat on original model")
 
-    # Connect WS — auto-sends set_model
-    print(f"     → WS   /api/projects/ws?session_id={session_id[:12]}...")
-    ws = await ws_connect(session_id)
+    # Connect SSE — sends set_model event on connect
+    print(f"     → SSE  /api/projects/sse?session_id={session_id[:12]}...")
+    sse_client, response = await sse_connect(session_id)
 
-    # Collect initial set_model response
-    print("     Collecting initial set_model response...")
-    initial = await ws_receive(ws, timeout=5.0)
-    if initial:
-        init_type = initial.get("type", initial.get("kind", "?"))
-        print(f"     ← Initial: {json.dumps(initial, indent=2)[:500]}")
-        result.check(True, f"Got initial message type='{init_type}'")
+    # Collect initial set_model event
+    print("     Collecting initial set_model event...")
+    events = await sse_collect(response, sse_client, max_events=3, total_timeout=SSE_TIMEOUT)
+    if events:
+        init_type = events[0].get("type", "?")
+        model_data = events[0].get("data", {})
+        model_id = model_data.get("modelId", "") if isinstance(model_data, dict) else ""
+        print(f"     ← Initial: type={init_type}, modelId={model_id}")
+        result.check(init_type == "set_model", f"Got set_model event, got '{init_type}'")
     else:
         print("     (No initial message)")
         result.skipped += 1
 
-    # Send prompt
-    prompt_msg = {
-        "type": "prompt",
-        "message": "Hello! Identify your model. What model are you running?",
-    }
-    print(f"     → WS   {json.dumps(prompt_msg)}")
-    await ws_send(ws, prompt_msg)
+    # Send prompt via REST
+    prompt_msg = "Hello! Identify your model. What model are you running?"
+    print(f"     → CMD  prompt: {prompt_msg[:60]}")
+    resp = await send_prompt(session_id, prompt_msg)
+    result.check(resp.get("status") == "ok", f"Prompt command returned ok")
 
-    # Collect response
+    # Collect response from SSE
     print("     Collecting response...")
-    events = await ws_collect(ws, max_events=30, total_timeout=30.0)
+    events = await sse_collect(response, sse_client, max_events=30, total_timeout=30.0)
     if events:
         print(f"     ← {len(events)} events collected:")
         for i, evt in enumerate(events[:5]):
-            evt_type = evt.get("type", evt.get("kind", "?"))
-            evt_id = evt.get("id", "?")
-            print(f"        [{i}] type={evt_type} id={evt_id}")
-            if evt.get("content"):
-                print(f"            content={evt['content'][:100]}")
-            if evt.get("text"):
-                print(f"            text={evt['text'][:100]}")
+            evt_type = evt.get("type", "?")
+            print(f"        [{i}] type={evt_type}")
 
-        # Check for terminal event
-        types = [e.get("type", e.get("kind", "?")) for e in events]
-        has_terminal = any(t in ("turn_end", "agent_end", "response") for t in types)
+        # Check for streaming events
+        types = [e.get("type", "?") for e in events]
+        has_streaming = any(t == "rpc_event" for t in types)
         result.check(
-            has_terminal,
-            f"Got terminal event (turn_end/agent_end/response), types: {types[:5]}",
+            has_streaming,
+            f"Got rpc_event (streaming), types: {types[:5]}",
         )
         result.check(
             len(events) > 0,
@@ -249,14 +244,14 @@ async def test_chat_original_model(client, result, session_id: str):
         result.failed += 1
         result.failures.append("T8.4: No events from prompt")
 
-    await ws.close()
+    await sse_client.aclose()
 
 
 async def test_chat_after_model_switch(client, result, session_id: str):
-    """T8.5 — Chat after model switch and verify response.
+    """T8.5 — Chat after model switch and verify response (via SSE).
 
-    Connects WS (auto-sends set_model for new model), sends prompt, verifies response.
-    Prints request/response.
+    Connects SSE (auto-sends set_model for new model), sends prompt via REST,
+    verifies response.
     """
     print("\n  T8.5 Chat after model switch")
 
@@ -281,51 +276,47 @@ async def test_chat_after_model_switch(client, result, session_id: str):
     else:
         print(f"     Model already switched to: {switched_model} (provider={switched_provider})")
 
-    # Connect WS — auto-sends set_model for new model
-    print(f"     → WS   /api/projects/ws?session_id={session_id[:12]}...")
-    ws = await ws_connect(session_id)
+    # Connect SSE — set_model event fires with new model
+    print(f"     → SSE  /api/projects/sse?session_id={session_id[:12]}...")
+    sse_client, response = await sse_connect(session_id)
 
-    # Collect initial set_model response
-    print("     Collecting initial set_model response...")
-    initial = await ws_receive(ws, timeout=5.0)
-    if initial:
-        init_type = initial.get("type", initial.get("kind", "?"))
-        init_id = initial.get("id", "?")
-        print(f"     ← Initial: type={init_type} id={init_id}")
-        print(f"        {json.dumps(initial, indent=2)[:500]}")
-        result.check(True, f"Got initial message type='{init_type}' after model switch")
+    # Collect initial set_model event
+    print("     Collecting initial set_model event...")
+    events = await sse_collect(response, sse_client, max_events=3, total_timeout=SSE_TIMEOUT)
+    if events:
+        init_type = events[0].get("type", "?")
+        model_data = events[0].get("data", {})
+        model_id = model_data.get("modelId", "") if isinstance(model_data, dict) else ""
+        print(f"     ← Initial: type={init_type}, modelId={model_id}")
+        result.check(init_type == "set_model", f"Got set_model event: {init_type}")
+        result.check(
+            model_id == switched_model,
+            f"set_model has correct model: {model_id} == {switched_model}",
+        )
     else:
         print("     (No initial message)")
         result.skipped += 1
 
-    # Send prompt — ask model to identify itself
-    prompt_msg = {
-        "type": "prompt",
-        "message": f"Hello! I switched to {switched_model}. Identify yourself and confirm your model.",
-    }
-    print(f"     → WS   {json.dumps(prompt_msg)}")
-    await ws_send(ws, prompt_msg)
+    # Send prompt via REST
+    prompt_msg = f"Hello! I switched to {switched_model}. Identify yourself and confirm your model."
+    print(f"     → CMD  prompt: {prompt_msg[:60]}")
+    resp = await send_prompt(session_id, prompt_msg)
+    result.check(resp.get("status") == "ok", f"Prompt command returned ok")
 
-    # Collect response
+    # Collect response from SSE
     print("     Collecting response...")
-    events = await ws_collect(ws, max_events=30, total_timeout=30.0)
+    events = await sse_collect(response, sse_client, max_events=30, total_timeout=30.0)
     if events:
         print(f"     ← {len(events)} events collected:")
         for i, evt in enumerate(events[:5]):
-            evt_type = evt.get("type", evt.get("kind", "?"))
-            evt_id = evt.get("id", "?")
-            print(f"        [{i}] type={evt_type} id={evt_id}")
-            if evt.get("content"):
-                print(f"            content={evt['content'][:100]}")
-            if evt.get("text"):
-                print(f"            text={evt['text'][:100]}")
+            evt_type = evt.get("type", "?")
+            print(f"        [{i}] type={evt_type}")
 
-        # Check for terminal event
-        types = [e.get("type", e.get("kind", "?")) for e in events]
-        has_terminal = any(t in ("turn_end", "agent_end", "response") for t in types)
+        types = [e.get("type", "?") for e in events]
+        has_streaming = any(t == "rpc_event" for t in types)
         result.check(
-            has_terminal,
-            f"Got terminal event after model switch, types: {types[:5]}",
+            has_streaming,
+            f"Got rpc_event after model switch, types: {types[:5]}",
         )
         result.check(
             len(events) > 0,
@@ -335,7 +326,7 @@ async def test_chat_after_model_switch(client, result, session_id: str):
         result.failed += 1
         result.failures.append("T8.5: No events from prompt after model switch")
 
-    await ws.close()
+    await sse_client.aclose()
 
 
 # ── Runner ───────────────────────────────────────────────────────────────────

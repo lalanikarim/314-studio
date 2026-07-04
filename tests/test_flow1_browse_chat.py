@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Flow 1: Browse directories → Model select → Session create → Chat via WS
+Flow 1: Browse directories → Model select → Session create → Chat via SSE
 
 Covers: T1.1–T1.12
 """
@@ -21,10 +21,10 @@ from test_utils import (
     TIMEOUT,
     http_get,
     http_post_json,
-    ws_collect,
-    ws_connect,
-    ws_receive,
-    ws_send,
+    sse_collect,
+    sse_connect,
+    send_cmd,
+    send_prompt,
 )
 
 # Override TEST_MODEL_ID from env
@@ -186,78 +186,86 @@ async def test_project_info_after_session(client, result, session_id: str):
     result.check(len(data.get("sessions", [])) >= 1, "sessions list has >= 1 item")
 
 
-async def test_ws_connect_set_model(client, result, session_id: str):
-    """T1.7 — WebSocket connect (auto-sends set_model)."""
-    print("\n  T1.7 WS connect")
+async def test_sse_connect_set_model(client, result, session_id: str):
+    """T1.7 — SSE connect (sends set_model event)."""
+    print("\n  T1.7 SSE connect")
 
-    ws = await ws_connect(session_id)
+    sse_client, response = await sse_connect(session_id)
 
-    # Receive initial messages — look for set_model response
-    initial = await ws_receive(ws, timeout=10.0)
-    if initial:
-        init_type = initial.get("type", initial.get("kind", "?"))
+    # Collect initial events (expect set_model)
+    events = await sse_collect(response, sse_client, max_events=3, total_timeout=10.0)
+    if events:
+        init_type = events[0].get("type", "?")
         print(f"     Initial: type={init_type}")
-        result.check(True, f"Got initial message type='{init_type}'")
+        result.check(init_type == "set_model", f"Got set_model event, got '{init_type}'")
     else:
-        print("     (No initial message — set_model response may have been missed)")
+        print("     (No initial message — set_model may have been missed)")
         result.skipped += 1
 
-    return ws
+    return sse_client, response
 
 
-async def test_ws_get_state(client, result, ws):
-    """T1.8 — Send get_state via WS."""
-    print("\n  T1.8 WS get_state")
-    await ws_send(ws, {"type": "get_state"})
-
-    initial = await ws_receive(ws, timeout=10.0)
-    if initial:
-        msg_type = initial.get("type", initial.get("kind", "?"))
-        print(f"     Response: type={msg_type}")
-        result.check(
-            msg_type in ("response", "rpc_event"),
-            f"Got response or rpc_event, got '{msg_type}'",
-        )
-    else:
-        result.failed += 1
-        result.failures.append("T1.8: get_state no response within timeout")
+async def test_sse_get_state(client, result, session_id: str, sse_client, response):
+    """T1.8 — Send get_state via REST command."""
+    print("\n  T1.8 SSE get_state")
+    resp = await send_cmd(session_id, {"command": "get_state"})
+    result.check(resp.get("status") == "ok", f"get_state command returned ok, got {resp}")
+    return sse_client, response
 
 
-async def test_ws_prompt(client, result, ws):
-    """T1.9 — Send chat message."""
-    print("\n  T1.9 WS prompt")
-    await ws_send(ws, {"type": "prompt", "message": "Hello, who are you?"})
+async def test_sse_prompt(client, result, session_id: str, sse_client, response):
+    """T1.9 — Send chat message via REST, collect SSE events."""
+    print("\n  T1.9 SSE prompt")
 
-    events = await ws_collect(ws)
+    # Close previous SSE connection and open a new one for fresh events
+    await sse_client.aclose()
+    sse_client, response = await sse_connect(session_id)
+
+    # Send prompt via REST
+    resp = await send_prompt(session_id, "Hello, who are you?")
+    result.check(resp.get("status") == "ok", f"Prompt command returned ok, got {resp}")
+
+    # Collect streaming events from SSE
+    events = await sse_collect(response, sse_client, max_events=30, total_timeout=30.0)
     if events:
-        types = [e.get("type", e.get("kind", "?")) for e in events]
+        types = [e.get("type", "?") for e in events]
         result.check(len(events) > 0, f"Received {len(events)} events: {types[:5]}")
         result.check(
-            any(t in ("turn_end", "agent_end", "response") for t in types),
-            "Got meaningful end event",
+            any(t in ("rpc_event",) for t in types),
+            "Got rpc_event (streaming events)",
         )
     else:
         result.failed += 1
         result.failures.append("T1.9: No events from prompt")
 
+    return sse_client, response
 
-async def test_ws_conversation(client, result, ws):
+
+async def test_sse_conversation(client, result, session_id: str, sse_client, response):
     """T1.10 — Send second chat message (conversation)."""
-    print("\n  T1.10 WS conversation")
-    await ws_send(ws, {"type": "prompt", "message": "What files exist in this project?"})
+    print("\n  T1.10 SSE conversation")
 
-    events = await ws_collect(ws)
+    # Close previous SSE connection and open a new one for fresh events
+    await sse_client.aclose()
+    sse_client, response = await sse_connect(session_id)
+
+    resp = await send_prompt(session_id, "What files exist in this project?")
+    result.check(resp.get("status") == "ok", f"Prompt command returned ok, got {resp}")
+
+    events = await sse_collect(response, sse_client, max_events=30, total_timeout=30.0)
     if events:
         result.check(len(events) > 0, f"Got response to conversation: {len(events)} events")
     else:
         result.failed += 1
         result.failures.append("T1.10: No response to conversation prompt")
 
+    return sse_client, response
 
-async def test_ws_disconnect(client, result, session_id: str, ws):
-    """T1.11 — WS disconnect (session stays alive)."""
-    print("\n  T1.11 WS disconnect")
-    await ws.close()
+
+async def test_sse_disconnect(client, result, session_id: str, sse_client, response):
+    """T1.11 — SSE disconnect (session stays alive)."""
+    print("\n  T1.11 SSE disconnect")
+    await sse_client.aclose()
 
     # Verify session still running
     async with httpx.AsyncClient() as inner:
@@ -269,11 +277,11 @@ async def test_ws_disconnect(client, result, session_id: str, ws):
         )
 
 
-async def test_ws_reconnect(client, result, session_id: str):
-    """T1.12 — WS reconnect."""
-    print("\n  T1.12 WS reconnect")
-    ws = await ws_connect(session_id)
-    await ws.close()
+async def test_sse_reconnect(client, result, session_id: str):
+    """T1.12 — SSE reconnect."""
+    print("\n  T1.12 SSE reconnect")
+    sse_client, response = await sse_connect(session_id)
+    await sse_client.aclose()
     result.check(True, "Reconnected successfully")
 
 
@@ -300,15 +308,15 @@ async def run(result):
         await test_list_models(client, result, session_id)
         await test_project_info_after_session(client, result, session_id)
 
-        # T1.7 – T1.10: WS chat
-        ws = await test_ws_connect_set_model(client, result, session_id)
-        await test_ws_get_state(client, result, ws)
-        await test_ws_prompt(client, result, ws)
-        await test_ws_conversation(client, result, ws)
+        # T1.7 – T1.10: SSE chat
+        sse_client, response = await test_sse_connect_set_model(client, result, session_id)
+        sse_client, response = await test_sse_get_state(client, result, session_id, sse_client, response)
+        sse_client, response = await test_sse_prompt(client, result, session_id, sse_client, response)
+        sse_client, response = await test_sse_conversation(client, result, session_id, sse_client, response)
 
         # T1.11 – T1.12: Disconnect & reconnect
-        await test_ws_disconnect(client, result, session_id, ws)
-        await test_ws_reconnect(client, result, session_id)
+        await test_sse_disconnect(client, result, session_id, sse_client, response)
+        await test_sse_reconnect(client, result, session_id)
 
         # Cleanup: close session
         await client.post(f"{API_BASE}/api/projects/{session_id}/close")

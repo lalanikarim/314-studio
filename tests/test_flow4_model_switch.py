@@ -3,7 +3,7 @@
 Flow 4: Model Switching
 
 Covers: T4.1–T4.4
-Tests model switch via REST metadata update + WS relay sends set_model.
+Tests model switch via REST metadata update + SSE sends set_model event.
 Secondary model (TEST_MODEL2_ID) is optional — tests skip gracefully if not set.
 """
 
@@ -17,11 +17,11 @@ from test_utils import (
     API_BASE,
     TESTS_DIR,
     TIMEOUT,
-    WS_TIMEOUT,
+    SSE_TIMEOUT,
     http_post_json,
-    ws_collect,
-    ws_connect,
-    ws_send,
+    sse_collect,
+    sse_connect,
+    send_prompt,
 )
 
 TEST_MODEL2_ID = os.environ.get("TEST_MODEL2_ID", "")
@@ -98,36 +98,42 @@ async def test_model_switch_with_reconnect(client, result, session_id=None):
         "Response contains correct modelId",
     )
 
-    # WS: reconnect — relay should send set_model to stdin with new modelId
-    ws = await ws_connect(session_id)
+    # SSE: connect — set_model event fires with new model
+    sse_client, response = await sse_connect(session_id)
 
-    # Collect events from the set_model response that arrives
-    events = await ws_collect(ws, max_events=5, total_timeout=WS_TIMEOUT)
+    # Collect events from the set_model event that arrives
+    events = await sse_collect(response, sse_client, max_events=5, total_timeout=SSE_TIMEOUT)
 
     if events:
-        # Look for a response to the set_model command
-        has_response = any(e.get("type") == "response" for e in events)
-        if has_response:
-            result.check(True, "set_model response received after WS reconnect")
+        init_type = events[0].get("type", "?")
+        if init_type == "set_model":
+            model_data = events[0].get("data", {})
+            switched_model = model_data.get("modelId", "")
+            result.check(
+                switched_model == TEST_MODEL2_ID,
+                f"set_model event has correct model: {switched_model} == {TEST_MODEL2_ID}",
+            )
+            result.check(True, f"set_model event received: {switched_model}")
         else:
-            # The set_model may have been sent but we got streaming events instead
-            types = [e.get("type", e.get("kind", "?")) for e in events]
-            result.check(True, f"Got {len(events)} events after reconnect: {types[:5]}")
+            types = [e.get("type", "?") for e in events]
+            result.check(True, f"Got {len(events)} events: {types[:5]}")
     else:
         result.skipped += 1
         result.failures.append("T4.2: No events from set_model after reconnect")
 
     # Chat to verify session is still working with new model
     print("     Chatting to verify session works with new model...")
-    await ws_send(ws, {"type": "prompt", "message": "Hello, this is the switched model."})
-    events = await ws_collect(ws, max_events=10, total_timeout=WS_TIMEOUT)
+    resp = await send_prompt(session_id, "Hello, this is the switched model.")
+    result.check(resp.get("status") == "ok", f"Prompt command returned ok")
+
+    events = await sse_collect(response, sse_client, max_events=10, total_timeout=30.0)
     if events:
         result.check(True, f"Session responds with new model: {len(events)} events")
     else:
         result.skipped += 1
         result.failures.append("T4.2: No response after model switch chat")
 
-    await ws.close()
+    await sse_client.aclose()
 
 
 async def test_chat_original_model(client, result):
@@ -152,25 +158,27 @@ async def test_chat_original_model(client, result):
 
     session_id2 = data.get("session_id")
 
-    # Connect WS and verify model is set
-    ws = await ws_connect(session_id2)
-    events = await ws_collect(ws, max_events=3, total_timeout=WS_TIMEOUT)
+    # Connect SSE and verify model is set
+    sse_client, response = await sse_connect(session_id2)
+    events = await sse_collect(response, sse_client, max_events=3, total_timeout=SSE_TIMEOUT)
     if events:
-        result.check(True, f"WS connected with original model: {len(events)} events")
+        init_type = events[0].get("type", "?")
+        result.check(init_type == "set_model", f"Got set_model event: {init_type}")
     else:
         result.skipped += 1
-        result.failures.append("T4.4: No events from WS connect with original model")
+        result.failures.append("T4.4: No events from SSE connect with original model")
 
     # Chat to verify
-    await ws_send(ws, {"type": "prompt", "message": "Say hello with original model."})
-    events = await ws_collect(ws, max_events=10, total_timeout=WS_TIMEOUT)
+    resp = await send_prompt(session_id2, "Say hello with original model.")
+    result.check(resp.get("status") == "ok", f"Prompt command returned ok")
+    events = await sse_collect(response, sse_client, max_events=10, total_timeout=30.0)
     if events:
         result.check(True, f"Session responds with original model: {len(events)} events")
     else:
         result.skipped += 1
         result.failures.append("T4.4: No response from original model chat")
 
-    await ws.close()
+    await sse_client.aclose()
 
     # Cleanup
     await client.post(f"{API_BASE}/api/projects/{session_id2}/close")

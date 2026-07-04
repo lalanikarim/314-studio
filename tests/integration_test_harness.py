@@ -42,6 +42,8 @@ _FLOW_MODULES: list[str] = [
     "test_flow5_close_delete",
     "test_flow6_error_handling",
     "test_flow7_shutdown_cleanup",
+    "test_flow8_model_operations",
+    "test_flow9_cached_models",
 ]
 
 
@@ -209,6 +211,8 @@ if __name__ == "__main__":
         "close-delete": "test_flow5_close_delete",
         "error-handling": "test_flow6_error_handling",
         "shutdown-cleanup": "test_flow7_shutdown_cleanup",
+        "model-ops": "test_flow8_model_operations",
+        "cached-models": "test_flow9_cached_models",
     }
 
     resolved_flows = None

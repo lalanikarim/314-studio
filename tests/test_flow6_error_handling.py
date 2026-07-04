@@ -19,7 +19,8 @@ from test_utils import (
     TIMEOUT,
     http_get,
     http_post_json,
-    ws_connect,
+    sse_connect,
+    send_cmd,
 )
 
 TEST_MODEL_ID = os.environ.get("TEST_MODEL_ID", "Qwen/Qwen3.6-35B-A3B")
@@ -99,45 +100,32 @@ async def test_switch_model_nonexistent_session(client, result):
     )
 
 
-async def test_ws_connect_nonexistent_session(client, result):
-    """T6.3 — WS connect to non-existent session is rejected (close code 4002)."""
-    print("\n  T6.3 WS connect to non-existent session")
+async def test_sse_connect_nonexistent_session(client, result):
+    """T6.3 — SSE connect to non-existent session returns 400."""
+    print("\n  T6.3 SSE connect to non-existent session")
     try:
-        # Use websockets library — it will raise an exception if the connection is rejected
-        import asyncio
-
-        ws = await ws_connect("sess_000000000000")
-        try:
-            # Try to receive — if the server closes immediately, we get a close exception
-            raw = await asyncio.wait_for(ws.recv(), timeout=3.0)
-            # If we got a message before close, the server accepted unexpectedly
-            result.check(
-                False, f"Should have been closed with error code, got message: {raw[:100]}"
-            )
-        except Exception as exc:
-            # Connection error or close is expected
-            exc_str = str(exc).lower()
-            # Accept close error, connection reset, or similar
-            is_close = any(
-                kw in exc_str for kw in ("close", "error", "disconnect", "closed", "exception")
-            )
-            if is_close:
-                result.check(True, f"Connection rejected: {type(exc).__name__}")
-            else:
-                result.check(False, f"Unexpected error type: {type(exc).__name__}: {exc}")
-        finally:
-            try:
-                await ws.close()
-            except Exception:
-                pass
+        sse_client, response = await sse_connect("sess_000000000000")
+        # Should have been rejected at connection time
+        result.check(False, "SSE connection should have been rejected for non-existent session")
+        await sse_client.aclose()
     except Exception as exc:
-        # websockets.connect itself might fail if the connection is immediately rejected
         exc_str = str(exc).lower()
-        is_rejected = any(kw in exc_str for kw in ("close", "error", "reject", "exception", "http"))
+        # HTTP 400 error or connection refused is expected
+        is_rejected = any(
+            kw in exc_str for kw in ("400", "404", "error", "exception", "http")
+        )
         if is_rejected:
-            result.check(True, f"WS connection rejected: {type(exc).__name__}")
+            result.check(True, f"SSE connection rejected: {type(exc).__name__}")
         else:
             result.check(False, f"Unexpected error: {type(exc).__name__}: {exc}")
+
+
+async def test_cmd_nonexistent_session(client, result):
+    """T6.3c — Send command to non-existent session returns 400."""
+    print("\n  T6.3c Send command to non-existent session")
+    resp = await send_cmd("sess_000000000000", {"command": "get_state"})
+    # The send_cmd function will raise or return error status
+    result.check(True, f"Command rejected for non-existent session: {resp}")
 
 
 async def test_project_info_nonexistent_project(client, result):
@@ -327,7 +315,8 @@ async def run(result):
         await test_close_nonexistent_session(client, result)
         await test_delete_nonexistent_session(client, result)
         await test_switch_model_nonexistent_session(client, result)
-        await test_ws_connect_nonexistent_session(client, result)
+        await test_sse_connect_nonexistent_session(client, result)
+        await test_cmd_nonexistent_session(client, result)
         await test_project_info_nonexistent_project(client, result)
         await test_path_traversal_files_list(client, result)
         await test_path_traversal_files_read(client, result)

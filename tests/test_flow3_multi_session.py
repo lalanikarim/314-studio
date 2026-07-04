@@ -18,9 +18,9 @@ from test_utils import (
     TIMEOUT,
     http_get,
     http_post_json,
-    ws_collect,
-    ws_connect,
-    ws_send,
+    sse_collect,
+    sse_connect,
+    send_prompt,
 )
 
 TEST_MODEL_ID = os.environ.get("TEST_MODEL_ID", "Qwen/Qwen3.6-35B-A3B")
@@ -105,15 +105,12 @@ async def test_project_info_two_sessions(client, result, session1_id, session2_i
 
 
 async def test_independent_chat(client, result, session1_id, session2_id):
-    """T3.3–T3.4 — Chat on sessions independently."""
+    """T3.3–T3.4 — Chat on sessions independently via SSE."""
     print("\n  T3.3 Chat on session 1")
 
-    ws1 = await ws_connect(session1_id)
-    await ws_send(
-        ws1, {"type": "prompt", "message": "Session 1, identify yourself. Say 'I am session 1'."}
-    )
-    events1 = await ws_collect(ws1)
-    await ws1.close()
+    sse_client1, response1 = await sse_connect(session1_id)
+    resp = await send_prompt(session1_id, "Session 1, identify yourself. Say 'I am session 1'.")
+    events1 = await sse_collect(response1, sse_client1, max_events=30, total_timeout=30.0)
 
     if events1:
         result.check(True, f"Session 1 responded: {len(events1)} events")
@@ -122,12 +119,9 @@ async def test_independent_chat(client, result, session1_id, session2_id):
         result.failures.append("T3.3: Session 1 no response")
 
     print("  T3.4 Chat on session 2")
-    ws2 = await ws_connect(session2_id)
-    await ws_send(
-        ws2, {"type": "prompt", "message": "Session 2, identify yourself. Say 'I am session 2'."}
-    )
-    events2 = await ws_collect(ws2)
-    await ws2.close()
+    sse_client2, response2 = await sse_connect(session2_id)
+    resp = await send_prompt(session2_id, "Session 2, identify yourself. Say 'I am session 2'.")
+    events2 = await sse_collect(response2, sse_client2, max_events=30, total_timeout=30.0)
 
     if events2:
         result.check(True, f"Session 2 responded: {len(events2)} events")

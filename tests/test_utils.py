@@ -1,7 +1,7 @@
 """
 Shared test utilities for integration test flows.
 
-Common HTTP helpers, WS helpers, constants, and paths used by all flow scripts.
+Common HTTP helpers, SSE helpers, constants, and paths used by all flow scripts.
 """
 
 from __future__ import annotations
@@ -12,14 +12,12 @@ import os
 from pathlib import Path
 
 import httpx
-import websockets  # type: ignore[import-untyped]
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
 API_BASE = os.environ.get("API_BASE", "http://127.0.0.1:8000")
-WS_BASE = os.environ.get("WS_BASE", "ws://127.0.0.1:8000")
 TIMEOUT = 300.0
-WS_TIMEOUT = 10.0
+SSE_TIMEOUT = 10.0
 TESTS_DIR = Path(
     os.environ.get("TESTS_DIR", str(Path.home() / "Projects" / "web-pi-integration-tests"))
 )
@@ -57,48 +55,117 @@ async def http_post_json(client, path, body=None, params=None):
     return resp
 
 
-# ── WebSocket helpers ────────────────────────────────────────────────────────
+# ── SSE helpers ──────────────────────────────────────────────────────────────
 
 
-async def ws_connect(session_id: str):
-    """Connect to WS endpoint, return websocket object."""
-    url = f"{WS_BASE}/api/projects/ws?session_id={session_id}"
-    print(f"  → WS   /api/projects/ws?session_id={session_id[:12]}...")
-    ws = await websockets.connect(url)
-    print("     ← WS connected")
-    return ws
+async def sse_connect(session_id: str):
+    """Open SSE stream for a session. Returns (httpx.AsyncClient, httpx.Response).
+
+    The caller should use sse_collect() to read events from the stream.
+    Both client and response are closed by sse_collect.
+    """
+    url = f"{API_BASE}/api/projects/sse?session_id={session_id}"
+    print(f"  → SSE  /api/projects/sse?session_id={session_id[:12]}...")
+    client = httpx.AsyncClient(timeout=TIMEOUT)
+    response = await client.stream("GET", url)
+    await response.aread()  # Trigger the request; check status
+    if response.status_code != 200:
+        await client.aclose()
+        raise RuntimeError(f"SSE connection failed: {response.status_code}")
+    return client, response
 
 
-async def ws_send(ws, payload: dict):
-    """Send a JSON message over WS."""
-    msg = json.dumps(payload)
-    await ws.send(msg)
+async def sse_collect(
+    response_stream,
+    client: httpx.AsyncClient,
+    max_events: int = 50,
+    total_timeout: float = 25.0,
+) -> list[dict]:
+    """Read SSE events from a streaming response.
 
+    Returns list of parsed event dicts: {"type": ..., "data": {...}}
 
-async def ws_receive(ws, timeout: float = WS_TIMEOUT):
-    """Receive and parse one JSON message from WS. Returns None on timeout."""
-    try:
-        raw = await asyncio.wait_for(ws.recv(), timeout=timeout)
-        return json.loads(raw)
-    except asyncio.TimeoutError:
-        return None
-
-
-async def ws_collect(ws, max_events: int = 50, total_timeout: float = 25.0):
-    """Collect streaming events until we get a terminal event (turn_end/agent_end/response)."""
+    SSE wire format:
+      - event:  → event type name
+      - data:   → JSON payload
+      - :       → comment (keepalive), ignored
+      - Events separated by \n\n (empty line)
+    """
     events = []
+    current_event = ""
+    current_type = None
     deadline = asyncio.get_event_loop().time() + total_timeout
-    while len(events) < max_events and asyncio.get_event_loop().time() < deadline:
-        remaining = deadline - asyncio.get_event_loop().time()
-        if remaining <= 0:
-            break
-        try:
-            raw = await asyncio.wait_for(ws.recv(), timeout=min(5.0, remaining))
-            evt = json.loads(raw)
-            events.append(evt)
-            etype = evt.get("type", evt.get("kind", "unknown"))
-            if etype in ("turn_end", "agent_end", "response"):
+
+    async with response_stream:
+        async for line in response_stream.aiter_lines():
+            if line == "":
+                # Empty line = event boundary
+                if current_event:
+                    try:
+                        data = json.loads(current_event)
+                    except json.JSONDecodeError:
+                        data = current_event
+                    events.append({"type": current_type, "data": data})
+                    current_event = ""
+                    current_type = None
+                if len(events) >= max_events:
+                    break
+                continue
+
+            if line.startswith("event:"):
+                current_type = line[6:].strip()
+            elif line.startswith("id:"):
+                pass  # Event IDs — not used in tests
+            elif line.startswith("data:"):
+                current_event += line[5:].strip() + "\n"
+            elif line.startswith(":"):
+                pass  # Comment / keepalive — ignore
+
+            # Check timeout
+            if asyncio.get_event_loop().time() >= deadline:
                 break
-        except asyncio.TimeoutError:
-            continue
+
+    await client.aclose()
     return events
+
+
+async def send_cmd(session_id: str, command: dict) -> dict:
+    """Send a REST command to the session.
+
+    Maps directly to POST /api/projects/{session_id}/cmd.
+    """
+    url = f"{API_BASE}/api/projects/{session_id}/cmd"
+    print(f"  → CMD  /api/projects/{session_id[:12]}... command={command.get('command')}")
+    async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+        resp = await client.post(url, json=command, timeout=TIMEOUT)
+        result = resp.json()
+        print(f"     ← {resp.status_code} {result}")
+        return result
+
+
+async def send_prompt(session_id: str, message: str, streaming_behavior: str | None = None) -> dict:
+    """Convenience: send a chat prompt via REST command."""
+    cmd: dict = {"command": "prompt", "message": message}
+    if streaming_behavior:
+        cmd["streamingBehavior"] = streaming_behavior
+    return await send_cmd(session_id, cmd)
+
+
+async def send_abort(session_id: str) -> dict:
+    """Send an abort command via REST."""
+    return await send_cmd(session_id, {"command": "abort"})
+
+
+async def send_compact(session_id: str) -> dict:
+    """Send a compact command via REST."""
+    return await send_cmd(session_id, {"command": "compact"})
+
+
+async def send_get_state(session_id: str) -> dict:
+    """Send a get_state command via REST."""
+    return await send_cmd(session_id, {"command": "get_state"})
+
+
+async def send_set_model(session_id: str, model_id: str, provider: str = "") -> dict:
+    """Send a set_model command via REST."""
+    return await send_cmd(session_id, {"command": "set_model", "modelId": model_id, "provider": provider})

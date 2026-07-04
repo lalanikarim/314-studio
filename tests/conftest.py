@@ -10,7 +10,6 @@ from typing import Any, AsyncGenerator
 
 import httpx
 import pytest
-import websockets  # type: ignore[import-untyped]
 
 # ── Subfixture registry ──────────────────────────────────────────────────────
 # Tests return values (session_id, ws, session1_id, etc.) and subsequent tests
@@ -61,26 +60,7 @@ def models() -> list | None:
     return _subfixture_cache.get("test_fetch_models")
 
 
-@pytest.fixture
-async def ws(session_id: str | None, timeout: float) -> AsyncGenerator[Any, None]:
-    """Create a fresh WS connection for each test using session_id from earlier tests.
 
-    Uses a new connection per test to avoid event-loop mismatch issues
-    (pytest-asyncio auto mode = one loop per test).
-    """
-    if not session_id:
-        yield None
-        return
-    url = f"{WS_BASE}/api/projects/ws?session_id={session_id}"
-    print(f"  → WS   {url}")
-    ws_conn = await websockets.connect(url)
-    try:
-        yield ws_conn
-    finally:
-        try:
-            await ws_conn.close()
-        except Exception:
-            pass
 
 
 @pytest.fixture
@@ -120,11 +100,6 @@ TEST_MODEL2_ID = os.environ.get("TEST_MODEL2_ID", "")
 @pytest.fixture
 def api_base() -> str:
     return API_BASE
-
-
-@pytest.fixture
-def ws_base() -> str:
-    return WS_BASE
 
 
 @pytest.fixture
