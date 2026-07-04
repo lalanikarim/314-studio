@@ -340,72 +340,174 @@ class SearchInput extends LitElement {
 
 ---
 
-## Migration Strategy for 314 Studio
+## Gaps & Issues Identified in Codebase Review
+
+### Critical Architecture Mismatch: SSE, Not WebSocket
+
+The migration plan incorrectly states the backend uses **WebSocket** for Pi RPC streaming. **The actual codebase uses Server-Sent Events (SSE)**:
+
+- **Frontend**: `useSSE.ts` hook manages `EventSource` connection to `GET /api/projects/sse`
+- **Backend**: `backend/app/api/chat.py` exposes `GET /api/projects/sse` (SSE stream) and `POST /api/projects/cmd` (REST commands)
+- **Plan error**: All references to "WebSocket" (`WS /api/projects/ws`, `useWebSocket` hook, "bidirectional WS relay") are factually incorrect for the current implementation
+
+**Impact**: The migration strategy, component mapping, and risk assessment must be rewritten around SSE. The `useSSE` hook is ~350 lines of complex streaming text/tool-call/message-buffer state management — far more involved than a simple "WebSocket controller."
+
+### Integration Tests Are Out of Sync
+
+The integration test suite (`tests/`) still references **WebSocket endpoints** (`/api/projects/ws`) that do not exist in the backend. `test_utils.py` and the `ws_harness/` directory use `websockets` library and expect `ws://` URLs. This contradicts the plan's claim that "pytest flows 1–8 still pass" unchanged.
+
+**Action required**: Decide whether to:
+1. Rewrite tests to use SSE (`EventSource` is harder to test from Python than WebSocket)
+2. Add a WebSocket adapter layer in backend (adds scope)
+3. Use an HTTP/SSE test client (e.g., `httpx` with streaming + a separate command POST)
+
+### CSS Is Global, Not CSS Modules
+
+The plan states the current styling uses "CSS Modules (`.module.css`)." **This is incorrect.** The codebase uses plain global CSS:
+
+- `frontend/src/index.css` — global variables and resets
+- `frontend/src/views/views.css` — view-level styles
+- `frontend/src/views/common.css` — shared button/component styles
+- `frontend/src/components/components.css` — component styles
+
+There are no `.module.css` files, no CSS Modules configuration in Vite, and no scoped-by-default styling. The migration to Shadow DOM `static styles` is a bigger change than the plan implies.
+
+### Unaccounted Dependencies
+
+| Dependency | Used For | Migration Needed |
+|-----------|----------|-----------------|
+| `react-markdown` + `remark-gfm` | ChatPanel markdown rendering | Replace with `marked`, `markdown-it`, or a custom Lit directive |
+| `react-dom` + `createRoot` | Mounting | Replace with `document.createElement` + `customElements.define` |
+| `@vitejs/plugin-react` | Vite React plugin | Replace with generic Vite (Litro handles this) |
+
+### Complex UI Patterns Missing from Plan
+
+The plan's component migration table is too simplistic. The actual frontend contains complex patterns that need explicit migration strategies:
+
+1. **ChatPanel message rendering** — `ReactMarkdown` with GFM plugins, collapsible `<details>` for tool calls, streaming cursor animation, syntax-highlighted code blocks via `:global()` selectors
+2. **ModelSelector search highlighting** — `highlightMatch()` returns JSX fragments with `<mark>`; in Lit this requires string-splitting + `unsafeHTML` or manual template construction
+3. **FolderSelector recursive tree** — `DirectoryTree` recursively renders itself with `useMemo`, lazy loading, and expand/collapse state. In Lit, recursive custom elements need careful slot/property design
+4. **Shutdown dialog** — Modal overlay with backdrop blur, animation keyframes, and stop-propagation — needs Lit equivalent (no React event bubbling)
+5. **useModels StrictMode guards** — Module-level `Set` guards against React StrictMode double-mount. Lit does not have StrictMode; this pattern disappears but the underlying deduplication logic (session creation) still matters
+
+### Routing: View State vs URL State
+
+The plan proposes file-system routing (`/workspace/:session_id`), but the current app stores the active view (`'folders' | 'models' | 'workspace'`) and `sessionId` in **React Context**, not the URL. The session ID is never in the URL.
+
+**Decision needed**: Should the Litro migration also introduce URL-based routing? This adds scope beyond a pure framework migration. If keeping view-state routing, `@lit/context` is sufficient; if moving to URL routing, Litro's file-system routing adds complexity.
+
+### API Endpoint Discrepancies
+
+The plan's API table has incorrect paths:
+
+| Plan Says | Actual Endpoint |
+|-----------|---------------|
+| `POST /api/projects/{id}/close` | `POST /api/projects/{session_id}/close` |
+| `POST /api/projects/{id}/delete` | `POST /api/projects/{session_id}/delete` |
+| `POST /api/projects/{id}/model` | `POST /api/projects/{session_id}/model` |
+| `WS /api/projects/ws` | `GET /api/projects/sse` + `POST /api/projects/cmd` |
+
+Also missing from the plan:
+- `POST /api/projects/cmd` — the REST command endpoint used by the frontend for all Pi commands
+- `GET /api/projects/sessions` — list all active sessions
+- Commands like `set_auto_compaction`, `get_messages`, `extension_ui_response` that the frontend actively uses
+
+### State Management Complexity
+
+The plan shows a simplified `AppState` with 5 fields. The actual `AppContext.tsx` manages **14 fields** including `selectedSession`, `models`, `modelsLoading`, `modelsError`, `refreshModels`, `sessionId`, `currentModel`, and multiple setter callbacks. Replacing this with `@lit/context` is nontrivial — every consumer needs `@consume()` and the provider needs `@provide()` on a root element.
+
+### localStorage Model Cache
+
+`useModels.ts` implements a 30-minute localStorage cache for the model list (`PI_MODELS_CACHE`). The plan's state management section does not mention this caching strategy, which is critical for the "instant model list on reload" UX.
+
+---
+
+## Updated Migration Strategy for 314 Studio
+
+### Phase 0: Pre-Migration Fixes (Blockers)
+
+Before starting the Lit migration, fix these issues in the React codebase:
+
+1. **Align tests with backend transport** — Either add a WS compatibility layer to backend, or rewrite `test_utils.py` and `ws_harness/` to use SSE/REST. This must be done first or tests will be permanently broken.
+2. **Verify `ws_to_stdin_queue` field** — `session_manager.py` references `record.ws_to_stdin_queue` but `SessionRecord` schema does not define it. This is a latent bug.
+3. **Document actual API contract** — Replace plan's incorrect WebSocket references with the real SSE+REST architecture.
 
 ### Phase 1: Foundation
 
-1. Scaffold a Litro project with `create-litro` (Lit adapter)
+1. Scaffold a Litro project with `create-litro` (Lit adapter) — **verify Litro CLI availability first**
 2. Configure Vite + TypeScript + ESLint
-3. Set up the API client (reuse existing `services/api.ts` logic)
-4. Configure file-system routing:
-   - `/` → Folder selector
-   - `/models` → Model selector
-   - `/workspace/:session_id` → Workspace
+3. Port the `services/api.ts` REST client (unchanged logic, no React deps)
+4. **Create an SSE controller class** (not "WebSocket controller"):
+   - Wrap `EventSource` lifecycle
+   - Buffer `rpc_event` / `rpc_response` / `extension_ui_request` events
+   - Expose `prompt()`, `abort()`, `compact()`, `setAutoCompaction()` methods that `POST` to `/api/projects/cmd`
+   - Handle `set_model` initial event and `session_terminated`
+5. **Decide on routing approach**:
+   - **Option A**: Keep view-state routing (simpler, no URL changes) using `@lit/context`
+   - **Option B**: Adopt Litro file-system routing (`/`, `/models`, `/workspace/:session_id`) — adds scope but gives shareable URLs
 
-### Phase 2: Component Migration
+### Phase 2: Component Migration (Bottom-Up)
 
-Migrate components one at a time (each is a custom element):
+Migrate leaf components first, then views:
 
-| Component | Purpose | Key Dependencies |
-|-----------|---------|-----------------|
-| `project-tree` | File tree sidebar | `useFileContent` hook → API service |
-| `file-preview` | Syntax-highlighted viewer | Line numbers, content rendering |
-| `chat-panel` | Chat + model switcher | WebSocket, model dropdown |
-| `folder-selector` | Browse & select folder | Recursive API, search/filter |
-| `model-selector` | Pick AI model | `useModels` hook → API service, refresh button |
+| Component | Complexity | Key Migration Work |
+|-----------|-----------|-------------------|
+| `file-preview` | Low | Port `useFileContent` logic to a Lit controller; line numbers are plain DOM |
+| `project-tree` | Medium | Port `TreeNode` recursive pattern; lazy `listFiles()` calls on expand |
+| `folder-selector` | High | Recursive `DirectoryTree` + search highlighting + session list + shutdown dialog |
+| `model-selector` | Medium | Provider filter chips, search highlight (`<mark>` → template logic), model cards |
+| `chat-panel` | **Very High** | Markdown rendering (replace `react-markdown`), streaming state, tool call collapsibles, model dropdown, pending UI banner, session controls |
+
+**ChatPanel-specific tasks:**
+- Replace `ReactMarkdown` with a markdown-to-Lit-html utility (e.g., `marked` → `unsafeHTML` directive, or pre-rendered HTML)
+- Migrate `agentMessageToDisplay()`, `extractText()`, `extractToolCall()` logic into a message-processing controller
+- Replace `useRef`-based `processedCountRef` pattern with a class field tracking last processed message index
+- Replace `useCallback` handlers with class methods
 
 ### Phase 3: State Management
 
 | Current (React) | Litro/Lit Replacement |
 |-----------------|----------------------|
-| `AppContext` (React Context) | `@lit/context` provider/consumer |
-| `useApp()` hook | `@consume({ context: appContext, subscribe: true })` |
-| `useFileContent` hook | Lit controller (`LitController`) |
-| `useModels` hook | Lit controller with fetch + cache logic |
-| `useWebSocket` hook | Lit controller with WebSocket management |
+| `AppContext` (14-field React Context) | `@lit/context` provider on root element + `@consume` in children |
+| `useApp()` hook | `@consume({ context: appContext, subscribe: true })` decorator |
+| `useFileContent` | `FileContentController` class with `load()` and `abort()` |
+| `useModels` | `ModelsController` class with localStorage cache, fetch, polling, dedup guards |
+| `useSSE` | `SSEController` class wrapping `EventSource`, event buffering, streaming state |
 
-### Phase 4: Styling
+### Phase 4: Styling Migration
 
 | Current | Replacement |
 |---------|-------------|
-| CSS Modules (`.module.css`) | `static styles = css\`...\`` with Shadow DOM |
-| Global `index.css` | Move shared variables to a root custom element or `:host` |
-| View-specific CSS (`.views.css`) | `static styles` per component |
+| Global `index.css` (CSS custom properties) | Keep as global stylesheet OR inject into `:host` CSS vars on a theme provider element |
+| `views.css` / `components.css` / `common.css` | Split into `static styles = css\`...\`` per component, OR keep as Light DOM global styles if Shadow DOM is too invasive |
+| `:global()` selectors for markdown | Move markdown styles into a `<style>` block inside the markdown renderer component (Light DOM) |
+
+**Shadow DOM decision**: The current CSS is deeply interconnected (e.g., `.chat-message__content :global(pre)`). Migrating everything to Shadow DOM means duplicating shared styles or adopting CSS custom properties aggressively. Consider using **Light DOM** (Elena adapter) for the initial migration to reduce styling risk, then migrate to Shadow DOM incrementally.
 
 ### Phase 5: Testing & Polish
 
-1. Migrate integration tests (pytest for backend unchanged)
-2. Add Lit component tests (`@open-wc/testing`)
-3. Verify WebSocket relay still works (backend is unchanged)
-4. Performance benchmarking (bundle size, render time)
+1. **Update integration tests** — Replace `ws_connect` with `sse_connect` (streaming `httpx` or `aiohttp` SSE client) + `cmd_post` REST helper
+2. Add Lit component unit tests with `@open-wc/testing`
+3. Verify all 8 test flows pass against SSE backend
+4. Performance benchmark: compare React bundle (~40+ KB + markdown parser) vs Lit bundle (~5 KB + marked)
 
 ### What Stays the Same
 
-- **Backend** (FastAPI + Uvicorn) — completely unchanged
-- **API contract** — REST + WebSocket endpoints
-- **Session Manager** — `pi --mode rpc` process management
-- **Integration tests** — pytest flows 1–8 still pass
+- **Backend** (FastAPI + Uvicorn + SSE endpoints) — completely unchanged
+- **REST API contract** — `services/api.ts` logic is framework-agnostic
+- **Session Manager** — `pi --mode rpc` process lifecycle
 - **Development workflow** — Vite HMR, `uv run` for backend
 
 ### What Changes
 
-- **Frontend framework** — React → Litro + Lit
+- **Frontend framework** — React 19 → Litro + Lit
 - **Component model** — Function + hooks → Class + decorators
-- **Templates** — JSX → Tagged template literals
-- **Styling** — CSS Modules → Shadow DOM
-- **State** — React Context → `@lit/context`
-- **Routing** — Custom view state → Litro file-system routing
-- **Build tool** — Bun + Vite → Litro + Vite (Bun may still work for `bun dev`)
+- **Templates** — JSX → Tagged template literals (`html\`...\``)
+- **Styling** — Global CSS → Shadow DOM `static styles` (or Light DOM if Elena adapter chosen)
+- **State** — React Context → `@lit/context` + controller classes
+- **Routing** — Custom view state → Either Litro file-system routing OR keep view-state via context
+- **Markdown rendering** — `react-markdown` → `marked`/`markdown-it` + `unsafeHTML` directive
+- **Streaming transport** — (Plan incorrectly said "WS → WS"; reality is SSE stays SSE)
 
 ---
 
@@ -413,13 +515,18 @@ Migrate components one at a time (each is a custom element):
 
 | Risk | Severity | Mitigation |
 |------|----------|------------|
+| Plan was written assuming WebSocket backend; actual is SSE | **Critical** | Rewrite SSE controller logic; verify Litro SSE compatibility |
+| Integration tests use WebSocket but backend has no WS endpoint | **Critical** | Rewrite tests for SSE+REST before any frontend migration |
+| `react-markdown` + GFM has no direct Lit equivalent | Medium | Use `marked` or `markdown-it` with `unsafeHTML` directive; verify XSS safety |
+| ChatPanel is very complex (~650 lines, 4 sub-components, streaming state) | High | Migrate incrementally: extract message-processing logic into a testable controller first |
+| Recursive `DirectoryTree` with lazy loading | Medium | Lit custom elements can be recursive via self-tagging; test memory leaks |
 | Litro is younger than Next.js (fewer recipes/plugins) | Medium | Litro has migration guides; community is growing |
 | Class-based components feel unfamiliar to React devs | Medium | Migration guide `litro.dev/docs/migrate/from-react` exists |
 | No JSX means learning tagged template literals | Low | Simple syntax, no build step, native JS expressions |
-| Shadow DOM makes global CSS harder | Low | Use CSS custom properties for theming; Light DOM adapter (Elena) available if needed |
+| Shadow DOM makes global CSS harder | Medium | Use CSS custom properties for theming; consider Elena (Light DOM) adapter for initial migration |
 | Smaller ecosystem than React | Medium | Lit has solid core; use `@lit/context` for state, standard web APIs for everything else |
 | Litro SSR (DSD) may have edge cases | Low | Litro uses `@lit-labs/ssr` which is production-tested |
-| TypeScript version compatibility | Low | Lit requires TS ~5.2+ (we're already on TS 5.x) |
+| TypeScript version compatibility | Low | Lit requires TS ~5.2+; project uses TS ~6.0.2 (compatible) |
 
 ---
 
