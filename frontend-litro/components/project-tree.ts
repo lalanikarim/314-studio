@@ -1,4 +1,4 @@
-import { html, css } from 'lit';
+import { html, css, LitElement } from 'lit';
 import { customElement, state, property } from 'lit/decorators.js';
 import { listFiles } from '../services/api';
 import type { TreeNodeData } from '../types/tree';
@@ -25,7 +25,7 @@ function getFileExtensionIcon(filename: string): string {
 // ---------------------------------------------------------------------------
 
 @customElement('tree-node')
-export class TreeNodeComponent extends HTMLElement {
+export class TreeNodeComponent extends LitElement {
   static styles = css`
     :host {
       display: block;
@@ -205,7 +205,7 @@ export class TreeNodeComponent extends HTMLElement {
 // ---------------------------------------------------------------------------
 
 @customElement('project-tree')
-export class ProjectTreeComponent extends HTMLElement {
+export class ProjectTreeComponent extends LitElement {
   static styles = css`
     :host {
       display: block;

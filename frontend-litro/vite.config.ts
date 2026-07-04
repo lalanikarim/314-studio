@@ -1,26 +1,8 @@
 import { defineConfig } from 'vite';
-import { vitePluginSwc } from 'vite-plugin-swc';
 
 export default defineConfig({
-  plugins: [
-    vitePluginSwc({
-      // Use experimental decorators for Lit compatibility
-      decorator: {
-        legacy: true,
-        metadata: false,
-      },
-    }),
-  ],
+  plugins: [],
   base: '/_litro/',
-  esbuild: {
-    // Force experimental decorators for Lit compatibility
-    tsconfigRaw: {
-      compilerOptions: {
-        experimentalDecorators: true,
-        useDefineForClassFields: false,
-      },
-    },
-  },
   server: {
     proxy: {
       '/api': {
