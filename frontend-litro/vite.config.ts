@@ -3,6 +3,15 @@ import { defineConfig } from 'vite';
 export default defineConfig({
   plugins: [],
   base: '/_litro/',
+  esbuild: {
+    // Force experimental decorators for Lit compatibility
+    tsconfigRaw: {
+      compilerOptions: {
+        experimentalDecorators: true,
+        useDefineForClassFields: false,
+      },
+    },
+  },
   server: {
     proxy: {
       '/api': {

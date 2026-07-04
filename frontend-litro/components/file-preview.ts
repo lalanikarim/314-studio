@@ -1,9 +1,7 @@
 import { html, css, LitElement } from 'lit';
-import { customElement } from 'lit/decorators.js';
 import { readFile } from '../services/api';
 
-@customElement('file-preview')
-export class FilePreviewComponent extends LitElement {
+class FilePreviewElement extends LitElement {
   static styles = css`
     :host { display: block; height: 100%; }
     .panel { display: flex; flex-direction: column; height: 100%; }
@@ -59,4 +57,9 @@ export class FilePreviewComponent extends LitElement {
     }
     return html`<div class="panel"><div class="content">${this.fileName}: ${this.content}</div></div>`;
   }
+}
+
+// Register without decorators
+if (!customElements.get('file-preview')) {
+  customElements.define('file-preview', FilePreviewElement);
 }
