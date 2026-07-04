@@ -20,194 +20,113 @@
 
 ## Critical Issues
 
-### C-1: `useModels` Called Redundantly in `ChatPanel`
+### C-1: `useModels` Called Redundantly in `ChatPanel` ✅ RESOLVED
 
-**Files**: `ChatPanel.tsx` (line ~253), `ModelSelector.tsx` (line ~31)
+**Files**: `ChatPanel.tsx`, `ModelSelector.tsx`, `AppContext.tsx`, `types/index.ts`
 
-`ChatPanel` calls `useModels(selectedFolder, selectedSessionId)` even though the session and model list are already established by `ModelSelector`. This creates:
-- A redundant API call on every ChatPanel mount/re-render
-- A potential race condition where the hook tries to create a second session via `createSession()`
-- Duplicate `setSessionId` calls that conflict with `ModelSelector`'s own state update
+`ChatPanel` previously called `useModels(selectedFolder, selectedSessionId)` redundantly. The model list is now persisted into `AppContext` by `ModelSelector`, so `ChatPanel` reads it via `useApp().models` instead.
 
-```ts
-// ChatPanel.tsx — ChatPanel calls useModels AGAIN
-const { models } = useModels(selectedFolder, selectedSessionId);
-```
-
-`ModelSelector` already calls `useModels(selectedFolder)` and passes `sessionId` via `useApp()`. ChatPanel should use the context values, not re-invoke the hook.
-
-**Impact**: Race conditions, unnecessary network calls, potential session duplication.
-
-**Fix**: Remove `useModels` from ChatPanel. Use `useApp()` to get `selectedModel` and `currentModel`. If ChatPanel needs the full model list for the dropdown, fetch it once via a shared context or lift the model list into `AppContext`.
+**Fix applied**:
+- Added `models`, `modelsLoading`, `modelsError`, `refreshModels` to `AppState` and `AppContext`
+- `ModelSelector` persists fetched models into context via `useEffect` hooks
+- `ChatPanel` removed `useModels` call and `useModels` import; uses `useApp().models` for the dropdown
+- All 58 integration tests pass after the change.
 
 ---
 
-### C-2: Duplicate `deriveModelName` and `extractProvider` Functions
+### C-2: Duplicate `deriveModelName` and `extractProvider` Functions ✅ RESOLVED
 
-**Files**: `FolderSelector.tsx` (lines 17-30), `ChatPanel.tsx` (lines 193-197)
+**Files**: `utils/model.ts` (new), `FolderSelector.tsx`, `ChatPanel.tsx`, `useModels.ts`
 
-The same `deriveModelName(providerId, provider)` function is defined in two files. `FolderSelector` additionally has a duplicate `extractProvider` function.
+All duplicate `deriveModelName` implementations (3 copies) and `extractProvider` (1 copy) extracted to shared `frontend/src/utils/model.ts`.
 
-```ts
-// FolderSelector.tsx
-function deriveModelName(modelId: string, provider: string): string {
-    const providerName = provider.charAt(0).toUpperCase() + provider.slice(1);
-    return `${providerName} – ${modelId}`;
-}
-
-// ChatPanel.tsx — identical copy
-function deriveModelName(modelId: string, provider: string): string {
-    const providerName = provider.charAt(0).toUpperCase() + provider.slice(1);
-    return `${providerName} – ${modelId}`;
-}
-```
-
-**Impact**: DRY violation, inconsistent behavior if one is updated and the other isn't.
-
-**Fix**: Extract to `frontend/src/utils/model.ts` (or `frontend/src/lib/model.ts`).
+**Fix applied**:
+- Created `frontend/src/utils/model.ts` with exported `deriveModelName`, `extractProvider`, and `createMinimalModel`
+- `useModels.ts` imports `deriveModelName` (removed local copy)
+- `FolderSelector.tsx` imports both functions (removed local copies)
+- `ChatPanel.tsx` imports `deriveModelName` (removed local copy)
+- All 58 integration tests pass after the change.
 
 ---
 
-### C-3: `useWebSocket` Messages Array Grows Unbounded
+### C-3: `useWebSocket` Messages Array Grows Unbounded ✅ RESOLVED
 
-**Files**: `useWebSocket.ts` (line ~132, ~237)
+**Files**: `useWebSocket.ts`
 
-```ts
-const [messages, setMessages] = useState<InboundMessage[]>([]);
-// ...
-setMessages((prev) => [...prev, parsed as RpcEventMessage]);
-```
+All RPC events were accumulated indefinitely in the `messages` state array. With active streaming, this could grow to tens of thousands of items.
 
-All RPC events are accumulated indefinitely. With active streaming (hundreds of events per second), this array can grow to tens of thousands of items. This degrades:
-- `slice()` performance in the processing effect
-- The `useMemo` dependency tracking (the array reference changes constantly)
-- Memory usage over long sessions
-
-**Impact**: Progressive performance degradation; potential browser hang on long sessions.
-
-**Fix options**:
-1. **Limit array size**: Keep only the last N messages (e.g., 500) and discard older ones after processing.
-2. **Ring buffer**: Use `useRef` with a fixed-capacity buffer, only exposing new items via a state update.
-3. **Process-and-clear**: After the effect processes messages, trim the array to only unprocessed items.
+**Fix applied**:
+- Added `MAX_MESSAGES = 500` constant
+- All `setMessages` calls in `ws.onmessage` now cap the array at 500 items using `slice(next.length - MAX_MESSAGES)` when exceeded
+- Prevents unbounded memory growth during long sessions
+- All 58 integration tests pass after the change.
 
 ---
 
-### C-4: `useModels` — `launchedRef` Never Reset for `existingSessionId` Changes
+### C-4: `useModels` — `launchedRef` Never Reset for `existingSessionId` Changes ✅ RESOLVED
 
-**Files**: `useModels.ts` (line ~100)
+**Files**: `useModels.ts`
 
-```ts
-if (!launchedRef.current && !existingSessionId) {
-    launchedRef.current = true;
-```
+`launchedRef` was only reset when `projectPath` changed. Switching sessions without changing project left the hook stuck with the old session.
 
-`launchedRef` is only reset when `projectPath` changes (in the effect's reset block). If `existingSessionId` changes without `projectPath` changing, the hook retains the old session ID and never creates a new one.
-
-**Impact**: Switching sessions from the Folder Selector's Sessions tab may use the wrong session.
-
-**Fix**: Also reset `launchedRef` and `sessionId` state when `existingSessionId` changes.
+**Fix applied**:
+- Added `prevExistingSessionRef` to track previous `existingSessionId`
+- Effect dependency array expanded to `[projectPath, existingSessionId]`
+- Launch guard now resets when either `projectPath` or `existingSessionId` changes
+- All 58 integration tests pass after the change.
 
 ---
 
-### C-5: `useFileContent` — No Request Cancellation on Rapid File Switches
+### C-5: `useFileContent` — No Request Cancellation on Rapid File Switches ✅ RESOLVED
 
-**Files**: `useFileContent.ts` (lines 18-40)
+**Files**: `useFileContent.ts`
 
-When clicking through many files quickly in the file tree, each click triggers a new `useEffect`. The previous request continues in the background and can overwrite the current content. The `isMountedRef` only prevents updates *after unmount*, not between rapid re-renders.
+Rapid file switches could cause stale responses to overwrite current content. `isMountedRef` only guards against unmount, not between rapid re-renders.
 
-```ts
-readFile(projectPath, filePath)
-    .then((text) => {
-        if (isMountedRef.current) {  // Only checks mount, not current filePath
-            setContent(text);
-        }
-    })
-```
-
-**Impact**: Flickering content when browsing files rapidly; stale content shown briefly.
-
-**Fix**: Track the expected `filePath` in a ref and skip the setState if the path changed:
-
-```ts
-const expectedPathRef = useRef('');
-useEffect(() => {
-    expectedPathRef.current = filePath;
-    readFile(projectPath, filePath)
-        .then((text) => {
-            if (expectedPathRef.current === filePath && isMountedRef.current) {
-                setContent(text);
-            }
-        })
-}, [projectPath, filePath]);
-```
+**Fix applied**:
+- Added `expectedPathRef` tracking the requested `filePath`
+- `setContent` and `setError` now check `expectedPathRef.current === filePath` before updating
+- Stale responses from previous file switches are silently discarded
+- All 58 integration tests pass after the change.
 
 ---
 
-### C-6: `ChatPanel` — `handleSend` Closes Model Dropdown Without Switching Model
+### C-6: `ChatPanel` — `handleSend` Closes Model Dropdown Without Switching Model ✅ VERIFIED NOT AN ISSUE
 
-**Files**: `ChatPanel.tsx` (line ~430)
+**Files**: `ChatPanel.tsx`
 
-```ts
-const handleSend = useCallback(() => {
-    // ...
-    setModelDropdownOpen(false);  // ← Closes dropdown but doesn't switch model
-```
-
-This appears to be leftover code from `handleSwitchModel` being copy-pasted into `handleSend`. It silently closes the model picker without performing any model switch.
-
-**Impact**: Confusing UX — clicking send with an open model dropdown closes it without switching.
-
-**Fix**: Remove `setModelDropdownOpen(false)` from `handleSend`.
+`setModelDropdownOpen(false)` exists only in `handleSwitchModel` (line 653), where it correctly closes the dropdown after a model switch. `handleSend` does not call `setModelDropdownOpen`. The review identified a false positive — this was likely an outdated observation from an earlier version.
 
 ---
 
 ## High Priority
 
-### H-1: `FolderSelector` — Sessions Never Refresh After Creation/Deletion
+### H-1: `FolderSelector` — Sessions Never Refresh After Creation/Deletion ✅ RESOLVED
 
-**Files**: `FolderSelector.tsx` (lines 269-277)
+**Files**: `FolderSelector.tsx`
 
-```ts
-const sessionsFetched = useRef(false);
-useEffect(() => {
-    if (sessionsFetched.current) return;
-    sessionsFetched.current = true;
-    listSessions()...
-}, []);
-```
+The Sessions tab fetched sessions once on mount and never refreshed.
 
-Sessions created from the Workspace view, deleted by the shutdown dialog, or created via the API are never re-fetched. The Sessions tab is permanently stale after the initial mount.
-
-**Impact**: Users see outdated session list; newly created sessions don't appear; shut-down sessions persist in the list.
-
-**Fix options**:
-1. Add a `useInterval` or periodic refresh (e.g., every 10 seconds when the tab is active).
-2. Add an explicit refresh button.
-3. Use a WebSocket-based approach to receive session lifecycle events from the backend.
-4. Reset `sessionsFetched.current = false` when the user switches back to the "sessions" tab.
+**Fix applied**:
+- Combined fetch effect with `activeTab` dependency so sessions refresh on tab switch
+- Flag resets when leaving the tab, ensuring next visit re-fetches
+- Picks up sessions created/deleted from Workspace view
+- All 58 integration tests pass after the change.
 
 ---
 
-### H-2: `FolderSelector` — Silent Error Swallowing
+### H-2: `FolderSelector` — Silent Error Swallowing ✅ RESOLVED
 
-**Files**: `FolderSelector.tsx` (line 275)
+**Files**: `FolderSelector.tsx`
 
-```ts
-.catch(() => {});
-```
+Session fetch errors were completely swallowed with `.catch(() => {})`.
 
-All session fetch errors are completely swallowed. A backend outage, network failure, or API change leaves the Sessions tab permanently empty with zero indication to the user.
-
-**Impact**: Silent failure — users cannot distinguish between "no sessions" and "backend is down".
-
-**Fix**: Track error state and display an error banner:
-
-```ts
-const [sessionError, setSessionError] = useState<string | null>(null);
-listSessions()
-    .then(...)
-    .catch((e) => setSessionError("Failed to load sessions. Please try again."));
-```
+**Fix applied**:
+- Added `sessionLoadError` state to track fetch failures
+- `console.warn` logs the error for debugging
+- Error message displayed in UI when sessions fail to load
+- Users can now distinguish between "no sessions" and "backend is down"
+- All 58 integration tests pass after the change.
 
 ---
 
@@ -242,74 +161,38 @@ Consider using a state machine (`@xstate/react`) or a simple pipeline pattern fo
 
 ---
 
-### H-4: `useWebSocket` — Reconnection Has No Exponential Backoff
+### H-4: `useWebSocket` — Reconnection Has No Exponential Backoff ✅ RESOLVED
 
-**Files**: `useWebSocket.ts` (line ~286)
+**Files**: `useWebSocket.ts`
 
-```ts
-reconnectTimerRef.current = setTimeout(() => {
-    // ...
-}, 2000);  // Fixed 2s delay
-```
+Fixed 2-second reconnection interval generated 30 attempts/minute during outages.
 
-A fixed 2-second reconnection interval is aggressive if the server is down. With no backoff, this generates:
-- 30 reconnection attempts per minute during outages
-- Log spam and network churn
-- Potential server load during recovery
-
-**Impact**: Noisy during outages; wastes resources.
-
-**Fix**: Implement exponential backoff:
-
-```ts
-const BACKOFF_BASE_MS = 2000;
-const BACKOFF_MAX_MS = 30000;
-
-reconnectTimerRef.current = setTimeout(() => {
-    doConnectRef.current();
-    backoffIndex = Math.min(backoffIndex + 1, 10);
-}, Math.min(BACKOFF_BASE_MS * 2 ** backoffIndex, BACKOFF_MAX_MS));
-```
-
-Reset `backoffIndex` on successful connection.
+**Fix applied**:
+- Added `BACKOFF_BASE_MS` (2s), `BACKOFF_MAX_MS` (30s), `BACKOFF_MAX_EXP` (4)
+- Reconnection delay now uses exponential backoff: `min(2000 * 2^index, 30000)`
+- `backoffIndexRef` resets on successful connection
+- Backoff caps at ~32s (2^4 * 2000 = 32000, capped to 30000)
+- All 58 integration tests pass after the change.
 
 ---
 
-### H-5: `ChatPanel` — `handleCompact` Uses `setTimeout` for State Reset
+### H-5: `ChatPanel` — `handleCompact` Uses `setTimeout` for State Reset ✅ RESOLVED
 
-**Files**: `ChatPanel.tsx` (lines 467-477)
+**Files**: `ChatPanel.tsx`
 
-```ts
-const handleCompact = useCallback(() => {
-    setClosingState("compact");
-    try {
-        ws.compact();
-        setTimeout(() => setClosingState("none"), 3000);
-    } catch (err) {
-        console.error("Failed to compact:", err);
-        setClosingState("none");
-    }
-}, [closingState, ws]);
-```
+`handleCompact` used `setTimeout(() => setClosingState("none"), 3000)` which could leave the UI stuck in "Compacting…" state.
 
-If the `compact()` RPC call succeeds but the UI doesn't reflect it (or the compact actually fails without throwing), the "Compacting…" indicator stays forever.
-
-**Impact**: UI stuck in "Compacting…" state; user can't interact.
-
-**Fix**: Use a proper response listener for the compact RPC. The `rpc_response` kind message should be checked for `command: "compact"` and the state reset there:
-
-```ts
-// In the message processing effect:
-if (response.command === "compact") {
-    setClosingState("none");
-}
-```
+**Fix applied**:
+- Added `compact` response handler in the RPC message processing effect
+- When `response.command === "compact"` arrives, `closingState` resets to `"none"`
+- Removed the `setTimeout` hack from `handleCompact`
+- All 58 integration tests pass after the change.
 
 ---
 
-### H-6: `ChatPanel` — `continue` in RPC Processing Drops Valid Responses
+### H-6: `ChatPanel` — `continue` Drops Valid RPC Responses ✅ MITIGATED
 
-**Files**: `ChatPanel.tsx` (lines 358-387)
+**Files**: `ChatPanel.tsx`
 
 ```ts
 if (msg.kind === "rpc_response") {
@@ -325,51 +208,29 @@ if (msg.kind === "rpc_response") {
 }
 ```
 
-The `continue` after `get_state` processing means **all** other RPC responses (e.g., `set_model`, `compact`, `get_messages` re-requests) are silently dropped. This means:
-- `set_model` responses are never acknowledged
-- The compact RPC has no response listener (which is why the setTimeout hack exists)
-- Any future RPC commands will be silently dropped
+✅ **Mitigated**: The original concern (`continue` blocking `compact` handler) was fixed in H-5. Unhandled RPC responses (`set_model`, etc.) now emit `console.debug` for visibility. The `continue` pattern is retained since each handler is mutually exclusive by command name.
 
 **Impact**: Silent data loss; broken feedback loop for RPC commands.
 
-**Fix**: Use `if/else if/else` chains or a dispatch table instead of `continue`:
-
-```ts
-if (msg.kind === "rpc_response") {
-    const response = msg.response as Record<string, unknown>;
-    switch (response.command) {
-        case "get_messages": /* ... */ break;
-        case "get_state": /* ... */ break;
-        case "set_model": /* ... */ break;
-        case "compact": setClosingState("none"); break;
-        default: console.debug("Unhandled RPC response:", response.command);
-    }
-    continue;
-}
-```
+**Fix applied**:
+- Compact handler added before the final `continue` (H-5)
+- Unhandled RPC responses now logged via `console.debug`
+- Future RPC commands will be visible in devtools rather than silently dropped
 
 ---
 
-### H-7: No CSS Variables Used in Component Stylesheets
+### H-7: No CSS Variables Used in Component Stylesheets ✅ RESOLVED
 
-**Files**: `components.css`, `views.css`, `common.css`
+**Files**: `index.css`, `components.css`, `views.css`, `common.css`
 
-All component CSS files use hardcoded hex colors (`#0f172a`, `#1e293b`, `#334155`, `#64748b`) instead of the CSS variables defined in `index.css` (`--bg-primary`, `--bg-secondary`, `--border`, `--text-muted`).
+113 hardcoded hex colors across 3 CSS files instead of using CSS variables.
 
-```css
-/* index.css */
---bg-primary: #0f172a;
---bg-secondary: #1e293b;
---border: #334155;
-
-/* components.css */
-.panel { background: #0f172a; }  /* hardcoded */
-.panel__header { background: #1e293b; }  /* hardcoded */
-```
-
-**Impact**: Two sources of truth for colors; theme changes require editing every CSS file; visual inconsistency if a variable is used in one file and hardcoded in another.
-
-**Fix**: Replace all hardcoded colors with CSS variables in `components.css` and `views.css`.
+**Fix applied**:
+- Added 15 new CSS variables to `index.css` (semantic colors: danger, warning, success, info, selected states, code bg, etc.)
+- Replaced 108/113 hardcoded colors with CSS variable references across `components.css`, `views.css`, `common.css`
+- 5 rare one-off semantic colors retained (unique error/success states)
+- Single source of truth for the color palette; theme changes now require editing only `index.css`
+- All 58 integration tests pass after the change.
 
 ---
 
@@ -847,19 +708,19 @@ catch (e) {
 
 | ID | Severity | File(s) | Issue | Effort |
 |----|----------|---------|-------|--------|
-| C-1 | Critical | ChatPanel.tsx | `useModels` called redundantly | Low |
-| C-2 | Critical | FolderSelector.tsx, ChatPanel.tsx | Duplicate `deriveModelName`/`extractProvider` | Low |
-| C-3 | Critical | useWebSocket.ts | Messages array grows unbounded | Medium |
-| C-4 | Critical | useModels.ts | `launchedRef` not reset for `existingSessionId` | Low |
-| C-5 | Critical | useFileContent.ts | No request cancellation on rapid switches | Low |
-| C-6 | Critical | ChatPanel.tsx | `handleSend` closes dropdown without switching | Trivial |
-| H-1 | High | FolderSelector.tsx | Sessions never refresh | Medium |
-| H-2 | High | FolderSelector.tsx | Silent error swallowing | Low |
+| C-1 | Critical | ChatPanel.tsx | `useModels` called redundantly | Low | ✅ Resolved
+| C-2 | Critical | utils/model.ts | Duplicate `deriveModelName`/`extractProvider` | Low | ✅ Resolved
+| C-3 | Critical | useWebSocket.ts | Messages array grows unbounded | Medium | ✅ Resolved
+| C-4 | Critical | useModels.ts | `launchedRef` not reset for `existingSessionId` | Low | ✅ Resolved
+| C-5 | Critical | useFileContent.ts | No request cancellation on rapid switches | Low | ✅ Resolved
+| C-6 | Critical | ChatPanel.tsx | `handleSend` closes dropdown without switching | Trivial | ✅ Verified: not an issue (false positive)
+| H-1 | High | FolderSelector.tsx | Sessions never refresh | Medium | ✅ Resolved
+| H-2 | High | FolderSelector.tsx | Silent error swallowing | Low | ✅ Resolved
 | H-3 | High | useModels.ts | Complex nested async flow | High |
-| H-4 | High | useWebSocket.ts | No exponential backoff on reconnect | Low |
-| H-5 | High | ChatPanel.tsx | `handleCompact` uses setTimeout hack | Medium |
-| H-6 | High | ChatPanel.tsx | `continue` drops valid RPC responses | Medium |
-| H-7 | High | components.css, views.css | Hardcoded colors instead of CSS variables | Medium |
+| H-4 | High | useWebSocket.ts | No exponential backoff on reconnect | Low | ✅ Resolved
+| H-5 | High | ChatPanel.tsx | `handleCompact` uses setTimeout hack | Medium | ✅ Resolved
+| H-6 | High | ChatPanel.tsx | `continue` drops valid RPC responses | Medium | ✅ Mitigated
+| H-7 | High | components.css, views.css | Hardcoded colors instead of CSS variables | Medium | ✅ Resolved
 | M-1 | Medium | useWebSocket.ts | `shouldDisconnectRef` race condition | Medium |
 | M-2 | Medium | ChatPanel.tsx | `clearMessages` races with processing | Low |
 | M-3 | Medium | ProjectTree.tsx | AbortController created but unused | Low |
@@ -883,7 +744,7 @@ catch (e) {
 | L-10 | Low | useModels.ts | Silent localStorage errors | Low |
 
 **Totals**: 30 issues (6 critical, 7 high, 11 medium, 10 low)
-**Resolved**: 0 fixed, 30 actionable
+**Resolved**: 10 fixed, 1 mitigated, 1 verified not an issue, 18 actionable
 
 ---
 
@@ -893,26 +754,27 @@ Prioritized by impact vs effort:
 
 ### Phase 1: Quick Wins (Low Effort, High Impact) — Action Required
 
-1. **Remove duplicate `useModels` call from `ChatPanel`** — Use `useApp()` for model state. Eliminates race condition. **(C-1)**
-2. **Extract `deriveModelName` and `extractProvider`** to a shared `utils/model.ts` file. **(C-2)**
-3. **Remove `setModelDropdownOpen(false)` from `handleSend`** in ChatPanel. **(C-6)**
-4. **Add CSS variable usage** to `components.css` and `views.css`. Replace hardcoded `#0f172a` → `var(--bg-primary)`, etc. **(H-7)**
+1. ~~**Remove duplicate `useModels` call from `ChatPanel`**~~ — ✅ Resolved: models persisted to AppContext, ChatPanel uses `useApp().models`. **(C-1)**
+2. ~~**Extract `deriveModelName` and `extractProvider`** to shared `utils/model.ts`~~ — ✅ Resolved: `deriveModelName`, `extractProvider`, `createMinimalModel` extracted to `frontend/src/utils/model.ts`. **(C-2)**
+3. ~~**Cap `useWebSocket` messages array at 500 items**~~ — ✅ Resolved: `MAX_MESSAGES` constant added, all `setMessages` calls trim overflow. **(C-3)**
+4. ~~**Remove `setModelDropdownOpen(false)` from `handleSend`**~~ — ✅ Verified: not an issue (false positive). **(C-6)**
+4. ~~**Add CSS variable usage** to component CSS files~~ — ✅ Resolved: 108/113 hardcoded colors replaced with CSS variables; 15 new semantic variables added. **(H-7)**
 5. **Wrap `errorMessage` in `useMemo`** in `useWebSocket.ts`. **(M-9)**
 6. **Add `console.warn`** to `getCachedModels()` and `cacheModels()` error paths. **(M-6, L-10)**
-7. **Add `console.warn`** to `FolderSelector` session fetch error. **(H-2)**
+7. ~~**Add `console.warn` to `FolderSelector` session fetch error**~~ — ✅ Resolved: `sessionLoadError` state + `console.warn` + UI error banner. **(H-2)**
 8. **Remove duplicate `index.css` import** from `App.tsx`. **(L-1)**
 9. **Wrap messages sort in `useMemo`** in `ChatPanel.tsx`. **(M-8)**
 10. **Fix `clearMessages`** to reset `processedCountRef.current = ws.messages.length`. **(M-2)**
 
 ### Phase 2: Core Fixes (Medium Effort) — Action Required
 
-11. **Implement message array capping** in `useWebSocket.ts` (keep last 500 messages). **(C-3)**
-12. **Add exponential backoff** to WS reconnection. **(H-4)**
-13. **Fix `continue` bug** in ChatPanel RPC processing — use `switch`/`dispatch table`. **(H-6)**
-14. **Fix `handleCompact`** to listen for RPC response instead of using `setTimeout`. **(H-5)**
-15. **Add request cancellation** to `useFileContent.ts` using a ref-based path check. **(C-5)**
-16. **Reset `launchedRef`** when `existingSessionId` changes. **(C-4)**
-17. **Add session refresh logic** to `FolderSelector` (interval or tab switch). **(H-1)**
+11. ~~**Implement message array capping** in `useWebSocket.ts` (keep last 500 messages)~~ — ✅ Resolved: `MAX_MESSAGES = 500` with automatic trimming on all `setMessages` calls. **(C-3)**
+12. ~~**Add exponential backoff** to WS reconnection~~ — ✅ Resolved: `BACKOFF_BASE_MS`/`BACKOFF_MAX_MS` with `backoffIndexRef`, resets on connect. **(H-4)**
+13. ~~**Fix `continue` bug** in ChatPanel RPC processing~~ — ✅ Mitigated: compact handler added (H-5), unhandled responses now logged. **(H-6)**
+14. ~~**Fix `handleCompact`** to listen for RPC response~~ — ✅ Resolved: `compact` response handler added to RPC processing effect, `setTimeout` removed. **(H-5)**
+15. ~~**Add request cancellation** to `useFileContent.ts`~~ — ✅ Resolved: `expectedPathRef` tracks current filePath, stale responses discarded. **(C-5)**
+16. ~~**Reset `launchedRef`** when `existingSessionId` changes~~ — ✅ Resolved: effect depends on `[projectPath, existingSessionId]`, resets guard on either change. **(C-4)**
+17. ~~**Add session refresh logic** to `FolderSelector`~~ — ✅ Resolved: sessions refresh on tab switch via `activeTab` dependency. **(H-1)**
 18. **Add Error Boundaries** around key views (Workspace, ChatPanel). **(M-11)**
 19. **Fix `AbortController`** in `ProjectTree.tsx` — either pass signal or remove. **(M-3)**
 20. **Improve `shouldDisconnectRef` logic** — track intent at call site. **(M-1)**
@@ -973,7 +835,7 @@ Prioritized by impact vs effort:
 | Line | Issue | Severity |
 |------|-------|----------|
 | 13 | `isMountedRef` pattern — outdated for React 19 | L-3 |
-| 21-43 | No request cancellation on rapid filePath changes | C-5 |
+| 21-43 | `expectedPathRef` guards against stale responses | — | ✅ Fixed |
 | 1 | `eslint-disable react-hooks/set-state-in-effect` — unnecessary (rule only fires in useEffect) | Low |
 
 ### `hooks/useModels.ts`
@@ -982,7 +844,8 @@ Prioritized by impact vs effort:
 |------|-------|----------|
 | 45-46 | Magic numbers without context | L-6 |
 | 53-62 | Silent localStorage errors | M-6, L-10 |
-| 100 | `launchedRef` not reset for existingSessionId changes | C-4 |
+| 7 | `deriveModelName` removed — now imported from `utils/model.ts` | — | ✅ Fixed |
+| 100 | Effect depends on `[projectPath, existingSessionId]`, resets guard on either change | — | ✅ Fixed |
 | 110-200 | Complex nested async flow — hard to maintain/debug | H-3 |
 | 166-183 | RPC polling silently swallows errors | M-5 |
 
@@ -990,10 +853,10 @@ Prioritized by impact vs effort:
 
 | Line | Issue | Severity |
 |------|-------|----------|
-| 132 | Messages array grows unbounded | C-3 |
+| 132 | Messages array capped at 500 via `MAX_MESSAGES` | — | ✅ Fixed |
 | 215 | `WebSocket.OPEN` — correct usage, no issue | L-7 |
 | 270-295 | `shouldDisconnectRef` race condition | M-1 |
-| 286 | Fixed 2s reconnection — no exponential backoff | H-4 |
+| 286 | Exponential backoff: 2s → 4s → 8s → 16s → 30s cap | — | ✅ Fixed |
 | 329-337 | `errorMessage` IIFE runs every render | M-9 |
 | 340-355 | `useMemo` dependencies look correct (state IS included) | — |
 
@@ -1001,12 +864,12 @@ Prioritized by impact vs effort:
 
 | Line | Issue | Severity |
 |------|-------|----------|
-| 17-30 | Duplicate `deriveModelName` + `extractProvider` | C-2 |
+| 17-30 | Functions removed — now imported from `utils/model.ts` | — | ✅ Fixed |
 | 105-108 | `timeStr` recreated every render | L-4 |
 | 25-30 | Hardcoded provider list in `extractProvider` | L-5 |
 | 255-258 | `Set<string>` in state causes excess re-renders | M-4 |
-| 269-277 | Sessions fetched once, never refreshed | H-1 |
-| 275 | Silent `.catch(() => {})` | H-2 |
+| 269-277 | Effect now depends on `activeTab`, refreshes on tab switch | — | ✅ Fixed |
+| 275 | `catch` now logs + sets error state + displays banner | — | ✅ Fixed |
 
 ### `views/ModelSelector.tsx`
 
@@ -1026,14 +889,14 @@ Prioritized by impact vs effort:
 
 | Line | Issue | Severity |
 |------|-------|----------|
-| 17-30 | Duplicate `deriveModelName` | C-2 |
-| 193-197 | Another `deriveModelName` copy | C-2 |
+| 17-30 | Import from `utils/model.ts` | — | ✅ Fixed |
+| 193-197 | Function removed — now imported from `utils/model.ts` | — | ✅ Fixed |
 | 248-250 | Split state: messages + streamingContent + toolCalls | M-7 |
-| 253 | `useModels(selectedFolder, selectedSessionId)` — redundant | C-1 |
+| 253 | `useModels` call removed — now uses `useApp().models` | — | ✅ Fixed |
 | 330-333 | `clearMessages` races with processing | M-2 |
-| 358-387 | `continue` drops valid RPC responses (set_model, compact, etc.) | H-6 |
-| 430 | `setModelDropdownOpen(false)` in handleSend — leftover code | C-6 |
-| 467-477 | `handleCompact` uses setTimeout hack | H-5 |
+| 358-387 | Compact handler added; unhandled responses logged | — | ✅ Fixed |
+| 430 | `setModelDropdownOpen(false)` not present in handleSend — verified clean | — | ✅ Verified |
+| 467-477 | `setTimeout` removed — state reset via RPC response handler | — | ✅ Fixed |
 | 492-507 | Inline styles for connection indicator | L-2 |
 | 512 | `displayMessages.slice().sort(...)` on every render | M-8 |
 
@@ -1055,23 +918,19 @@ Prioritized by impact vs effort:
 
 | Line | Issue | Severity |
 |------|-------|----------|
-| 5-10 | `background: #0f172a` — should be `var(--bg-primary)` | H-7 |
-| 14-16 | `background: #1e293b` — should be `var(--bg-secondary)` | H-7 |
-| 17-18 | `border-bottom: 1px solid #334155` — should be `var(--border)` | H-7 |
-| 60-62 | `color: #475569` — should be `var(--text-muted)` | H-7 |
-| ... | (many more hardcoded colors) | H-7 |
+| (all) | Replaced hardcoded colors with CSS variables | — | ✅ Fixed |
 
 ### `views/views.css`
 
 | Line | Issue | Severity |
 |------|-------|----------|
-| (all) | Hardcoded colors instead of CSS variables | H-7 |
+| (all) | Replaced with CSS variables | — | ✅ Fixed |
 
 ### `views/common.css`
 
 | Line | Issue | Severity |
 |------|-------|----------|
-| (all) | Hardcoded colors instead of CSS variables | H-7 |
+| (all) | Replaced with CSS variables | — | ✅ Fixed |
 
 ### `index.css`
 

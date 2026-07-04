@@ -1,6 +1,7 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useApp } from "../store/AppContext";
 import { useModels } from "../hooks/useModels";
+import type { Model } from "../types";
 import "./views.css";
 import "./common.css";
 
@@ -13,8 +14,26 @@ export default function ModelSelector() {
 		setCurrentModel,
 		setView,
 		setSessionId,
+		setModels,
 	} = useApp();
-	const { models, loading, error, sessionId, refresh } = useModels(selectedFolder);
+	const {
+		models,
+		loading,
+		error,
+		sessionId,
+		refresh,
+	} = useModels(selectedFolder);
+
+	// Persist models into shared context so ChatPanel can access them
+	// without calling useModels again. Only `models` is shared — loading,
+	// error, and refresh are used locally in ModelSelector.
+	const prevModelsRef = useRef<Model[]>([]);
+	useEffect(() => {
+		if (prevModelsRef.current !== models) {
+			prevModelsRef.current = models;
+			setModels(models);
+		}
+	}, [models]);
 	const [switching, setSwitching] = useState(false);
 	const [search, setSearch] = useState("");
 	const [selectedProviders, setSelectedProviders] = useState<string[]>([]);

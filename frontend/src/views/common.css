@@ -21,14 +21,14 @@
 }
 
 .btn--primary {
-	background: #3b82f6;
+	background: var(--accent);
 	color: #fff;
-	border-color: #3b82f6;
+	border-color: var(--accent);
 }
 
 .btn--primary:hover:not(:disabled) {
-	background: #2563eb;
-	border-color: #2563eb;
+	background: var(--accent-hover);
+	border-color: var(--accent-hover);
 }
 
 .btn--lg {
@@ -37,7 +37,7 @@
 }
 
 .btn--send {
-	background: #3b82f6;
+	background: var(--accent);
 	color: #fff;
 	border-radius: 50%;
 	width: 36px;
@@ -47,12 +47,12 @@
 }
 
 .btn--send:hover:not(:disabled) {
-	background: #2563eb;
+	background: var(--accent-hover);
 }
 
 /* ===== Abort button ===== */
 .btn--abort {
-	background: #ef4444;
+	background: var(--danger);
 	color: #fff;
 	border-radius: 50%;
 	width: 36px;
@@ -62,7 +62,7 @@
 }
 
 .btn--abort:hover:not(:disabled) {
-	background: #dc2626;
+	background: var(--danger-border);
 }
 
 /* ===== Back button ===== */
@@ -72,7 +72,7 @@
 	gap: 6px;
 	background: none;
 	border: none;
-	color: #94a3b8;
+	color: var(--text-secondary);
 	font-size: 14px;
 	cursor: pointer;
 	padding: 4px 0;
@@ -80,7 +80,7 @@
 }
 
 .view-models__back:hover {
-	color: #e2e8f0;
+	color: var(--text-placeholder);
 }
 
 /* ===== Icon button ===== */
@@ -90,7 +90,7 @@
 	justify-content: center;
 	background: none;
 	border: none;
-	color: #94a3b8;
+	color: var(--text-secondary);
 	cursor: pointer;
 	padding: 6px;
 	border-radius: 6px;
@@ -98,8 +98,8 @@
 }
 
 .icon-btn:hover {
-	background: #334155;
-	color: #e2e8f0;
+	background: var(--border);
+	color: var(--text-placeholder);
 }
 
 /* ===== Model badge ===== */
@@ -107,11 +107,11 @@
 	display: inline-flex;
 	align-items: center;
 	padding: 4px 12px;
-	background: #1e293b;
-	border: 1px solid #475569;
+	background: var(--bg-secondary);
+	border: 1px solid var(--border-light);
 	border-radius: 20px;
 	font-size: 12px;
-	color: #94a3b8;
+	color: var(--text-secondary);
 }
 
 /* ===== Small button (for reconnect) ===== */
@@ -122,14 +122,14 @@
 
 /* ===== Reconnect button ===== */
 .btn--reconnect {
-	background: #64748b;
+	background: var(--text-muted);
 	color: #fff;
-	border: 1px solid #475569;
+	border: 1px solid var(--border-light);
 }
 
 .btn--reconnect:hover:not(:disabled) {
-	background: #475569;
-	border-color: #64748b;
+	background: var(--border-light);
+	border-color: var(--text-muted);
 }
 
 /* ===== Chat error banner ===== */
@@ -139,46 +139,46 @@
 	gap: 6px;
 	padding: 6px 12px;
 	margin: 8px 12px 0;
-	background: #1c1217;
-	border: 1px solid #7f1d1d;
+	background: var(--code-bg);
+	border: 1px solid var(--danger-bg-dark);
 	border-radius: 6px;
 	font-size: 12px;
-	color: #fca5a5;
+	color: var(--danger-bg);
 }
 
 /* ===== Compact button ===== */
 .btn--compact {
-	background: #0ea5e9;
+	background: var(--info);
 	color: #fff;
-	border: 1px solid #0284c7;
+	border: 1px solid var(--info-dark);
 }
 
 .btn--compact:hover:not(:disabled) {
-	background: #0284c7;
-	border-color: #0369a1;
+	background: var(--info-dark);
+	border-color: var(--info-dark);
 }
 
 /* ===== Close button ===== */
 .btn--close {
-	background: #f59e0b;
+	background: var(--warning);
 	color: #fff;
-	border: 1px solid #d97706;
+	border: 1px solid var(--warning);
 }
 
 .btn--close:hover:not(:disabled) {
-	background: #d97706;
+	background: var(--warning);
 	border-color: #b45309;
 }
 
 /* ===== Delete button ===== */
 .btn--delete {
-	background: #7f1d1d;
-	color: #fca5a5;
-	border: 1px solid #991b1b;
+	background: var(--danger-bg-dark);
+	color: var(--danger-bg);
+	border: 1px solid var(--danger-bg-dark);
 }
 
 .btn--delete:hover:not(:disabled) {
-	background: #991b1b;
+	background: var(--danger-bg-dark);
 	border-color: #b91c1c;
 	color: #fff;
 }
@@ -189,8 +189,8 @@
 	align-items: center;
 	gap: 6px;
 	font-size: 12px;
-	color: #94a3b8;
+	color: var(--text-secondary);
 	padding: 4px 10px;
-	background: #1e293b;
+	background: var(--bg-secondary);
 	border-radius: 6px;
 }
