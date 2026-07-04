@@ -19,15 +19,14 @@ class SessionRecord(BaseModel):
     status: str = "creating"  # creating | running | closing | stopped
     pid: Optional[int] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    ws_session_id: Optional[str] = None
-    ws_connected: bool = False
+    sse_connected: bool = False
+    sse_cancelled: bool = False
 
     # Runtime-only fields — excluded from JSON serialization
     process: Any = Field(default=None, exclude=True)  # noqa: ANN401
     stdin: Any = Field(default=None, exclude=True)  # noqa: ANN401
     stdout: Any = Field(default=None, exclude=True)  # noqa: ANN401
     stdout_task: Optional[asyncio.Task] = Field(default=None, exclude=True)  # noqa: ANN401
-    ws_to_stdin_queue: Optional[asyncio.Queue] = Field(default=None, exclude=True)  # noqa: ANN401
     pending_requests: dict[str, asyncio.Future] = Field(default_factory=dict, exclude=True)  # noqa: ANN401
     event_buffer: asyncio.Queue = Field(default_factory=asyncio.Queue, exclude=True)  # noqa: ANN401
 

@@ -76,12 +76,12 @@ interface UseModelsResult {
  * Flow:
  * 1. Check localStorage cache (instant, survives page reload)
  * 2. Call `/api/models` WITHOUT session → uses server-side cache (instant, no session needed)
- * 3. Create Pi RPC session + WebSocket for actual communication
+ * 3. Create Pi RPC session for actual communication
  * 4. RPC polling as final fallback (only if steps 0-1 both failed)
  *
  * @param projectPath — optional project folder path (triggers session creation)
  * @param existingSessionId — optional existing session id to use instead of creating one
- * @returns models list, loading state, error message, and session_id for WS connection
+ * @returns models list, loading state, error message, and session_id for SSE connection
  */
 export function useModels(
 	projectPath?: string | null,

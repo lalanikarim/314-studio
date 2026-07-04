@@ -1,31 +1,37 @@
 """
-Chat API endpoints — WebSocket relay for Pi RPC communication.
+Chat API endpoints — SSE stream for Pi RPC events + REST command endpoint.
 
-This module is a thin relay layer. All process lifecycle is owned by
-SessionManager (see session_manager.py). The WebSocket connects to an
-existing session and relays messages bidirectionally:
-
-  Client WebSocket  →  session's stdin  (commands, prompts, extension responses)
-  session's stdout  →  Client WebSocket (responses, streaming events, UI requests)
+Architecture:
+  - SSE (`GET /api/projects/sse`) delivers streaming events from the
+    `pi --rpc` process to the frontend via `text/event-stream`.
+  - REST (`POST /api/projects/{session_id}/cmd`) sends commands to the
+    process stdin. Responses flow back through the SSE stream.
+  - The session manager owns process lifecycle. This module is a thin
+    transport layer only.
 
 Protocol:
-  - Messages from client → forwarded to process stdin as-is
-    Plain strings → wrapped as {"type":"prompt","message":"..."}
-    Dicts with "extension_ui_response" → forwarded directly
-    Dicts with known RPC type → forwarded directly
-  - Output from Pi → typed for frontend:
-    {"type":"response", ...}              → relayed as-is
-    {"kind":"rpc_event","event": {...}}   → streaming events
-    {"kind":"extension_ui_request", ...}  → interactive UI prompt
-    {"kind":"extension_ui_response", ...} → ack relay
+  - SSE events are JSON lines with an `event:` type field:
+      event: rpc_event       → streaming text, tool calls
+      event: rpc_response    → command responses (get_state, etc.)
+      event: extension_ui_request → interactive prompts
+      event: extension_ui_response → auto-ack relay
+      event: set_model       → initial model config
+      event: session_terminated → process exit
+  - REST commands map directly to Pi RPC commands. The `id` for
+    request/response correlation is handled by the session manager's
+    pending_requests mechanism.
 """
+
+from __future__ import annotations
 
 import asyncio
 import json
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import JSONResponse, StreamingResponse
+from sse_starlette.sse import EventSourceResponse
 
 from ..session_manager import session_manager
 from ..utils import validate_session_id
@@ -35,166 +41,208 @@ router = APIRouter()
 
 
 # ---------------------------------------------------------------------------
-# WebSocket endpoint
+# SSE endpoint
 # ---------------------------------------------------------------------------
 
 
-@router.websocket("/ws")
-async def ws_endpoint(websocket: WebSocket, session_id: str = Query(...)) -> None:
-    """
-    WebSocket endpoint for Pi RPC communication.
+@router.get("/sse")
+async def sse_endpoint(session_id: str = Query(...)) -> StreamingResponse:
+    """Server-Sent Events stream for a session.
 
-    Connects to an existing session's pi --rpc process and relays messages
-    bidirectionally. The session must already exist (created via POST
-    /api/projects/).
-
-    On connect, sends `set_model` with the session's configured model_id.
-    No automatic RPC calls are made during session creation.
-
-    Query params:
-        session_id: the session to connect to
+    Yields JSON-line SSE events from the session's event_buffer.
+    Supports streaming with proper text/event-stream format.
     """
     validate_session_id(session_id)
 
     # Validate session exists and is running
-    ok = await session_manager.connect_ws(session_id, str(websocket))
+    ok = await session_manager.subscribe_sse(session_id)
     if not ok:
-        record = session_manager.get_session(session_id)
-        reason = "Session not found" if not record else f"Session is {record.status} (not running)"
-        await websocket.close(code=4002, reason=reason)
-        return
+        rec = session_manager.get_session(session_id)
+        reason = "Session not found" if not rec else f"Session is {rec.status} (not running)"
+        return JSONResponse(status_code=400, content={"detail": reason})
 
-    await websocket.accept()
-
-    # Send set_model to the RPC process (all Pi actions go through WS)
+    # Send set_model event on connect
     model_id = await session_manager.get_model_id(session_id)
-    if model_id:
-        await _write_stdin(
-            session_id,
-            {
-                "type": "set_model",
-                "modelId": model_id,
-                "provider": "",
-            },
-        )
 
-    try:
-        await _relay_messages(session_id, websocket)
-    except WebSocketDisconnect:
-        logger.info("WebSocket disconnected for session %s", session_id)
-    except Exception as exc:
-        logger.error("WebSocket error for session %s: %s", session_id, exc, exc_info=True)
-    finally:
-        await session_manager.disconnect_ws(session_id, str(websocket))
+    async def event_generator():
+        # Initial set_model event
+        if model_id:
+            yield {
+                "event": "set_model",
+                "data": json.dumps(
+                    {
+                        "type": "set_model",
+                        "modelId": model_id,
+                        "provider": "",
+                    },
+                    ensure_ascii=False,
+                ),
+            }
+
+        # Main event stream loop
+        while True:
+            rec = session_manager.get_session(session_id)
+            if not rec or rec.status != "running":
+                yield {"event": "session_terminated", "data": json.dumps({"reason": "terminated"})}
+                break
+            if rec.sse_cancelled:
+                break
+            event = await session_manager.get_next_event(session_id)
+            if event is None:
+                # EOF — process exited
+                yield {"event": "session_terminated", "data": json.dumps({"reason": "eof"})}
+                break
+            yield format_sse_event(event)
+
+    return EventSourceResponse(event_generator(), ping=30)
+
+
+def format_sse_event(event: dict) -> dict:
+    """Format an event dict into an SSE event with event/data/id fields."""
+    kind = event.get("kind")
+    msg_type = event.get("type")
+
+    if kind == "extension_ui_request":
+        return {"event": "extension_ui_request", "data": json.dumps(event, ensure_ascii=False)}
+    if kind == "extension_ui_response":
+        return {"event": "extension_ui_response", "data": json.dumps(event, ensure_ascii=False)}
+    if kind == "rpc_event":
+        return {"event": "rpc_event", "data": json.dumps(event, ensure_ascii=False)}
+    if msg_type == "response":
+        return {"event": "rpc_response", "data": json.dumps(event, ensure_ascii=False)}
+
+    # Fallback: wrap as rpc_event
+    return {"event": "rpc_event", "data": json.dumps(event, ensure_ascii=False)}
 
 
 # ---------------------------------------------------------------------------
-# WS relay logic
+# REST command endpoint
 # ---------------------------------------------------------------------------
 
 
-async def _relay_messages(session_id: str, websocket: WebSocket) -> None:
-    """Bidirectional relay between WebSocket and session's stdin (stdout via event_buffer)."""
-    closed = asyncio.Event()
+@router.post("/cmd")
+async def cmd_endpoint(
+    session_id: str = Query(...),
+    command: dict = None,
+):
+    """Send a command to a session's pi --rpc process.
 
-    async def _outbound() -> None:
-        """Session stdout → WebSocket."""
-        try:
-            while not closed.is_set():
-                event = await session_manager.get_next_event(session_id)
-                if event is None:
-                    # EOF — process exited
-                    break
-                if isinstance(event, dict):
-                    await websocket.send_text(json.dumps(event, ensure_ascii=False))
-                else:
-                    await websocket.send_text(json.dumps(event, ensure_ascii=False))
-        except WebSocketDisconnect:
-            closed.set()
-        except Exception as exc:
-            logger.error("Outbound relay error for %s: %s", session_id, exc)
-            closed.set()
+    All Pi RPC commands are supported. Responses flow back through the
+    SSE event stream as rpc_response events (not returned in this REST response).
+    """
+    validate_session_id(session_id)
 
-    async def _inbound() -> None:
-        """WebSocket → session stdin."""
-        try:
-            while not closed.is_set():
-                data = await websocket.receive_text()
-                if not data:
-                    continue
+    if not command:
+        raise HTTPException(status_code=400, detail="Missing command body")
 
-                try:
-                    payload: Any = json.loads(data)
-                except json.JSONDecodeError:
-                    payload = {"type": "prompt", "message": data}
+    cmd = command.get("command")
+    if not cmd:
+        raise HTTPException(status_code=400, detail="Missing 'command' field")
 
-                if isinstance(payload, str):
-                    payload = {"type": "prompt", "message": payload}
-
-                if isinstance(payload, dict):
-                    # Extension UI response → forward directly to stdin
-                    if payload.get("type") == "extension_ui_response":
-                        await _write_stdin(session_id, payload)
-                    # Abort → special handling (no id)
-                    elif payload.get("type") == "abort":
-                        await _write_stdin_raw(session_id, '{"type": "abort"}\n')
-                    # Known RPC command types → forward as-is
-                    elif payload.get("type") in (
-                        "prompt",
-                        "steer",
-                        "follow_up",
-                        "set_model",
-                        "cycle_model",
-                        "get_available_models",
-                        "get_state",
-                        "get_messages",
-                        "get_session_stats",
-                        "compact",
-                        "set_auto_compaction",
-                        "set_thinking_level",
-                        "cycle_thinking_level",
-                        "set_steering_mode",
-                        "set_follow_up_mode",
-                        "get_commands",
-                    ):
-                        await _write_stdin(session_id, payload)
-                    # Everything else → try to forward
-                    else:
-                        await _write_stdin(session_id, payload)
-                else:
-                    await _write_stdin_raw(session_id, json.dumps(payload) + "\n")
-        except WebSocketDisconnect:
-            pass
-        except Exception as exc:
-            logger.error("Inbound relay error for %s: %s", session_id, exc)
-
-    out_task = asyncio.create_task(_outbound(), name=f"ws_out_{session_id}")
-    in_task = asyncio.create_task(_inbound(), name=f"ws_in_{session_id}")
-
-    # Wait for either task to finish; the closed event ensures the other exits cleanly
-    done, pending = await asyncio.wait({out_task, in_task}, return_when=asyncio.FIRST_COMPLETED)
-    closed.set()
-    for task in pending:
-        task.cancel()
-        try:
-            await task
-        except (asyncio.CancelledError, Exception):
-            pass
-
-
-async def _write_stdin(session_id: str, payload: dict) -> None:
-    """Write a JSON command to the session's stdin."""
     record = session_manager.get_session(session_id)
-    if not record or record.status != "running" or record.stdin is None:
-        logger.warning("Session %s not available for stdin write", session_id)
-        return
-    line = json.dumps(payload, ensure_ascii=False) + "\n"
-    try:
-        record.stdin.write(line.encode("utf-8"))
-        await record.stdin.drain()
-    except (BrokenPipeError, ConnectionResetError) as exc:
-        logger.warning("Session %s stdin broken: %s", session_id, exc)
-        raise
+    if not record or record.status != "running":
+        raise HTTPException(status_code=400, detail="Session not running")
+
+    # Abort is fire-and-forget: write directly to stdin, return immediately
+    if cmd == "abort":
+        await _write_stdin_raw(session_id, '{"type": "abort"}\n')
+        return {"status": "ok"}
+
+    # All other commands go through send_command which:
+    # 1. Generates req_id and stores a Future in pending_requests
+    # 2. Writes JSONL to stdin
+    # 3. Waits for the matching response Future to resolve
+    rpc_command = _build_rpc_command(command)
+    response = await session_manager.send_command(session_id, rpc_command)
+    return {"status": "ok", "response": response}
+
+
+def _build_rpc_command(command: dict) -> dict:
+    """Convert a REST command envelope to Pi RPC command format.
+
+    Reference: rpc.md#commands for each command's expected shape.
+    """
+    cmd = command.get("command", "")
+    payload: dict = {"type": cmd}
+
+    if cmd == "prompt":
+        if command.get("message"):
+            payload["message"] = command["message"]
+        if command.get("streamingBehavior"):
+            payload["streamingBehavior"] = command["streamingBehavior"]
+        if command.get("images"):
+            payload["images"] = command["images"]
+    elif cmd == "steer":
+        payload["message"] = command.get("message", "")
+    elif cmd == "follow_up":
+        payload["message"] = command.get("message", "")
+    elif cmd == "compact":
+        if command.get("customInstructions"):
+            payload["customInstructions"] = command["customInstructions"]
+    elif cmd == "set_model":
+        payload["modelId"] = command.get("modelId", "")
+        payload["provider"] = command.get("provider", "")
+    elif cmd == "get_state":
+        pass  # Empty payload is fine
+    elif cmd == "get_messages":
+        pass
+    elif cmd == "get_session_stats":
+        pass
+    elif cmd == "get_commands":
+        pass
+    elif cmd == "cycle_model":
+        pass
+    elif cmd == "get_available_models":
+        pass
+    elif cmd == "extension_ui_response":
+        payload["id"] = command.get("id", "")
+        payload["value"] = command.get("value")
+        payload["cancelled"] = command.get("cancelled", False)
+    elif cmd == "set_auto_compaction":
+        payload["enabled"] = command.get("enabled", False)
+    elif cmd == "set_thinking_level":
+        payload["level"] = command.get("level", "")
+    elif cmd == "cycle_thinking_level":
+        pass
+    elif cmd == "set_steering_mode":
+        payload["mode"] = command.get("mode", "")
+    elif cmd == "set_follow_up_mode":
+        payload["mode"] = command.get("mode", "")
+    elif cmd == "bash":
+        payload["command"] = command.get("command_text", "")
+    elif cmd == "abort_bash":
+        pass
+    elif cmd == "get_entries":
+        if command.get("since"):
+            payload["since"] = command["since"]
+    elif cmd == "get_tree":
+        pass
+    elif cmd == "get_last_assistant_text":
+        pass
+    elif cmd == "set_session_name":
+        payload["name"] = command.get("name", "")
+    elif cmd == "fork":
+        payload["entryId"] = command.get("entry_id", "")
+    elif cmd == "clone":
+        pass
+    elif cmd == "get_fork_messages":
+        pass
+    elif cmd == "switch_session":
+        payload["sessionPath"] = command.get("session_path", "")
+    elif cmd == "new_session":
+        pass
+    elif cmd == "export_html":
+        if command.get("output_path"):
+            payload["outputPath"] = command["output_path"]
+    else:
+        raise HTTPException(status_code=400, detail=f"Unknown command: {cmd}")
+
+    return payload
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
 
 
 async def _write_stdin_raw(session_id: str, raw: str) -> None:

@@ -2,10 +2,10 @@
 Main application module for FastAPI + React Pi Integration.
 
 This backend provides REST API endpoints for project selection, session management,
-file browsing, model management, and chat with the Pi coding agent via WebSocket RPC.
+file browsing, model management, and chat with the Pi coding agent via Server-Sent Events.
 
 Process lifecycle is managed by SessionManager (one `pi --mode rpc` process per session).
-All RPC interactions with Pi go through WebSocket.
+All RPC interactions go through SSE (streaming) and REST (commands).
 
 Project identification uses `project_path` as a query parameter (absolute path to project
 directory), not as a route parameter.
@@ -58,7 +58,7 @@ app = FastAPI(
     description=(
         "Backend API for 314 Studio — browser workspace for the Pi coding agent. "
         "One pi --mode rpc process per session. "
-        "All Pi interactions go through WebSocket RPC."
+        "All Pi interactions go through Server-Sent Events (SSE)."
     ),
     version="0.1.0",
     lifespan=lifespan,

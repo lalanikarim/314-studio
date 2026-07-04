@@ -36,7 +36,7 @@ export interface AppState {
 		project_path: string;
 		model_id: string;
 		status: string;
-		ws_connected: boolean;
+		sse_connected: boolean;
 		created_at: string;
 	} | null;
 	models: Model[];
