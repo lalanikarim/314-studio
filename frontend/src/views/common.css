@@ -132,6 +132,20 @@
 	border-color: var(--text-muted);
 }
 
+/* ===== Refresh button (file explorer) ===== */
+.btn--refresh {
+	background: transparent;
+	color: var(--text-muted);
+	border: 1px solid var(--border);
+	padding: 4px 8px;
+}
+
+.btn--refresh:hover:not(:disabled) {
+	background: var(--bg-secondary);
+	color: var(--text-primary);
+	border-color: var(--border-light);
+}
+
 /* ===== Chat error banner ===== */
 .chat-error-banner {
 	display: flex;

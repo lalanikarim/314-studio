@@ -212,10 +212,44 @@ export default function ProjectTree() {
     setSelectedFile(path);
   };
 
+  const handleRefresh = () => {
+    folderRef.current = null; // Force re-fetch on next effect run
+    setLoading(true);
+    listFiles(selectedFolder || '', '')
+      .then((items) => {
+        setRoots(
+          items.map((item) => ({
+            name: item.path.split('/').pop() || item.path,
+            path: item.path,
+            isDirectory: item.isDirectory,
+            children: [],
+          }))
+        );
+      })
+      .catch(() => {
+        setRoots([]);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  };
+
   return (
     <div className="panel panel--tree">
       <div className="panel__header">
         <span>Explorer</span>
+        <button
+          className="btn btn--sm btn--refresh"
+          onClick={handleRefresh}
+          disabled={loading}
+          title="Refresh file list"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
+            <path d="M4 4v5h5" />
+            <path d="M20 20v-5h-5" />
+            <path d="M20.49 9A9 9 0 0 0 5.64 5.64L4 10m16 4l-4.64 4.36A9 9 0 0 1 3.51 15" />
+          </svg>
+        </button>
         {!loading && <span className="panel__count">{roots.length} items</span>}
       </div>
       <div className="panel__content">
