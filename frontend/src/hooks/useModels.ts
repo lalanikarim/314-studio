@@ -154,17 +154,20 @@ export function useModels(
 			// Only create a session if we don't have one yet (guard against
 			// StrictMode double-render and other edge cases).
 			launchedRef.current = true;
+			// Mark session as being created synchronously so subsequent
+			// StrictMode renders don't try to create another session while
+			// this async call is still in flight.
+			sessionCreatedRef.current = true;
 			try {
 				const session = await createSession(projectPath!);
 				activeSessionId = session.session_id;
 				setSessionId(session.session_id);
-				// Mark session as created synchronously so subsequent
-				// StrictMode renders don't create another session.
-				sessionCreatedRef.current = true;
 				if (session.running_count !== undefined) {
 					setRunningCount(session.running_count);
 				}
 			} catch {
+				// Reset the flag on failure so the next attempt can try again
+				sessionCreatedRef.current = false;
 				if (!abortControllerRef.current?.signal.aborted) {
 					setError("Failed to connect to Pi. No models available.");
 					setLoading(false);
