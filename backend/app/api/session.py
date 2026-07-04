@@ -71,8 +71,8 @@ async def switch_model(
 ) -> dict:
     """Update the session's model metadata.
 
-    The actual set_model RPC command is sent over WebSocket when the client
-    connects. This endpoint only records the desired model in the session record.
+    The actual set_model RPC command is sent as an SSE event when the client
+    subscribes. This endpoint only records the desired model in the session record.
     """
     validate_session_id(session_id)
     result = await session_manager.switch_model(session_id, model_id, provider)
