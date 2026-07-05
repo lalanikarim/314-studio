@@ -6,7 +6,7 @@
     "#litro/page-manifest": "./server/stubs/page-manifest.ts"
   },
   "scripts": {
-    "dev": "litro dev",
+    "dev": "sh -c 'PORT=3000 litro dev' ",
     "dev:portless": "portless run litro dev",
     "build": "litro build",
     "preview": "litro preview",

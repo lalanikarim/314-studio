@@ -165,11 +165,18 @@ bun run build                    # Production build → dist/
 
 ```bash
 cd frontend-litro
-bun run litro dev                # Starts on :3000, auto-reload
-bun run litro build              # Production build → dist/server/ + dist/client/
+bun run dev                      # Starts on :3000, auto-reload (PORT=3000 enforced)
+bun run build                    # Production build → dist/server/ + dist/client/
 ```
 
-**Important:** Always `pkill -f "litro"` before starting a new instance to avoid port conflicts.
+**Always verify port 3000 is free before starting.** A stale process on 3000 will cause Litro to exit with code 1 instead of roaming to another port:
+
+```bash
+# Check if 3000 is occupied
+lsof -iTCP:3000 -sTCP:LISTEN -P -n
+# If something is listening, kill it
+lsof -iTCP:3000 -sTCP:LISTEN -P -n | awk '$1 == "node" {print $2}' | xargs -r kill -9
+```
 
 **Verification:** Use the headless browser checker:
 ```bash
@@ -396,9 +403,18 @@ Lit components render inside **Shadow DOM**, which isolates them from document-l
 
 Don't try to style shadow content from a global stylesheet with element selectors (`page-home .folder-item { ... }`) — it will silently do nothing. Only `var(--*)` references and the component's own `static styles` work.
 
-### Litro: Always kill old server processes
+### Litro: Kill old processes and verify port 3000 before starting
 
-Litro dev server uses dynamic port allocation (3000, then 3001, 3002... if 3000 is in use). Always `pkill -f "litro dev"` before starting a new instance to avoid port conflicts.
+Always kill stale Litro processes and verify port 3000 is free before starting the dev server:
+
+```bash
+# Kill any lingering node processes on 3000
+lsof -iTCP:3000 -sTCP:LISTEN -P -n | awk '$1 == "node" {print $2}' | xargs -r kill -9
+# Then start
+cd frontend-litro && bun run dev
+```
+
+If port 3000 is occupied, Litro prints an error and exits with code 1 — it will **not** roam to another port. This is intentional to avoid rogue listeners.
 
 ### Litro: `@property` decorator not bundled in production builds
 
