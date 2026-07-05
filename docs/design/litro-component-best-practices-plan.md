@@ -2,7 +2,7 @@
 
 **Branch:** `refactor/migrate-to-lit-frontend`
 **Created:** 2026-07-05
-**Status:** Phases 0–3 Complete — Phase 4 Pending
+**Status:** All Phases Complete
 **Prerequisite for:** All remaining Litro migration tasks (ChatPanel, workspace session controls, FilePreview improvements, production build)
 
 ## Litro Migration Plan Status
@@ -32,7 +32,7 @@ This best-practices plan is a **hard prerequisite** for the [Litro Migration Pla
 | Model switch in workspace | ⏳ Future | Phase 2 |
 | Production build configuration | ⏳ Future | Phase 0 |
 
-**Last updated:** 2026-07-05
+**Last updated:** 2026-07-05 (all phases complete)
 
 > **Rule:** When either plan changes status, update this table **and** the referenced migration plan so both stay synchronized. If a migration task is completed, mark it ✅ here. If a phase of this plan completes and unblocks a migration task, update the "Blocked By" column accordingly.
 
@@ -185,7 +185,7 @@ Before marking a phase complete, confirm:
 | 3 | Global state via module variables + `EventTarget` in `workspace.ts` | 🟡 Medium | 2 ✅ |
 | 4 | Callback props (`onSelect`, `onShutdown`) instead of Lit events | 🟡 Medium | 3 ✅ |
 | 5 | Inconsistent component registration (`customElements.define` vs `@customElement`) | 🟢 Low | 1 |
-| 6 | Styles not shared beyond `buttonStyles` (`.icon-btn`, layout, typography duplicated) | 🟢 Low | 4 |
+| 6 | Styles not shared beyond `buttonStyles` (`.icon-btn`, layout, typography duplicated) | 🟢 Low | 4 ✅ |
 
 ### Scorecard (current → target)
 
@@ -503,7 +503,7 @@ bun run litro build
 
 ---
 
-## Phase 4: Shared Style Consolidation 🟢
+## Phase 4: Shared Style Consolidation ✅
 
 **Goal:** Reduce duplicated CSS by extracting common primitives into `styles/shared.ts`.
 
@@ -579,7 +579,7 @@ After a phase is thoroughly verified — all verification steps pass, no regress
 - [x] Phase 1: One component per file; registration style consistent.
 - [x] Phase 2: No module-global state in `workspace.ts`; `SelectionStore` controller wired; no stale selection after navigation.
 - [x] Phase 3: No `onXxx` callback properties; all child→parent communication via `CustomEvent`.
-- [ ] Phase 4: Shared style primitives (`icon-button`, `spinner`, `panel-header`) live once in `styles/shared.ts`.
+- [x] Phase 4: Shared style primitives (`icon-button`, `spinner`, `panel-header`) live once in `styles/design-tokens.ts`.
 - [ ] `AGENTS.md` gotchas updated to record the final patterns (registration style, store pattern, event pattern).
 
 ## Out of Scope
