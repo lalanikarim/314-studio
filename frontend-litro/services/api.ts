@@ -53,6 +53,29 @@ export async function deleteSession(sessionId: string) {
   return resp.json();
 }
 
+export interface SessionItem {
+  session_id: string;
+  project_path: string;
+  name: string;
+  model_id: string | null;
+  status: string;
+  sse_connected: boolean;
+  created_at: string;
+}
+
+/** List all active sessions across all projects. */
+export async function fetchSessions(): Promise<SessionItem[]> {
+  const resp = await fetch(`${API_BASE}/projects/sessions`);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp.json();
+}
+
+/** Compact a session (reduce context size, session stays alive). */
+export async function compactSession(sessionId: string) {
+  const resp = await sendCommand(sessionId, { command: 'compact' });
+  return resp;
+}
+
 export async function switchModel(sessionId: string, modelId: string, provider: string) {
   const resp = await fetch(
     `${API_BASE}/projects/${sessionId}/model?model_id=${encodeURIComponent(modelId)}&provider=${encodeURIComponent(provider)}`,
