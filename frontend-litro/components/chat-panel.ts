@@ -149,11 +149,28 @@ export class ChatPanelElement extends LitElement {
       .chat-panel__empty {
         flex: 1;
         display: flex;
+        flex-direction: column;
         align-items: center;
         justify-content: center;
         text-align: center;
-        color: var(--text-muted);
+        padding: 2rem;
+      }
+      .empty__icon {
+        font-size: 3rem;
+        margin-bottom: 1rem;
+        opacity: 0.5;
+      }
+      .empty__title {
+        font-size: 1.125rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin: 0 0 0.5rem;
+      }
+      .empty__description {
         font-size: 0.875rem;
+        color: var(--text-secondary);
+        margin: 0;
+        max-width: 280px;
       }
       .chat-panel__streaming {
         padding: 0.75rem;
@@ -199,6 +216,107 @@ export class ChatPanelElement extends LitElement {
         opacity: 0.5;
         cursor: not-allowed;
       }
+      .chat-panel__btn--danger {
+        color: var(--danger);
+      }
+      .chat-panel__btn--danger:hover:not(:disabled) {
+        background: var(--danger-bg);
+        color: var(--danger);
+      }
+
+      /* ── Error Banner ──────────────────────────────────────── */
+      .chat-panel__error {
+        margin: 0.5rem;
+        padding: 0.75rem 1rem;
+        background: var(--danger-bg);
+        border: 1px solid var(--danger-border);
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        font-size: 0.8125rem;
+        color: var(--text-primary);
+      }
+      .chat-panel__error-close {
+        background: none;
+        border: none;
+        color: var(--text-secondary);
+        cursor: pointer;
+        padding: 0.25rem;
+        font-size: 1rem;
+        line-height: 1;
+      }
+      .chat-panel__error-close:hover {
+        color: var(--text-primary);
+      }
+
+      /* ── Extension UI ──────────────────────────────────────── */
+      .chat-panel__extension-ui {
+        margin: 0.5rem;
+        padding: 1rem;
+        background: var(--bg-secondary);
+        border: 1px solid var(--accent);
+        border-radius: 8px;
+      }
+      .extension-ui__header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 0.75rem;
+      }
+      .extension-ui__method {
+        font-weight: 600;
+        color: var(--accent);
+        font-size: 0.875rem;
+      }
+      .extension-ui__close {
+        background: none;
+        border: none;
+        color: var(--text-secondary);
+        cursor: pointer;
+        font-size: 0.8125rem;
+      }
+      .extension-ui__close:hover {
+        color: var(--text-primary);
+      }
+      .extension-ui__params {
+        margin-bottom: 0.75rem;
+      }
+      .extension-ui__params pre {
+        background: var(--bg-primary);
+        padding: 0.75rem;
+        border-radius: 4px;
+        overflow-x: auto;
+        font-size: 0.75rem;
+        color: var(--text-secondary);
+        margin: 0;
+      }
+      .extension-ui__actions {
+        display: flex;
+        gap: 0.5rem;
+      }
+
+      /* ── Clear Confirm ─────────────────────────────────────── */
+      .chat-panel__clear-confirm {
+        margin: 0.5rem;
+        padding: 0.75rem 1rem;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+      }
+      .clear-confirm__text {
+        font-size: 0.8125rem;
+        color: var(--text-secondary);
+      }
+      .clear-confirm__actions {
+        display: flex;
+        gap: 0.5rem;
+      }
 
       /* ── Animations ────────────────────────────────────────── */
       @keyframes pulse {
@@ -231,13 +349,32 @@ export class ChatPanelElement extends LitElement {
   @state() modelDropdownOpen = false;
   @state() closingState: 'none' | 'compact' | 'delete' = 'none';
   @state() errorMessage: string | null = null;
+  @state() showClearConfirm = false;
 
   private chatController!: ChatStreamController;
   private modelSetFromState = false;
+  private clickOutsideHandler: ((e: Event) => void) | null = null;
 
   connectedCallback() {
     super.connectedCallback();
     this.chatController = new ChatStreamController(this, this.sessionId);
+    // Add click-outside listener for dropdown
+    this.clickOutsideHandler = (e: Event) => {
+      if (this.modelDropdownOpen && !this.shadowRoot?.contains(e.target as Node)) {
+        this.modelDropdownOpen = false;
+      }
+    };
+    document.addEventListener('click', this.clickOutsideHandler);
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    // Remove click-outside listener
+    if (this.clickOutsideHandler) {
+      document.removeEventListener('click', this.clickOutsideHandler);
+      this.clickOutsideHandler = null;
+    }
+    // Controller auto-disconnects via hostDisconnected
   }
 
   updated(changedProperties: Map<string, unknown>) {
@@ -493,6 +630,32 @@ export class ChatPanelElement extends LitElement {
     return 'Select model';
   }
 
+  private clearError() {
+    this.errorMessage = null;
+  }
+
+  private clearChat() {
+    this.showClearConfirm = !this.showClearConfirm;
+  }
+
+  private confirmClearChat() {
+    this.displayMessages = [];
+    this.streamingContent = '';
+    this.toolCalls = [];
+    this.processedCount = 0;
+    this.showClearConfirm = false;
+  }
+
+  private respondToUi(value: unknown | null) {
+    if (this.chatController.pendingUiRequest) {
+      this.chatController.respondToUi(
+        this.chatController.pendingUiRequest.id,
+        value,
+        value === null
+      );
+    }
+  }
+
   // ── Render ──────────────────────────────────────────────────
 
   render() {
@@ -501,34 +664,50 @@ export class ChatPanelElement extends LitElement {
         <!-- Header -->
         <div class="chat-panel__header">
           <div class="chat-panel__header-left">
+            <!-- Model Selector -->
             <div class="chat-panel__model-selector">
               <button
                 class="chat-panel__model-btn"
                 @click=${() => (this.modelDropdownOpen = !this.modelDropdownOpen)}
               >
                 ${this.getModelName()}
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style="transition: transform 0.15s; ${this.modelDropdownOpen ? 'transform: rotate(180deg);' : ''}">
                   <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
               </button>
               ${this.modelDropdownOpen ? this.renderModelDropdown() : ''}
             </div>
+            
+            <!-- Connection Status -->
             <span class="chat-panel__status">
               <span
                 class="chat-panel__status-dot ${this.chatController.isStreaming
                   ? 'chat-panel__status-dot--streaming'
-                  : this.chatController.state === 'error' || this.chatController.state === 'disconnected'
+                  : (this.chatController.state === 'error' || this.chatController.state === 'disconnected')
                   ? 'chat-panel__status-dot--error'
+                  : this.chatController.state === 'connecting'
+                  ? 'chat-panel__status-dot--connecting'
                   : 'chat-panel__status-dot--idle'}"
               ></span>
               ${this.chatController.isStreaming
                 ? 'Streaming'
                 : this.chatController.state === 'error' || this.chatController.state === 'disconnected'
                 ? 'Disconnected'
+                : this.chatController.state === 'connecting'
+                ? 'Connecting'
                 : 'Idle'}
             </span>
           </div>
+          
           <div class="chat-panel__header-right">
+            <button
+              class="chat-panel__btn-close"
+              ?disabled=${this.closingState !== 'none'}
+              @click=${this.clearChat}
+              title="Clear chat"
+            >
+              Clear
+            </button>
             <button
               class="chat-panel__btn-close"
               ?disabled=${this.closingState !== 'none'}
@@ -538,7 +717,7 @@ export class ChatPanelElement extends LitElement {
               Compact
             </button>
             <button
-              class="chat-panel__btn-close"
+              class="chat-panel__btn-close chat-panel__btn--danger"
               ?disabled=${this.closingState !== 'none'}
               @click=${this.handleDelete}
               title="Delete session"
@@ -550,14 +729,37 @@ export class ChatPanelElement extends LitElement {
 
         <!-- Error Message -->
         ${this.errorMessage
-          ? html`<div class="chat-panel__error">${this.errorMessage}</div>`
+          ? html`<div class="chat-panel__error">
+              <span>⚠️ ${this.errorMessage}</span>
+              <button class="chat-panel__error-close" @click=${this.clearError}>✕</button>
+            </div>`
+          : ''}
+
+        <!-- Extension UI Request -->
+        ${this.chatController.pendingUiRequest
+          ? this.renderExtensionUI()
+          : ''}
+
+        <!-- Clear Chat Confirm -->
+        ${this.showClearConfirm
+          ? html`<div class="chat-panel__clear-confirm">
+              <span class="clear-confirm__text">Clear all messages?</span>
+              <div class="clear-confirm__actions">
+                <button class="btn btn--sm" @click=${() => this.showClearConfirm = false}>Cancel</button>
+                <button class="btn btn--primary btn--sm" @click=${this.confirmClearChat}>Clear</button>
+              </div>
+            </div>`
           : ''}
 
         <!-- Messages Area -->
         <div class="chat-panel__messages">
           ${this.displayMessages.length === 0 && !this.streamingContent
             ? html`<div class="chat-panel__empty">
-                No messages yet. Send a message to get started.
+                <div class="empty__icon">💬</div>
+                <h3 class="empty__title">Start a conversation</h3>
+                <p class="empty__description">
+                  Send a message to Pi and it will help you with your code.
+                </p>
               </div>`
             : html`
                 ${this.displayMessages.map(
@@ -585,6 +787,57 @@ export class ChatPanelElement extends LitElement {
           @send-message=${(e: CustomEvent<string>) => this.handleSend(e.detail)}
           @abort-message=${() => this.handleAbort()}
         ></chat-input>
+      </div>
+    `;
+  }
+
+  private renderModelDropdown() {
+    if (this.models.length === 0) {
+      return html`<div class="chat-panel__model-dropdown">
+        <div style="padding: 0.75rem; text-align: center; color: var(--text-muted); font-size: 0.8125rem;">
+          No models available
+        </div>
+      </div>`;
+    }
+
+    return html`
+      <div class="chat-panel__model-dropdown">
+        ${this.models.map(
+          (model) => html`
+            <button
+              class="chat-panel__model-option ${this.currentModel?.id === model.id
+                ? 'chat-panel__model-option--active'
+                : ''}"
+              @click=${() => this.handleSwitchModel(model)}
+            >
+              <div style="font-weight: 500;">${model.name}</div>
+              <div style="font-size: 0.75rem; opacity: 0.7; margin-top: 0.25rem;">
+                ${model.provider} ${model.contextWindow > 0 ? `· ${model.contextWindow.toLocaleString()} ctx` : ''}
+              </div>
+            </button>
+          `
+        )}
+      </div>
+    `;
+  }
+
+  private renderExtensionUI() {
+    const req = this.chatController.pendingUiRequest;
+    if (!req) return html``;
+
+    return html`
+      <div class="chat-panel__extension-ui">
+        <div class="extension-ui__header">
+          <span class="extension-ui__method">🔧 ${req.method}</span>
+          <button class="extension-ui__close" @click=${() => this.respondToUi(null)}>Cancel</button>
+        </div>
+        <div class="extension-ui__params">
+          <pre>${typeof req.params === 'string' ? req.params : JSON.stringify(req.params, null, 2)}</pre>
+        </div>
+        <div class="extension-ui__actions">
+          <button class="btn btn--sm" @click=${() => this.respondToUi(null)}>Cancel</button>
+          <button class="btn btn--primary btn--sm" @click=${() => this.respondToUi(true)}>Accept</button>
+        </div>
       </div>
     `;
   }
