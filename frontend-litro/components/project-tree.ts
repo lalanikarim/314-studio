@@ -1,5 +1,5 @@
 import { html, css, LitElement } from 'lit';
-import { customElement, state, property } from 'lit/decorators.js';
+import { customElement, state } from 'lit/decorators.js';
 import { listFiles } from '../services/api';
 import type { TreeNodeData } from '../types/tree';
 
@@ -100,16 +100,22 @@ export class TreeNodeComponent extends LitElement {
     }
   `;
 
+  static properties = {
+    node: { type: Object },
+    depth: { type: Number },
+    selectedPath: { type: String },
+    projectRoot: { type: String },
+  };
+  node: TreeNodeData = { name: '', path: '', isDirectory: false, children: [] };
+  depth = 0;
+  selectedPath = '';
+  projectRoot = '';
+
   @state() expanded = false;
   @state() children: TreeNodeData[] = [];
   @state() loading = false;
 
-  // Properties set by parent
-  @property({ type: Object }) node: TreeNodeData = { name: '', path: '', isDirectory: false, children: [] };
-  @property({ type: Number }) depth = 0;
-  @property({ type: String }) selectedPath = '';
   onSelect!: (path: string) => void;
-  @property({ type: String }) projectRoot = '';
 
   private fetchCalled = false;
   private firstRender = true;
@@ -283,11 +289,16 @@ export class ProjectTreeComponent extends LitElement {
     }
   `;
 
+  static properties = {
+    projectPath: { type: String },
+    selectedFile: { type: String },
+  };
+  projectPath = '';
+  selectedFile = '';
+
   @state() roots: TreeNodeData[] = [];
   @state() loading = false;
 
-  @property({ type: String }) projectPath = '';
-  @property({ type: String }) selectedFile = '';
   onSelect!: (path: string) => void;
 
   private folderFetched = false;
