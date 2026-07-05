@@ -216,7 +216,7 @@ export class WorkspacePage extends LitroPage {
             <project-tree
               .projectPath=${projectRoot}
               .selectedFile=${this.selectedFile}
-              .onSelect=${(path: string) => this.handleFileSelect(path)}
+              @file-select=${(e: CustomEvent<string>) => this.handleFileSelect(e.detail)}
             ></project-tree>
           </div>
 

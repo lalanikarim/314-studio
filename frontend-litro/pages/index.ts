@@ -447,8 +447,8 @@ export class HomePage extends LitroPage {
       (s) => html`
         <session-row
           .session=${s}
-          .onSelect=${() => this.openSession(s)}
-          .onShutdown=${() => this.handleShutdown(s)}
+          @session-select=${(e: CustomEvent<SessionItem>) => this.openSession(e.detail)}
+          @session-shutdown=${(e: CustomEvent<SessionItem>) => this.handleShutdown(e.detail)}
         ></session-row>
       `,
     );

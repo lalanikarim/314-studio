@@ -115,8 +115,6 @@ export class TreeNodeComponent extends LitElement {
   @state() children: TreeNodeData[] = [];
   @state() loading = false;
 
-  onSelect!: (path: string) => void;
-
   private fetchCalled = false;
   private firstRender = true;
 
@@ -167,11 +165,11 @@ export class TreeNodeComponent extends LitElement {
     if (this.node.isDirectory) {
       this.expanded = !this.expanded;
     } else {
-      if (this.onSelect) {
-        this.onSelect(this.node.path);
-      } else {
-        console.warn('[tree-node] onSelect is not a function');
-      }
+      this.dispatchEvent(new CustomEvent('file-select', {
+        detail: this.node.path,
+        bubbles: true,
+        composed: true,
+      }));
     }
   }
 
@@ -211,7 +209,6 @@ export class TreeNodeComponent extends LitElement {
               .node=${child}
               .depth=${this.depth + 1}
               .selectedPath=${this.selectedPath}
-              .onSelect=${this.onSelect}
               .projectRoot=${this.projectRoot}
             ></tree-node>
           `)}
@@ -299,8 +296,6 @@ export class ProjectTreeComponent extends LitElement {
   @state() roots: TreeNodeData[] = [];
   @state() loading = false;
 
-  onSelect!: (path: string) => void;
-
   private folderFetched = false;
   private firstUpdate = true;
 
@@ -353,7 +348,6 @@ export class ProjectTreeComponent extends LitElement {
               .node=${node}
               .depth=${0}
               .selectedPath=${this.selectedFile}
-              .onSelect=${this.onSelect}
               .projectRoot=${this.projectPath}
             ></tree-node>
           `)}

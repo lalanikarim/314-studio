@@ -97,8 +97,6 @@ export class SessionRow extends LitElement {
     session: { type: Object },
   };
   session!: SessionItem;
-  onSelect!: () => void;
-  onShutdown!: () => void;
 
   private formatTime(iso: string): string {
     const d = new Date(iso);
@@ -111,6 +109,22 @@ export class SessionRow extends LitElement {
     if (this.session?.sse_connected) return 'row__status--connected';
     if (this.session?.status === 'running') return 'row__status--running';
     return 'row__status--other';
+  }
+
+  private dispatchSelect() {
+    this.dispatchEvent(new CustomEvent('session-select', {
+      detail: this.session,
+      bubbles: true,
+      composed: true,
+    }));
+  }
+
+  private dispatchShutdown() {
+    this.dispatchEvent(new CustomEvent('session-shutdown', {
+      detail: this.session,
+      bubbles: true,
+      composed: true,
+    }));
   }
 
   private getProjectName(): string {
@@ -129,11 +143,11 @@ export class SessionRow extends LitElement {
         class="row"
         role="button"
         tabindex="0"
-        @click=${this.onSelect}
+        @click=${() => this.dispatchSelect()}
         @keydown=${(e: KeyboardEvent) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
-            this.onSelect();
+            this.dispatchSelect();
           }
         }}
       >
@@ -147,7 +161,7 @@ export class SessionRow extends LitElement {
             class="row__shutdown"
             @click=${(e: Event) => {
               e.stopPropagation();
-              this.onShutdown();
+              this.dispatchShutdown();
             }}
             title="Shutdown session"
           >
