@@ -7,8 +7,11 @@ FastAPI backend + React (TypeScript) frontend for the Pi coding agent.
 | Layer | Technology |
 |-------|------------|
 | **Backend** | Python 3.13 · FastAPI · Uvicorn · aiofiles · Pydantic · uv |
-| **Frontend** | React 19 · TypeScript · Vite · Bun · CSS Modules |
+| **Frontend (legacy)** | React 19 · TypeScript · Vite · Bun · CSS Modules |
+| **Frontend (current)** | Litro · Lit · TypeScript · Vite · Bun · Nitro (SSR) |
 | **Tests** | pytest · pytest-asyncio · httpx · uv |
+
+> **Migration in progress:** `frontend-litro/` is the active frontend. `frontend/` is the legacy React implementation. See [docs/design/litro-migration-plan.md](docs/design/litro-migration-plan.md) for tracking.
 
 ## Project Structure
 
@@ -24,7 +27,7 @@ FastAPI backend + React (TypeScript) frontend for the Pi coding agent.
 │   │   └── chat.py              # SSE stream + REST commands
 │   ├── schemas/                 # Pydantic models
 │   └── session_manager.py       # Core: spawn/manage pi --rpc processes
-├── frontend/src/
+├── frontend/src/                # Legacy React frontend (being replaced)
 │   ├── App.tsx                  # View router (folders → models → workspace)
 │   ├── main.tsx                 # Entry point
 │   ├── index.css                # Global dark theme
@@ -40,6 +43,23 @@ FastAPI backend + React (TypeScript) frontend for the Pi coding agent.
 │       ├── ProjectTree.tsx      # Left sidebar: collapsible file tree
 │       ├── FilePreview.tsx      # Center: syntax-highlighted viewer
 │       └── ChatPanel.tsx        # Right: chat + model dropdown
+├── frontend-litro/              # Active Litro frontend (in development)
+│   ├── app.ts                   # Client entry — router, custom element imports
+│   ├── nitro.config.ts          # Nitro config (proxy, build)
+│   ├── vite.config.ts           # Vite dev config (proxy, aliases)
+│   ├── pages/                   # Page components (file-system routing)
+│   │   ├── index.ts             # FolderSelector
+│   │   ├── models.ts            # ModelSelector
+│   │   └── workspace.ts         # Workspace layout
+│   ├── components/              # Reusable Lit components
+│   │   ├── project-tree.ts      # Recursive file tree
+│   │   ├── file-preview.ts      # File content viewer
+│   │   └── chat-panel.ts        # TODO: SSE streaming, markdown, tool calls
+│   ├── services/api.ts          # API client (REST + SSE)
+│   ├── styles/shared.ts         # Shared button/component styles
+│   ├── public/theme.css         # Global dark theme (CSS vars)
+│   ├── types/index.ts           # TypeScript interfaces
+│   └── types/tree.ts            # TreeNodeData interface
 ├── tests/                       # Integration tests (pytest, uv)
 │   ├── conftest.py              # Fixtures + subfixture support
 │   ├── test_utils.py            # Shared HTTP/SSE helpers & constants
@@ -133,12 +153,28 @@ uv run uvicorn app.main:app --reload    # Starts on :8000, auto-reload
 # API docs at http://localhost:8000/docs
 ```
 
-### Frontend (React + Vite)
+### Frontend (React + Vite) — Legacy
 
 ```bash
 cd frontend
 bun dev                          # Starts on :5173
 bun run build                    # Production build → dist/
+```
+
+### Frontend (Litro) — Active
+
+```bash
+cd frontend-litro
+bun run litro dev                # Starts on :3000, auto-reload
+bun run litro build              # Production build → dist/server/ + dist/client/
+```
+
+**Important:** Always `pkill -f "litro"` before starting a new instance to avoid port conflicts.
+
+**Verification:** Use the headless browser checker:
+```bash
+cd /Users/karim/.pi/agent/skills/headless-browser-checker
+node check.js --url http://localhost:3000/ --wait 'page-home' --errors --screenshot /tmp/shot.png
 ```
 
 ### Tests
@@ -436,24 +472,55 @@ All project-scoped endpoints use `project_path` as a query parameter, not a rout
 - **Backend root**: `backend/app/`
 - **Backend entry**: `backend/app/main.py`
 - **Session manager**: `backend/app/session_manager.py` (core logic, ~500 lines)
-- **Frontend root**: `frontend/src/`
+- **Frontend root (legacy)**: `frontend/src/`
+- **Frontend root (Litro)**: `frontend-litro/`
+- **Litro pages**: `frontend-litro/pages/` (file-system routing)
+- **Litro components**: `frontend-litro/components/`
+- **Litro API client**: `frontend-litro/services/api.ts`
+- **Litro theme**: `frontend-litro/public/theme.css`
+- **Litro migration plan**: `docs/design/litro-migration-plan.md`
 - **Tests root**: `tests/`
-- **Config**: `backend/pyproject.toml` (Python deps), `frontend/package.json` (Node deps)
-- **Docs**: `docs/`, `AGENTS.md`, `README.backend.md`, `README.frontend.md`
+- **Config**: `backend/pyproject.toml` (Python deps), `frontend/package.json` (legacy), `frontend-litro/package.json` (Litro)
+- **Docs**: `docs/`, `AGENTS.md`
 
 ## Current Status
+
+### Backend (Complete)
 
 | Area | Status |
 |------|--------|
 | **Backend API** | ✅ Complete — all endpoints implemented and tested |
 | **Session Manager** | ✅ Complete — spawns `pi --mode rpc`, manages lifecycle |
-| **Frontend UI** | ✅ Complete — 3-column workspace with file tree, preview, chat |
-| **Frontend/Backend wiring** | ✅ Complete — real API calls replace mock data |
 | **SSE stream** | ✅ Complete — `text/event-stream` via `sse-starlette` |
 | **Extension UI handling** | ✅ Complete — auto-ack fire-and-forget, forward interactive |
 | **Integration tests** | ✅ Migrated to SSE + REST (all flows use SSE) |
-| **Flow 4: Model Switch** | ✅ 4/4 passing (6 checks + 2 skip path) |
+
+### Frontend Migration (In Progress)
+
+**Branch:** `refactor/migrate-to-lit-frontend` · **Plan:** [docs/design/litro-migration-plan.md](docs/design/litro-migration-plan.md)
+
+| Area | Status |
+|------|--------|
+| **Litro scaffold** | ✅ Complete |
+| **API service layer** | ✅ Complete — REST + SSE client |
+| **Global theme** | ✅ Complete — dark slate CSS vars |
+| **FolderSelector** | ✅ Complete — browse, search, open |
+| **ModelSelector** | ✅ Complete — provider filters, cards, create session |
+| **Workspace layout** | ✅ Complete — 3-column: sidebar, preview, chat |
+| **ProjectTree** | ✅ Complete — recursive, lazy loading, auto-expand dirs |
+| **FilePreview** | ✅ Complete — header + content display |
+| **File click → preview** | ✅ Complete — global state sharing |
+| **ChatPanel** | 🔲 Not started — SSE streaming, markdown, tool calls |
+
+### Integration Tests (Backend)
+
+| Flow | Status |
+|------|--------|
+| **Flow 1: Browse + Chat** | ✅ 12/12 passing |
+| **Flow 2: File Browse** | ✅ 7/7 passing |
+| **Flow 3: Multi-Session** | ✅ 7/7 passing |
+| **Flow 4: Model Switch** | ✅ 4/4 passing |
 | **Flow 5: Close/Delete** | ✅ 4/4 passing |
 | **Flow 6: Error Handling** | ✅ 12/12 passing |
 | **Flow 7: Shutdown Cleanup** | ✅ 3/3 passing |
-| **Flow 8: Model Operations** | ✅ All passing (fetch, verify, switch, chat before/after) |
+| **Flow 8: Model Operations** | ✅ All passing |
