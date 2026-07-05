@@ -44,13 +44,27 @@ Client ──REST──→ Backend (metadata: list, create, browse, read)
 
 ### ⏳ Blocked / Future
 
-| Task | Notes |
-|------|-------|
-| Chat input + command panel | Wire chat UI to SSE/REST API |
-| FilePreview improvements | Line numbers, syntax highlighting |
-| Session management UI | Close/delete sessions from workspace |
-| Model switch in workspace | Switch models without returning to models page |
-| Production build | Configure Nitro for production (SSR, static assets) |
+| Task | Status | Blocked By |
+|------|--------|------------|
+| Chat input + command panel | ⏳ Future | ChatPanel complete |
+| FilePreview improvements | ⏳ Future | Phase 1 of best-practices plan |
+| Session management UI | ⏳ Future | Phase 2 of best-practices plan |
+| Model switch in workspace | ⏳ Future | Phase 2 of best-practices plan |
+| Production build | ⏳ Future | Phase 0 of best-practices plan |
+
+### Best Practices Plan Status
+
+See the [Litro Component Best Practices Plan](litro-component-best-practices-plan.md) for phase details. Summary:
+
+| Best-Practices Phase | Status | Unblocks |
+|---|---|---|
+| Phase 0: Fix `@property` production bug | ✅ Done | Production build |
+| Phase 1: Component file separation | ✅ Done | ChatPanel, syntax highlighting |
+| Phase 2: State management cleanup | ✅ Done | Session UI, model switch |
+| Phase 3: Event-based communication | ✅ Done | General cleanup |
+| Phase 4: Shared style consolidation | 🟡 In progress | — |
+
+**Last updated:** 2026-07-05
 
 ## Architecture Decisions
 

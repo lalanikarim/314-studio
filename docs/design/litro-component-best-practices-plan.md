@@ -5,6 +5,37 @@
 **Status:** Phases 0–3 Complete — Phase 4 Pending
 **Prerequisite for:** All remaining Litro migration tasks (ChatPanel, workspace session controls, FilePreview improvements, production build)
 
+## Litro Migration Plan Status
+
+This best-practices plan is a **hard prerequisite** for the [Litro Migration Plan](litro-migration-plan.md). The table below keeps the migration plan's progress visible here so work on either plan always has full context.
+
+| Migration Task | Status | Blocked By |
+|---|---|---|
+| SSE migration (backend) | ✅ Done | — |
+| Litro scaffold | ✅ Done | — |
+| API service layer | ✅ Done | — |
+| Global theme (theme.css) | ✅ Done | — |
+| Shared button styles | ✅ Done | — |
+| Nitro API proxy | ✅ Done | — |
+| FolderSelector page | ✅ Done | — |
+| ModelSelector page | ✅ Done | — |
+| Workspace layout | ✅ Done | — |
+| ProjectTree component | ✅ Done | — |
+| FilePreview component | ✅ Done | — |
+| File click → preview | ✅ Done | — |
+| File newline rendering | ✅ Done | — |
+| Integration tests (8 flows) | ✅ Done | — |
+| **ChatPanel component** | 🔲 Not started | Phase 1, 2, 3 of this plan |
+| Chat input + command panel | ⏳ Future | ChatPanel complete |
+| FilePreview improvements (syntax highlighting) | ⏳ Future | Phase 1 |
+| Session management UI (close/delete) | ⏳ Future | Phase 2 |
+| Model switch in workspace | ⏳ Future | Phase 2 |
+| Production build configuration | ⏳ Future | Phase 0 |
+
+**Last updated:** 2026-07-05
+
+> **Rule:** When either plan changes status, update this table **and** the referenced migration plan so both stay synchronized. If a migration task is completed, mark it ✅ here. If a phase of this plan completes and unblocks a migration task, update the "Blocked By" column accordingly.
+
 ## Overview
 
 An audit of the Litro frontend (`frontend-litro/`) found that while Shadow DOM isolation, CSS architecture, and `static properties` usage are sound, several Lit best-practice violations exist. Two are **critical** (break production builds); others hurt maintainability, reusability, and scalability.
@@ -139,6 +170,7 @@ Before marking a phase complete, confirm:
 - [ ] Screenshot saved to `/tmp/<phase>-<step>.png` for audit trail
 - [ ] Playwright script deleted after verification (no leftover test files)
 - [ ] Plan updated (status line, audit table, Definition of Done)
+- [ ] Migration plan (`litro-migration-plan.md`) updated — task status ✅, "Blocked By" column adjusted, "Last updated" timestamp refreshed
 - [ ] Committed with signed-off commit message
 - [ ] Pushed to `origin/refactor/migrate-to-lit-frontend`
 
