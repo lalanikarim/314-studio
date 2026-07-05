@@ -118,6 +118,8 @@ API_BASE=http://127.0.0.1:8000 WS_BASE=ws://127.0.0.1:8000 uv run pytest -v
 
 ## Next Steps
 
+> ⚠️ **Prerequisite:** The work below must **not** resume until [Litro Component Best Practices Plan](litro-component-best-practices-plan.md) Phases 0 and 1 are complete. Those phases fix a production-breaking `@property` bug in `project-tree.ts` and split the 798-line `pages/index.ts` into isolated components — the remaining work (ChatPanel in particular) would otherwise be built on top of the same anti-patterns. Phases 2–4 of that plan can run in parallel with the tasks below once Phase 1 lands.
+
 1. Port `ChatPanel` component (SSE streaming, markdown, code blocks, tool calls)
 2. Wire chat input to SSE/REST API
 3. Add syntax highlighting to FilePreview

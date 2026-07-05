@@ -325,6 +325,8 @@ export class MyEl extends LitElement {       // ← has createProperty
 
 **Note on esbuild/swc:** esbuild's experimental decorator support (enabled via `tsconfigRaw.experimentalDecorators` in the Litro Vite adapter) is sufficient. Do NOT add `vite-plugin-swc` — it causes its own parse errors on TypeScript `as` expressions and is not needed.
 
+**Production build caveat:** esbuild does **not** bundle the `property` import from `lit/decorators.js` into the client bundle. The dev server works fine (it resolves imports at runtime), but the production build crashes with `ReferenceError: property is not defined`. Use `static properties` block for sub-components instead — see [Litro: `@property` decorator not bundled in production builds](#litro-property-decorator-not-bundled-in-production-builds).
+
 ### Litro: `window` not available during SSR
 
 Litro uses SSR (Server-Side Rendering) by default. Any code that accesses `window`, `document`, or `localStorage` **during the initial render** will crash the server with `ReferenceError: window is not defined`.
@@ -397,6 +399,36 @@ Don't try to style shadow content from a global stylesheet with element selector
 ### Litro: Always kill old server processes
 
 Litro dev server uses dynamic port allocation (3000, then 3001, 3002... if 3000 is in use). Always `pkill -f "litro dev"` before starting a new instance to avoid port conflicts.
+
+### Litro: `@property` decorator not bundled in production builds
+
+esbuild (configured via `tsconfigRaw.experimentalDecorators: true` in the Litro Vite adapter) uses legacy decorator transform. The `property` import from `lit/decorators.js` is **not bundled into the production client build**, even though the dev server works fine. This causes `ReferenceError: property is not defined` at runtime in production.
+
+**Fix:** For sub-components (components nested inside pages), use Lit's `static properties` block instead of `@property` decorator:
+
+```typescript
+// ❌ WRONG — `property` not bundled, crashes in production
+import { customElement, property } from 'lit/decorators.js';
+@customElement('my-dialog')
+export class MyDialog extends LitroPage {
+  @property({ type: String }) title = '';
+  @property({ type: String }) subtitle = '';
+}
+
+// ✅ CORRECT — `static properties` block, no decorator import needed
+import { customElement } from 'lit/decorators.js';
+@customElement('my-dialog')
+export class MyDialog extends LitElement {
+  static properties = {
+    title: { type: String },
+    subtitle: { type: String },
+  };
+  title = '';
+  subtitle = '';
+}
+```
+
+**Rule of thumb:** Pages (top-level route components) extend `LitroPage` and may use `@state()`. Sub-components (dialog, row, panel, etc.) should extend `LitElement` and use `static properties` block. Avoid `@property` decorator entirely — it only works in dev, not production.
 
 ## API Endpoints
 
