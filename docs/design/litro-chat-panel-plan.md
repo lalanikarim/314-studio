@@ -2,9 +2,22 @@
 
 **Branch:** `refactor/migrate-to-lit-frontend`
 **Created:** 2026-07-05
-**Status:** Not started
+**Status:** In Progress (Phases 0–2 complete)
 **Prerequisite for:** Litro Migration Plan — ChatPanel completion
 **Depends on:** [Litro Component Best Practices Plan](litro-component-best-practices-plan.md) Phases 0–3
+
+### Phase Status
+
+| Phase | Name | Status | Commit |
+|-------|------|--------|--------|
+| 0 | Markdown infrastructure (`marked`) | ✅ Done | `7897d12` |
+| 1 | ChatStreamController (SSE ReactiveController) | ✅ Done | `b97d2f3` |
+| 2 | Message processing helpers (`chat-processor.ts`, `model.ts`) | ✅ Done | `b97d2f3` |
+| 3 | Sub-components (`chat-message`, `chat-tool-call`, `chat-input`) | 🔲 Not started | — |
+| 4 | Core ChatPanel component (`chat-panel.ts`) | 🔲 Not started | — |
+| 5 | Workspace integration | 🔲 Not started | — |
+| 6 | Model picker, session controls & extension UI | 🔲 Not started | — |
+| 7 | Verification & regression | 🔲 Not started | — |
 
 ## Overview
 
