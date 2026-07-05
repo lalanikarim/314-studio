@@ -1,13 +1,16 @@
 import { html, css, LitElement } from 'lit';
 import { customElement } from 'lit/decorators.js';
 import { readFile } from '../services/api';
+import { designTokens } from '../styles/design-tokens';
 
 @customElement('file-preview')
 export class FilePreviewElement extends LitElement {
-  static styles = css`
-    :host { display: block; height: 100%; }
-    .panel { display: flex; flex-direction: column; height: 100%; }
-    .empty { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); }
+  static styles = [
+    designTokens,
+    css`
+      :host { display: block; height: 100%; }
+      .panel { display: flex; flex-direction: column; height: 100%; }
+      .empty { display: flex; align-items: center; justify-content: center; height: 100%; }
     .header {
       display: flex;
       align-items: center;
@@ -35,7 +38,8 @@ export class FilePreviewElement extends LitElement {
       line-height: 1.6;
       color: var(--text-primary, #f1f5f9);
     }
-  `;
+  `,
+  ];
 
   static properties = {
     content: {},

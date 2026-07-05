@@ -226,32 +226,6 @@ export class ProjectTreeComponent extends LitElement {
         height: 100%;
         background: var(--bg-secondary, #16161e);
       }
-      .panel {
-        display: flex;
-        flex-direction: column;
-        height: 100%;
-      }
-      .panel__header {
-        display: flex;
-        align-items: center;
-        padding: 0.5rem 0.75rem;
-        border-bottom: 1px solid var(--border, #334155);
-        font-size: 0.875rem;
-        font-weight: 600;
-        color: var(--text-secondary, #a9b1d6);
-      }
-      .panel__header span {
-        flex: 1;
-      }
-      .panel__count {
-        font-size: 0.75rem;
-        font-weight: 400;
-        color: var(--text-muted, #565f89);
-      }
-      .panel__content {
-        flex: 1;
-        overflow: auto;
-      }
     `,
   ];
 

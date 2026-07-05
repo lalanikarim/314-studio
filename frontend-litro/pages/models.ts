@@ -3,6 +3,7 @@ import { customElement, state } from 'lit/decorators.js';
 import { LitroPage } from '@beatzball/litro/runtime';
 import { fetchModels, createSession } from '../services/api';
 import { buttonStyles } from '../styles/shared';
+import { designTokens } from '../styles/design-tokens';
 import type { Model } from '../types';
 
 /**
@@ -18,6 +19,7 @@ import type { Model } from '../types';
 export class ModelSelectorPage extends LitroPage {
   static styles = [
     buttonStyles,
+    designTokens,
     css`
       :host {
         display: block;

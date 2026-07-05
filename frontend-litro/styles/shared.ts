@@ -89,14 +89,4 @@ export const buttonStyles = css`
   .view-models__back:hover {
     color: var(--text-placeholder);
   }
-
-  /* Spinner used by the model selector loading state. */
-  .view-models__spinner {
-    animation: spin 0.8s linear infinite;
-  }
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
 `;

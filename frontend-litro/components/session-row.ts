@@ -1,5 +1,6 @@
 import { html, css, LitElement } from 'lit';
 import { customElement } from 'lit/decorators.js';
+import { designTokens } from '../styles/design-tokens';
 import type { SessionItem } from '../services/api';
 
 // ---------------------------------------------------------------------------
@@ -8,90 +9,93 @@ import type { SessionItem } from '../services/api';
 
 @customElement('session-row')
 export class SessionRow extends LitElement {
-  static styles = css`
-    :host {
-      display: block;
-    }
-    .row {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      padding: 14px 16px;
-      background: var(--bg-secondary);
-      border: 1px solid transparent;
-      border-radius: 8px;
-      cursor: pointer;
-      transition: all 0.15s;
-    }
-    .row:hover {
-      background: var(--bg-tertiary);
-      border-color: var(--border);
-    }
-    .row__top {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-    .row__info {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex: 1;
-      min-width: 0;
-    }
-    .row__status {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      flex-shrink: 0;
-    }
-    .row__status--connected { background: var(--success); }
-    .row__status--running { background: var(--warning); }
-    .row__status--other { background: var(--text-muted); }
-    .row__name {
-      font-size: 14px;
-      font-weight: 500;
-      color: var(--text-placeholder);
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .row__time {
-      font-size: 12px;
-      color: var(--text-muted);
-      flex-shrink: 0;
-    }
-    .row__shutdown {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      border: none;
-      border-radius: 4px;
-      background: transparent;
-      color: var(--text-muted);
-      cursor: pointer;
-      padding: 4px 6px;
-      font-size: 16px;
-      transition: all 0.15s;
-      flex-shrink: 0;
-      margin-left: 8px;
-    }
-    .row__shutdown:hover {
-      background: var(--danger);
-      color: #fff;
-    }
-    .row__meta {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 12px;
-      color: var(--text-muted);
-      padding-left: 16px;
-    }
-    .row__meta-divider {
-      color: var(--border);
-    }
-  `;
+  static styles = [
+    designTokens,
+    css`
+      :host {
+        display: block;
+      }
+      .row {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 14px 16px;
+        background: var(--bg-secondary);
+        border: 1px solid transparent;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.15s;
+      }
+      .row:hover {
+        background: var(--bg-tertiary);
+        border-color: var(--border);
+      }
+      .row__top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .row__info {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex: 1;
+        min-width: 0;
+      }
+      .row__status {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+      .row__status--connected { background: var(--success); }
+      .row__status--running { background: var(--warning); }
+      .row__status--other { background: var(--text-muted); }
+      .row__name {
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--text-placeholder);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .row__time {
+        font-size: 12px;
+        color: var(--text-muted);
+        flex-shrink: 0;
+      }
+      .row__shutdown {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: none;
+        border-radius: 4px;
+        background: transparent;
+        color: var(--text-muted);
+        cursor: pointer;
+        padding: 4px 6px;
+        font-size: 16px;
+        transition: all 0.15s;
+        flex-shrink: 0;
+        margin-left: 8px;
+      }
+      .row__shutdown:hover {
+        background: var(--danger);
+        color: #fff;
+      }
+      .row__meta {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--text-muted);
+        padding-left: 16px;
+      }
+      .row__meta-divider {
+        color: var(--border);
+      }
+    `,
+  ];
 
   static properties = {
     session: { type: Object },
