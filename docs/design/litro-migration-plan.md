@@ -40,7 +40,7 @@ Client ──REST──→ Backend (metadata: list, create, browse, read)
 
 | Task | Status | Notes |
 |------|--------|-------|
-| ChatPanel component | 🔲 Not started | **See [Litro ChatPanel Migration Plan](litro-chat-panel-plan.md)** — SSE streaming, markdown, code blocks, tool calls, message history (~1100 lines in React) |
+| ChatPanel component | 🔲 In progress | **See [Litro ChatPanel Migration Plan](litro-chat-panel-plan.md)** — SSE streaming, markdown, code blocks, tool calls, message history (~1100 lines in React) |
 
 ### ⏳ Blocked / Future
 

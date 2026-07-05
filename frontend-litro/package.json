@@ -16,10 +16,11 @@
   },
   "dependencies": {
     "@beatzball/litro": "latest",
-    "lit": "^3.2.1",
     "@lit-labs/ssr": "^3.3.0",
     "@lit-labs/ssr-client": "^1.1.7",
-    "h3": "^1.13.0"
+    "h3": "^1.13.0",
+    "lit": "^3.2.1",
+    "marked": "^18.0.5"
   },
   "devDependencies": {
     "@playwright/test": "^1.48.0",
