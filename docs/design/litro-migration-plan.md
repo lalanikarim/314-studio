@@ -40,7 +40,7 @@ Client ──REST──→ Backend (metadata: list, create, browse, read)
 
 | Task | Status | Notes |
 |------|--------|-------|
-| ChatPanel component | 🔲 Not started | SSE streaming, markdown, code blocks, tool calls, message history (~1100 lines in React) |
+| ChatPanel component | 🔲 Not started | **See [Litro ChatPanel Migration Plan](litro-chat-panel-plan.md)** — SSE streaming, markdown, code blocks, tool calls, message history (~1100 lines in React) |
 
 ### ⏳ Blocked / Future
 
@@ -51,6 +51,10 @@ Client ──REST──→ Backend (metadata: list, create, browse, read)
 | Session management UI | ⏳ Future | Phase 2 of best-practices plan |
 | Model switch in workspace | ⏳ Future | Phase 2 of best-practices plan |
 | Production build | ⏳ Future | Phase 0 of best-practices plan |
+
+### ChatPanel Migration Plan
+
+The ChatPanel port has its own dedicated plan: **[Litro ChatPanel Migration Plan](litro-chat-panel-plan.md)**. It is a **hard dependency** of this migration plan and follows the same verification protocol (Tier 1–4) from the best-practices plan. Do not start ChatPanel work without reading it first.
 
 ### Best Practices Plan Status
 
@@ -132,10 +136,11 @@ API_BASE=http://127.0.0.1:8000 WS_BASE=ws://127.0.0.1:8000 uv run pytest -v
 
 ## Next Steps
 
-> ⚠️ **Prerequisite:** The work below must **not** resume until [Litro Component Best Practices Plan](litro-component-best-practices-plan.md) Phases 0 and 1 are complete. Those phases fix a production-breaking `@property` bug in `project-tree.ts` and split the 798-line `pages/index.ts` into isolated components — the remaining work (ChatPanel in particular) would otherwise be built on top of the same anti-patterns. Phases 2–4 of that plan can run in parallel with the tasks below once Phase 1 lands.
+> ⚠️ **Prerequisite:** The work below must **not** resume until [Litro Component Best Practices Plan](litro-component-best-practices-plan.md) Phases 0–3 are complete. Those phases fix a production-breaking `@property` bug in `project-tree.ts`, split the 798-line `pages/index.ts` into isolated components, replace module-global state with a `ReactiveController`, and standardize event-based communication — all foundations that ChatPanel directly builds on.
+>
+> **Hard dependency:** [Litro ChatPanel Migration Plan](litro-chat-panel-plan.md) must be read before starting the ChatPanel port. It defines the exact phases, file structure, `ChatStreamController` architecture, markdown strategy, and verification steps. Do not start ChatPanel work without it.
 
-1. Port `ChatPanel` component (SSE streaming, markdown, code blocks, tool calls)
-2. Wire chat input to SSE/REST API
-3. Add syntax highlighting to FilePreview
-4. Polish UI (hover states, loading indicators, error handling)
-5. Configure Nitro for production build
+1. Execute [Litro ChatPanel Migration Plan](litro-chat-panel-plan.md) Phases 0–7
+2. Add syntax highlighting to FilePreview
+3. Polish UI (hover states, loading indicators, error handling)
+4. Configure Nitro for production build
