@@ -2,7 +2,7 @@
 
 **Branch:** `refactor/migrate-to-lit-frontend`
 **Created:** 2026-07-05
-**Status:** Phase 0 Complete — Phases 1–4 Pending
+**Status:** Phases 0–1 Complete — Phases 2–4 Pending
 **Prerequisite for:** All remaining Litro migration tasks (ChatPanel, workspace session controls, FilePreview improvements, production build)
 
 ## Overview
@@ -18,7 +18,7 @@ This plan addresses each finding in **independently verifiable phases**. Each ph
 | # | Finding | Severity | Phase |
 |---|---------|----------|-------|
 | 1 | `@property` decorator in `project-tree.ts` — breaks production builds | 🔴 Critical | 0 ✅ |
-| 2 | Monolithic `pages/index.ts` (798 lines) mixes page + sub-components | 🟡 Medium | 1 |
+| 2 | Monolithic `pages/index.ts` (798 lines) mixes page + sub-components | 🟡 Medium | 1 ✅ |
 | 3 | Global state via module variables + `EventTarget` in `workspace.ts` | 🟡 Medium | 2 |
 | 4 | Callback props (`onSelect`, `onShutdown`) instead of Lit events | 🟡 Medium | 3 |
 | 5 | Inconsistent component registration (`customElements.define` vs `@customElement`) | 🟢 Low | 1 |
@@ -413,7 +413,7 @@ After a phase is thoroughly verified — all verification steps pass, no regress
 ## Definition of Done
 
 - [x] Phase 0: `project-tree.ts` uses `static properties`; production build runs `workspace` route with 0 JS errors.
-- [ ] Phase 1: One component per file; `pages/index.ts` ≤ 300 lines; registration style consistent.
+- [x] Phase 1: One component per file; `pages/index.ts` ≤ 300 lines; registration style consistent.
 - [ ] Phase 2: No module-global state in `workspace.ts`; `SelectionStore` controller wired; no stale selection after navigation.
 - [ ] Phase 3: No `onXxx` callback properties; all child→parent communication via `CustomEvent`.
 - [ ] Phase 4: Shared style primitives (`icon-button`, `spinner`, `panel-header`) live once in `styles/shared.ts`.
