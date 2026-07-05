@@ -282,16 +282,11 @@ export class HomePage extends LitroPage {
   }
 
   private openSession(session: SessionItem) {
-    // Navigate to models page with the session pre-selected
+    // Navigate directly to workspace — session already has a model
     const params = new URLSearchParams();
     params.set('folder', session.project_path);
     params.set('session_id', session.session_id);
-    params.set('session_name', session.name || '');
-    params.set('session_model_id', session.model_id || '');
-    params.set('session_status', session.status);
-    params.set('session_sse_connected', session.sse_connected ? '1' : '0');
-    params.set('session_created_at', session.created_at);
-    window.location.href = `/models?${params.toString()}`;
+    window.location.href = `/workspace?${params.toString()}`;
   }
 
   private handleShutdown(session: SessionItem) {
