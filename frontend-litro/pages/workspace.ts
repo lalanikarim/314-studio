@@ -3,6 +3,9 @@ import { customElement, state } from 'lit/decorators.js';
 import { LitroPage } from '@beatzball/litro/runtime';
 import { SelectionStore } from '../lib/selection-store';
 import { buttonStyles } from '../styles/shared';
+import { fetchModels, fetchProjectInfo } from '../services/api.js';
+import { createMinimalModel, extractProvider } from '../lib/model.js';
+import type { Model } from '../types/index.js';
 
 @customElement('page-workspace')
 export class WorkspacePage extends LitroPage {
@@ -121,12 +124,65 @@ export class WorkspacePage extends LitroPage {
 
   @state() sidebarCollapsed = false;
   @state() chatExpanded = false;
+  @state() sessionId = '';
+  @state() models: Model[] = [];
+  @state() currentModel: Model | null = null;
 
   readonly selectionStore = new SelectionStore();
 
   connectedCallback() {
     super.connectedCallback();
     this.addController(this.selectionStore.controller(this));
+    this.fetchSessionData();
+  }
+
+  private async fetchSessionData() {
+    if (!this.folderPath) return;
+
+    try {
+      // Read session_id from URL params
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        this.sessionId = params.get('session_id') || '';
+      }
+
+      // Fetch available models
+      this.models = await fetchModels(this.sessionId || undefined);
+
+      // If we have a session, get its current model from project info
+      if (this.sessionId) {
+        try {
+          const info = await fetchProjectInfo(this.folderPath);
+          const session = info.sessions?.find(
+            (s) => s.session_id === this.sessionId
+          );
+          if (session?.model_id) {
+            this.currentModel = createMinimalModel(
+              session.model_id,
+              extractProvider(session.model_id)
+            );
+          }
+        } catch {
+          // Ignore — chat-panel will get model from SSE state
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch session data:', err);
+    }
+  }
+
+  private handleSessionClose() {
+    // Navigate back to home when session is closed
+    window.location.href = '/';
+  }
+
+  private handleSessionDelete() {
+    // Navigate back to home when session is deleted
+    window.location.href = '/';
+  }
+
+  private handleModelSwitch(e: CustomEvent<Model>) {
+    this.currentModel = e.detail;
   }
 
   private get folderPath(): string {
@@ -197,8 +253,15 @@ export class WorkspacePage extends LitroPage {
           </div>
 
           <div class="view-workspace__chat ${this.chatExpanded ? 'view-workspace__chat--expanded' : ''}">
-            <!-- TODO: <chat-panel></chat-panel> -->
-            <div class="view-workspace__chat-placeholder">ChatPanel — coming soon</div>
+            <chat-panel
+              .sessionId=${this.sessionId}
+              .models=${this.models}
+              .currentModel=${this.currentModel}
+              .projectPath=${this.folderPath}
+              @session-close=${() => this.handleSessionClose()}
+              @session-delete=${() => this.handleSessionDelete()}
+              @model-switch=${(e: CustomEvent<Model>) => this.handleModelSwitch(e)}
+            ></chat-panel>
           </div>
         </div>
       </div>
