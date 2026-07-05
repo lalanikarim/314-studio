@@ -415,7 +415,6 @@ After a phase is thoroughly verified — all verification steps pass, no regress
 - [x] Phase 0: `project-tree.ts` uses `static properties`; production build runs `workspace` route with 0 JS errors.
 - [x] Phase 1: One component per file; `pages/index.ts` ≤ 300 lines; registration style consistent.
 - [x] Phase 2: No module-global state in `workspace.ts`; `SelectionStore` controller wired; no stale selection after navigation.
-- [ ] Phase 2: No module-global state in `workspace.ts`; `SelectionStore` controller wired; no stale selection after navigation.
 - [ ] Phase 3: No `onXxx` callback properties; all child→parent communication via `CustomEvent`.
 - [ ] Phase 4: Shared style primitives (`icon-button`, `spinner`, `panel-header`) live once in `styles/shared.ts`.
 - [ ] `AGENTS.md` gotchas updated to record the final patterns (registration style, store pattern, event pattern).
