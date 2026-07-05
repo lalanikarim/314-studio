@@ -153,7 +153,7 @@ export class WorkspacePage extends LitroPage {
   @state() sidebarCollapsed = false;
   @state() chatExpanded = false;
 
-  private readonly selectionStore = new SelectionStore();
+  readonly selectionStore = new SelectionStore();
 
   connectedCallback() {
     super.connectedCallback();
