@@ -13,6 +13,118 @@ This plan addresses each finding in **independently verifiable phases**. Each ph
 
 > **Why now:** The remaining migration work (ChatPanel, workspace session controls, production build) will compound these problems if built on the current foundations. This plan is a **hard prerequisite** — the migration plan's "Next Steps" must not resume until Phases 0 and 1 below are complete.
 
+## Verification Protocol
+
+**Every phase must pass all four verification tiers before being marked complete.** Skipping verification or marking complete without passing all tiers is a violation of this plan.
+
+### Tier 1: Build Verification
+
+```
+bash
+cd frontend-litro
+rm -rf dist && bun run litro build
+```
+
+**Pass:** Exit code 0, no warnings about missing imports or unresolved symbols.
+
+### Tier 2: Runtime Verification (Headless Browser)
+
+```
+bash
+# Start production server
+node dist/server/server/index.mjs &
+sleep 2
+
+# Run headless check on affected routes
+node /Users/karim/.pi/agent/skills/headless-browser-checker/check.js \
+  --url <affected-route> \
+  --wait <selector> \
+  --screenshot /tmp/<phase>-<step>.png
+```
+
+**Pass:**
+- HTTP status 200
+- **JS/TS Errors: 0** (non-negotiable)
+- Console Entries: 0 (or only expected warnings)
+- Selector found (element renders)
+
+### Tier 3: Functional Verification (Playwright)
+
+Write a temporary `verify-<phase>.mjs` script that tests interactive behavior:
+
+```typescript
+import { chromium } from 'playwright';
+
+const errors: string[] = [];
+page.on('console', msg => {
+  if (msg.type() === 'error') errors.push(msg.text());
+});
+
+// 1. Navigate to affected route
+await page.goto(`${BASE}<route>`, { waitUntil: 'networkidle' });
+await page.waitForSelector('<selector>', { state: 'visible' });
+
+// 2. Trigger interactive behavior (click, type, navigate)
+await <element>.click();
+await page.waitForTimeout(500);
+
+// 3. Assert no errors
+if (errors.length > 0) {
+  console.error('❌ Errors:', errors);
+  process.exit(1);
+}
+
+// 4. Assert state changes (if applicable)
+const actual = await page.evaluate(() => <check-state>);
+if (actual !== expected) {
+  console.error(`❌ Expected ${expected}, got ${actual}`);
+  process.exit(1);
+}
+```
+
+**Run:**
+```bash
+node verify-<phase>.mjs
+```
+
+**Pass:** Exit code 0, no errors in console, state matches expectations.
+
+### Tier 4: Regression Verification
+
+Test that the change doesn't break existing functionality:
+
+1. **Navigation test:** Navigate to affected route → navigate away → navigate back → verify no stale state
+2. **Cross-route test:** Verify other routes (/, /models) still load with 0 errors
+3. **Component test:** Verify all components on the page still render correctly
+
+```
+bash
+# After Tier 3 passes, run cross-route check
+node /Users/karim/.pi/agent/skills/headless-browser-checker/check.js \
+  --url http://localhost:3000/ --wait 'page-home' --screenshot /tmp/<phase>-regression-home.png
+
+node /Users/karim/.pi/agent/skills/headless-browser-checker/check.js \
+  --url http://localhost:3000/models --wait 'page-models' --screenshot /tmp/<phase>-regression-models.png
+```
+
+**Pass:** All routes load with 0 JS errors, no regressions in existing behavior.
+
+### Verification Checklist
+
+Before marking a phase complete, confirm:
+
+- [ ] Tier 1: Build succeeds with exit code 0
+- [ ] Tier 2: Headless check passes on affected route (0 JS errors)
+- [ ] Tier 3: Playwright script passes (interactive behavior verified)
+- [ ] Tier 4: Regression checks pass (other routes, navigation, state)
+- [ ] Screenshot saved to `/tmp/<phase>-<step>.png` for audit trail
+- [ ] Playwright script deleted after verification (no leftover test files)
+- [ ] Plan updated (status line, audit table, Definition of Done)
+- [ ] Committed with signed-off commit message
+- [ ] Pushed to `origin/refactor/migrate-to-lit-frontend`
+
+**If any tier fails:** Fix the issue, re-run all tiers from Tier 1. Do not skip tiers to "keep the plan on track."
+
 ## Audit Summary
 
 | # | Finding | Severity | Phase |
