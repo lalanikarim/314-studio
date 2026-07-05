@@ -24,6 +24,12 @@ export const buttonStyles = css`
     cursor: pointer;
     transition: all 0.15s ease;
     white-space: nowrap;
+    background: var(--bg-hover);
+    color: var(--text-secondary);
+  }
+  .btn:hover:not(:disabled) {
+    background: var(--bg-active);
+    color: var(--text-placeholder);
   }
   .btn:disabled {
     opacity: 0.5;
@@ -41,6 +47,11 @@ export const buttonStyles = css`
   .btn--lg {
     padding: 12px 24px;
     font-size: 16px;
+  }
+  .btn--sm {
+    padding: 4px;
+    width: 24px;
+    height: 24px;
   }
 
   .icon-btn {

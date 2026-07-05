@@ -4,6 +4,7 @@ import { LitroPage } from '@beatzball/litro/runtime';
 import { browseDirectories, fetchSessions, closeSession, deleteSession } from '../services/api';
 import type { SessionItem } from '../services/api';
 import { getProjectName } from '../lib/format';
+import { designTokens } from '../styles/design-tokens';
 
 
 
@@ -17,7 +18,9 @@ import { getProjectName } from '../lib/format';
 
 @customElement('page-home')
 export class HomePage extends LitroPage {
-  static styles = css`
+  static styles = [
+    designTokens,
+    css`
     :host {
       display: block;
       min-height: 100vh;
@@ -218,22 +221,12 @@ export class HomePage extends LitroPage {
       flex-shrink: 0;
     }
 
-    /* Spinner */
+    /* Spinner — animation + base class provided by designTokens; only margin here.
     .view-folder__spinner {
-      display: inline-block;
-      width: 16px;
-      height: 16px;
-      border: 2px solid var(--border);
-      border-top-color: var(--accent);
-      border-radius: 50%;
-      animation: spin 0.6s linear infinite;
-      vertical-align: middle;
       margin-right: 8px;
     }
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
-  `;
+  `,
+  ];
 
   @state() private folders: Array<{ name: string; path: string }> = [];
   @state() private sessions: SessionItem[] = [];
@@ -332,7 +325,7 @@ export class HomePage extends LitroPage {
     if (!q) return html`${name}`;
     const idx = name.toLowerCase().indexOf(q);
     if (idx < 0) return html`${name}`;
-    return html`${name.slice(0, idx)}<mark class="view-folder__mark">${name.slice(
+    return html`${name.slice(0, idx)}<mark class="highlight-mark">${name.slice(
       idx,
       idx + this.search.length,
     )}</mark>${name.slice(idx + this.search.length)}`;

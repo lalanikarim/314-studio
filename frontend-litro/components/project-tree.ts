@@ -1,6 +1,8 @@
 import { html, css, LitElement } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { listFiles } from '../services/api';
+import { buttonStyles } from '../styles/shared';
+import { designTokens } from '../styles/design-tokens';
 import type { TreeNodeData } from '../types/tree';
 
 // ---------------------------------------------------------------------------
@@ -26,79 +28,70 @@ function getFileExtensionIcon(filename: string): string {
 
 @customElement('tree-node')
 export class TreeNodeComponent extends LitElement {
-  static styles = css`
-    :host {
-      display: block;
-    }
-    .tree-node__row {
-      display: flex;
-      align-items: center;
-      padding: 4px 8px;
-      cursor: pointer;
-      user-select: none;
-      font-size: 0.875rem;
-      color: var(--text-primary, #c0caf5);
-      transition: background 0.15s;
-    }
-    .tree-node__row:hover {
-      background: var(--bg-hover, #292e42);
-    }
-    .tree-node__row--selected {
-      background: var(--selected-bg, #1e3a5f);
-    }
-    .tree-node__icon {
-      display: flex;
-      align-items: center;
-      margin-right: 6px;
-      width: 16px;
-      flex-shrink: 0;
-    }
-    .tree-node__icon svg {
-      width: 14px;
-      height: 14px;
-    }
-    .tree-node__file-icon {
-      font-size: 0.75rem;
-      font-weight: 600;
-      color: var(--text-secondary, #a9b1d6);
-    }
-    .tree-node__name {
-      flex: 1;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .tree-node__toggle {
-      display: flex;
-      align-items: center;
-      margin-left: 4px;
-      opacity: 0.5;
-    }
-    .tree-node__toggle svg {
-      width: 12px;
-      height: 12px;
-    }
-    .tree-node__spinner {
-      display: inline-block;
-      width: 12px;
-      height: 12px;
-      border: 2px solid var(--border, #334155);
-      border-top-color: var(--text-secondary, #a9b1d6);
-      border-radius: 50%;
-      animation: spin 0.6s linear infinite;
-    }
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
-    .tree-node__children {
-      display: block;
-    }
-    .tree-node__empty {
-      padding: 4px 8px 4px 32px;
-      font-size: 0.8rem;
-      color: var(--text-muted, #565f89);
-    }
-  `;
+  static styles = [
+    designTokens,
+    css`
+      :host {
+        display: block;
+      }
+      .tree-node__row {
+        display: flex;
+        align-items: center;
+        padding: 4px 8px;
+        cursor: pointer;
+        user-select: none;
+        font-size: 0.875rem;
+        color: var(--text-primary, #c0caf5);
+        transition: background 0.15s;
+      }
+      .tree-node__row:hover {
+        background: var(--bg-hover, #292e42);
+      }
+      .tree-node__row--selected {
+        background: var(--selected-bg, #1e3a5f);
+      }
+      .tree-node__icon {
+        display: flex;
+        align-items: center;
+        margin-right: 6px;
+        width: 16px;
+        flex-shrink: 0;
+      }
+      .tree-node__icon svg {
+        width: 14px;
+        height: 14px;
+      }
+      .tree-node__file-icon {
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: var(--text-secondary, #a9b1d6);
+      }
+      .tree-node__name {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .tree-node__toggle {
+        display: flex;
+        align-items: center;
+        margin-left: 4px;
+        opacity: 0.5;
+      }
+      .tree-node__toggle svg {
+        width: 12px;
+        height: 12px;
+      }
+      .tree-node__children {
+        display: block;
+      }
+      .tree-node__empty {
+        padding: 4px 8px 4px 32px;
+        font-size: 0.8rem;
+        color: var(--text-muted, #565f89);
+      }
+    `,
+  ];
 
   static properties = {
     node: { type: Object },
@@ -190,7 +183,7 @@ export class TreeNodeComponent extends LitElement {
         ${this.node.isDirectory ? html`
           <span class="tree-node__toggle">
             ${this.loading
-              ? html`<span class="tree-node__spinner"></span>`
+              ? html`<span class="spinner spinner--sm"></span>`
               : html`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="${this.expanded ? 'M6 9l6 6 6-6' : 'M9 5l7 7-7 7'}" />
                 </svg>`
@@ -224,67 +217,43 @@ export class TreeNodeComponent extends LitElement {
 
 @customElement('project-tree')
 export class ProjectTreeComponent extends LitElement {
-  static styles = css`
-    :host {
-      display: block;
-      height: 100%;
-      background: var(--bg-secondary, #16161e);
-    }
-    .panel {
-      display: flex;
-      flex-direction: column;
-      height: 100%;
-    }
-    .panel__header {
-      display: flex;
-      align-items: center;
-      padding: 0.5rem 0.75rem;
-      border-bottom: 1px solid var(--border, #334155);
-      font-size: 0.875rem;
-      font-weight: 600;
-      color: var(--text-secondary, #a9b1d6);
-    }
-    .panel__header span {
-      flex: 1;
-    }
-    .panel__count {
-      font-size: 0.75rem;
-      font-weight: 400;
-      color: var(--text-muted, #565f89);
-    }
-    .panel__content {
-      flex: 1;
-      overflow: auto;
-    }
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-      background: var(--bg-hover, #292e42);
-      color: var(--text-secondary, #a9b1d6);
-      transition: background 0.15s;
-    }
-    .btn:hover {
-      background: var(--bg-active, #3b4261);
-    }
-    .btn:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-    .btn--sm {
-      padding: 4px;
-      width: 24px;
-      height: 24px;
-    }
-    .loading, .empty {
-      padding: 1rem;
-      color: var(--text-muted, #565f89);
-      font-size: 0.875rem;
-    }
-  `;
+  static styles = [
+    buttonStyles,
+    designTokens,
+    css`
+      :host {
+        display: block;
+        height: 100%;
+        background: var(--bg-secondary, #16161e);
+      }
+      .panel {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+      }
+      .panel__header {
+        display: flex;
+        align-items: center;
+        padding: 0.5rem 0.75rem;
+        border-bottom: 1px solid var(--border, #334155);
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: var(--text-secondary, #a9b1d6);
+      }
+      .panel__header span {
+        flex: 1;
+      }
+      .panel__count {
+        font-size: 0.75rem;
+        font-weight: 400;
+        color: var(--text-muted, #565f89);
+      }
+      .panel__content {
+        flex: 1;
+        overflow: auto;
+      }
+    `,
+  ];
 
   static properties = {
     projectPath: { type: String },

@@ -222,12 +222,7 @@ export class ModelSelectorPage extends LitroPage {
         font-weight: 600;
         color: var(--text-primary);
       }
-      .view-models__mark {
-        background: rgba(59, 130, 246, 0.3);
-        border-radius: 2px;
-        padding: 0 1px;
-        color: var(--text-placeholder);
-      }
+      /* .highlight-mark — provided by designTokens */
       .view-models__badge {
         display: inline-block;
         padding: 2px 8px;
@@ -353,7 +348,7 @@ export class ModelSelectorPage extends LitroPage {
     const q = search.toLowerCase();
     const idx = text.toLowerCase().indexOf(q);
     if (idx < 0) return html`${text}`;
-    return html`${text.slice(0, idx)}<mark class="view-models__mark">${text.slice(
+    return html`${text.slice(0, idx)}<mark class="highlight-mark">${text.slice(
       idx,
       idx + search.length,
     )}</mark>${text.slice(idx + search.length)}`;
