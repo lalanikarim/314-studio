@@ -5,8 +5,10 @@ export interface Folder {
 
 export interface Model {
   id: string;
+  name: string;
   provider: string;
   contextWindow: number;
+  maxTokens: number;
 }
 
 export interface Session {
