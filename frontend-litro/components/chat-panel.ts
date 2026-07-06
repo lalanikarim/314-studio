@@ -401,6 +401,7 @@ export class ChatPanelElement extends LitElement {
   private streamingTextAccum = '';
   private streamingThinkingAccum = '';
   private streamingToolCalls: ToolCallEntry[] = [];
+  private streamingMessageCreated = false; // Track if message created for current turn
   private queueDrainIndex = 0;
 
   connectedCallback() {
@@ -663,16 +664,23 @@ export class ChatPanelElement extends LitElement {
   /**
    * Ensure there's an assistant message in displayMessages for the current
    * streaming turn. Creates one if it doesn't exist, updates it if it does.
+   * Only creates a new message on the FIRST content event of a turn.
    */
   private ensureStreamingMessage() {
-    const lastMsg = this.displayMessages[this.displayMessages.length - 1];
-    if (lastMsg && lastMsg.role === 'assistant') {
-      // Already have a streaming message, just update it
+    // If we've already created a message for this turn, just update it
+    if (this.streamingMessageCreated) {
       this.updateStreamingMessageContent();
       return;
     }
 
-    // Create a new assistant message
+    // Check if the last message is from a previous turn (completed)
+    const lastMsg = this.displayMessages[this.displayMessages.length - 1];
+    if (lastMsg && lastMsg.role === 'assistant') {
+      // Could be from previous turn or current turn
+      // We'll create a new message for this turn regardless
+    }
+
+    // Create a new assistant message for this turn
     const ts = Date.now();
     const contentBlocks: MessageContentBlock[] = [];
 
@@ -699,6 +707,7 @@ export class ChatPanelElement extends LitElement {
       content: contentBlocks,
     };
     this.displayMessages = [...this.displayMessages, newMsg];
+    this.streamingMessageCreated = true;
 
     console.debug(
       '[ChatStream] ENSURE: created streaming message with',
@@ -764,6 +773,7 @@ export class ChatPanelElement extends LitElement {
     this.streamingContent = '';
     this.streamingThinking = '';
     this.streamingToolCalls = [];
+    this.streamingMessageCreated = false;
   }
 
   /**
@@ -980,6 +990,7 @@ export class ChatPanelElement extends LitElement {
     this.streamingTextAccum = '';
     this.streamingThinkingAccum = '';
     this.streamingToolCalls = [];
+    this.streamingMessageCreated = false;
     this.queueDrainIndex = 0;
     this.modelSetFromState = false;
     this.errorMessage = null;
