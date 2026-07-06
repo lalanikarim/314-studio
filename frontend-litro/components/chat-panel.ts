@@ -206,6 +206,22 @@ export class ChatPanelElement extends LitElement {
         font-size: 0.875rem;
         line-height: 1.6;
       }
+      .chat-panel__streaming--thinking {
+        border-left: 3px solid var(--accent);
+        background: rgba(59, 130, 246, 0.05);
+      }
+      .chat-panel__streaming__label {
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: var(--accent);
+        margin-bottom: 0.5rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      .chat-panel__streaming--tools {
+        border-left: 3px solid var(--warning);
+        background: rgba(245, 158, 11, 0.05);
+      }
       .chat-panel__streaming-indicator {
         display: inline-flex;
         align-items: center;
@@ -486,6 +502,12 @@ export class ChatPanelElement extends LitElement {
           '[ChatStream]   drain:', eventType,
           '→ thinking (REPLACE):', JSON.stringify(thinking),
           '(was:', prevLen, '→ now', this.streamingThinkingAccum.length, ')',
+        );
+        console.debug(
+          '[ChatStream]   drain: FULL streaming state:',
+          'textLen=' + this.streamingTextAccum.length,
+          'thinkingLen=' + this.streamingThinkingAccum.length,
+          'toolCalls=' + this.streamingToolCalls.length,
         );
       }
 
@@ -1131,14 +1153,45 @@ export class ChatPanelElement extends LitElement {
                     ></chat-message>
                   `,
                 )}
-                ${this.streamingContent
+                ${this.streamingContent || this.streamingThinking || this.streamingToolCalls.length > 0
                   ? html`
-                      <div class="chat-panel__streaming">
-                        ${this.streamingContent}
-                      </div>
+                      ${this.streamingThinking
+                        ? html`
+                            <div class="chat-panel__streaming chat-panel__streaming--thinking">
+                              <div class="chat-panel__streaming__label">💭 Thinking</div>
+                              ${this.streamingThinking}
+                            </div>
+                          `
+                        : ''}
+                      ${this.streamingContent
+                        ? html`
+                            <div class="chat-panel__streaming">
+                              ${this.streamingContent}
+                            </div>
+                          `
+                        : ''}
+                      ${this.streamingToolCalls.length > 0
+                        ? html`
+                            <div class="chat-panel__streaming chat-panel__streaming--tools">
+                              ${this.streamingToolCalls.map(
+                                (tc) => html`
+                                  <chat-tool-call
+                                    .id=${tc.id || ''}
+                                    .name=${tc.name}
+                                    .args=${tc.args || ''}
+                                    .result=${tc.result || ''}
+                                    .isStreaming=${true}
+                                  ></chat-tool-call>
+                                `,
+                              )}
+                            </div>
+                          `
+                        : ''}
                       <div class="chat-panel__streaming-indicator">
                         <span class="chat-panel__typing"></span>
-                        Pi is thinking...
+                        ${this.streamingThinking && !this.streamingContent
+                          ? 'Pi is thinking...'
+                          : 'Pi is typing...'}
                       </div>
                     `
                   : ''}
