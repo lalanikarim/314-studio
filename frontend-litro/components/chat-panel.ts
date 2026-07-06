@@ -463,9 +463,12 @@ export class ChatPanelElement extends LitElement {
       if (eventType === 'message_update') {
         const ami = (event as any).assistantMessageEvent;
         if (ami?.type === 'text_delta' || ami?.type === 'thinking_delta' || ami?.type === 'text_start' || ami?.type === 'thinking_start') {
+          // Reset only on transition from non-streaming to streaming (new turn)
+          if (!this.prevIsStreaming) {
+            this.streamingContent = '';
+            this.toolCalls = [];
+          }
           this.prevIsStreaming = true;
-          this.streamingContent = '';
-          this.toolCalls = [];
         }
       } else if (
         eventType === 'agent_end' ||
