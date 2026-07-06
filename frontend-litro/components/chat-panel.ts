@@ -470,7 +470,8 @@ export class ChatPanelElement extends LitElement {
         this.streamingContent = this.streamingTextAccum;
         console.debug(
           '[ChatStream]   drain:', eventType,
-          '→ text_delta +', text.length, 'chars (accum:', prevLen, '→', this.streamingTextAccum.length, ')',
+          '→ text_delta:', JSON.stringify(text),
+          '(accum:', prevLen, '→', this.streamingTextAccum.length, ')',
         );
       }
 
@@ -482,7 +483,8 @@ export class ChatPanelElement extends LitElement {
         this.streamingThinking = this.streamingThinkingAccum;
         console.debug(
           '[ChatStream]   drain:', eventType,
-          '→ thinking_delta +', thinking.length, 'chars (accum:', prevLen, '→', this.streamingThinkingAccum.length, ')',
+          '→ thinking_delta:', JSON.stringify(thinking),
+          '(accum:', prevLen, '→', this.streamingThinkingAccum.length, ')',
         );
       }
 
@@ -491,9 +493,11 @@ export class ChatPanelElement extends LitElement {
       if (toolCallDelta) {
         console.debug(
           '[ChatStream]   drain:', eventType,
-          '→ toolcall_delta:', toolCallDelta.name,
-          toolCallDelta.id ? '(id:' + toolCallDelta.id + ')' : '',
-          toolCallDelta.args ? 'argsLen=' + toolCallDelta.args.length : '',
+          '→ toolcall_delta:', JSON.stringify({
+            name: toolCallDelta.name,
+            id: toolCallDelta.id,
+            args: toolCallDelta.args,
+          }),
         );
         this.upsertToolCall(toolCallDelta);
       }
@@ -503,9 +507,11 @@ export class ChatPanelElement extends LitElement {
       if (toolCallEnd) {
         console.debug(
           '[ChatStream]   drain:', eventType,
-          '→ toolcall_end (FULL):', toolCallEnd.name,
-          toolCallEnd.id ? '(id:' + toolCallEnd.id + ')' : '',
-          toolCallEnd.args ? 'argsLen=' + toolCallEnd.args.length : '',
+          '→ toolcall_end (FULL):', JSON.stringify({
+            name: toolCallEnd.name,
+            id: toolCallEnd.id,
+            args: toolCallEnd.args,
+          }),
         );
         const idx = this.streamingToolCalls.findIndex((tc) => tc.id === toolCallEnd.id);
         if (idx >= 0) {
@@ -522,8 +528,10 @@ export class ChatPanelElement extends LitElement {
       if (toolResult) {
         console.debug(
           '[ChatStream]   drain:', eventType,
-          '→ tool_result:', toolResult.id ? '(id:' + toolResult.id + ')' : '',
-          'resultLen=' + toolResult.result.length,
+          '→ tool_result:', JSON.stringify({
+            id: toolResult.id,
+            result: toolResult.result,
+          }),
         );
         const idx = this.streamingToolCalls.findIndex((tc) => tc.id === toolResult.id);
         if (idx >= 0) {
@@ -538,8 +546,10 @@ export class ChatPanelElement extends LitElement {
       if (toolExecUpdate) {
         console.debug(
           '[ChatStream]   drain:', eventType,
-          '→ tool_exec_update:', toolExecUpdate.id,
-          'partialLen=' + toolExecUpdate.partialText.length,
+          '→ tool_exec_update:', JSON.stringify({
+            id: toolExecUpdate.id,
+            partialText: toolExecUpdate.partialText,
+          }),
         );
         const idx = this.streamingToolCalls.findIndex((tc) => tc.id === toolExecUpdate.id);
         if (idx >= 0) {
