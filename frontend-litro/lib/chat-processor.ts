@@ -256,12 +256,13 @@ export function extractToolCall(
 }
 
 /**
- * Check if an event is a stream finalizer (end_turn, agent_end, etc.).
+ * Check if an event is a stream finalizer (end_turn, agent_end, turn_end, etc.).
  * These signal the end of a streaming turn.
  */
 export function isStreamFinalizer(event: Record<string, unknown>): boolean {
   if (event.type === "end_turn" || event.type === "end") return true;
   if (event.type === "agent_end") return true;
+  if (event.type === "turn_end") return true;
   if (event.status === "done" || event.status === "finished") return true;
   if (event.type === "response" && event.id) return true;
   return false;

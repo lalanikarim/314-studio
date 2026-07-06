@@ -191,8 +191,8 @@ export class ChatStreamController implements ReactiveController {
     ) {
       this.isStreaming = true;
       this.state = "streaming";
-    } else if (eventType === "agent_end") {
-      // agent_end is the definitive end of a turn
+    } else if (eventType === "agent_end" || eventType === "turn_end") {
+      // agent_end or turn_end signals end of streaming turn
       this.isStreaming = false;
       this.state = "idle";
     }

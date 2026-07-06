@@ -464,6 +464,12 @@ export class ChatPanelElement extends LitElement {
         this.prevIsStreaming = true;
         this.streamingContent = '';
         this.toolCalls = [];
+      } else if (
+        eventType === 'agent_end' ||
+        eventType === 'turn_end'
+      ) {
+        // Finalizer events also update streaming state
+        this.prevIsStreaming = false;
       }
 
       // Extract text — ACCUMULATE (append) not replace
@@ -978,6 +984,14 @@ export class ChatPanelElement extends LitElement {
   }
 
   private renderModelDropdown() {
+    if (this.models.length === 0) {
+      return html`<div class="chat-panel__model-dropdown">
+        <div style="padding: 0.75rem; text-align: center; color: var(--text-muted); font-size: 0.8125rem;">
+          No models available
+        </div>
+      </div>`;
+    }
+
     return html`
       <div class="chat-panel__model-dropdown">
         ${this.models.map(
@@ -988,7 +1002,7 @@ export class ChatPanelElement extends LitElement {
                 : ''}"
               @click=${() => this.handleSwitchModel(model)}
             >
-              <div>${model.name}</div>
+              <div style="font-weight: 500;">${model.name}</div>
               <div style="font-size: 0.75rem; opacity: 0.7; margin-top: 0.25rem;">
                 ${model.provider} ${model.contextWindow > 0 ? `· ${model.contextWindow.toLocaleString()} ctx` : ''}
               </div>
