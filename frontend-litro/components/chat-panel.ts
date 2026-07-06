@@ -599,6 +599,7 @@ export class ChatPanelElement extends LitElement {
       // Primary: message_end carries the FULL message — commit now
       if (isMessageEnd(event)) {
         console.debug('[ChatStream]   drain:', eventType, '→ COMMITTING message (primary trigger)');
+        console.debug('[ChatStream]   drain:   textAccum:', this.streamingTextAccum.length, 'thinkingAccum:', this.streamingThinkingAccum.length, 'toolCalls:', this.streamingToolCalls.length);
         this.commitStreamingMessage();
         messageEnded = true;
         continue;
@@ -612,14 +613,19 @@ export class ChatPanelElement extends LitElement {
 
       // Fallback: turn_end — commit remaining accumulated content
       if (isTurnEnd(event)) {
-        console.debug('[ChatStream]   drain:', eventType, '→ fallback commit trigger');
+        console.debug('[ChatStream]   drain:', eventType, '→ fallback commit trigger (messageEnded:', messageEnded, ')');
         turnEnded = true;
       }
 
       // Fallback: agent_end — commit remaining accumulated content
       if (isAgentEnd(event)) {
-        console.debug('[ChatStream]   drain:', eventType, '→ fallback commit trigger');
+        console.debug('[ChatStream]   drain:', eventType, '→ fallback commit trigger (messageEnded:', messageEnded, ')');
         agentEnded = true;
+      }
+
+      // ALSO check for text_end — this signals the end of a text block
+      if (eventType === 'text_end' || eventType === 'thinking_end') {
+        console.debug('[ChatStream]   drain:', eventType, '→ text/thinking block ended (not committing full message)');
       }
     }
 
@@ -779,8 +785,17 @@ export class ChatPanelElement extends LitElement {
       ((response?.data as any)?.messages as any[]) ||
       ((response as any)?.messages as any[]) ||
       [];
+
+    console.debug('[ChatStream] Hydrate: get_messages returned', messages.length, 'messages');
+    messages.forEach((m: any, i: number) => {
+      console.debug('[ChatStream]   msg', i, ':', m.role, 'contentBlocks:', Array.isArray(m.content) ? m.content.length : 0);
+    });
+
     const raw = messages.flatMap((m: any) => agentMessageToDisplay(m));
+    console.debug('[ChatStream] Hydrate: agentMessageToDisplay produced', raw.length, 'ChatMessages');
+
     const merged = this.mergeHistoryToolResults(raw);
+    console.debug('[ChatStream] Hydrate: mergeHistoryToolResults produced', merged.length, 'final messages');
 
     if (merged.length > 0) {
       this.displayMessages = [...this.displayMessages, ...merged];
@@ -789,18 +804,16 @@ export class ChatPanelElement extends LitElement {
   }
 
   /**
-   * Merge toolResult toolCall blocks into the previous assistant message's
-   * matching toolCall blocks by id.
+   * Merge consecutive assistant messages connected by toolResults into
+   * single turn-level messages. Pi returns separate AgentMessages for
+   * each step (assistant→toolResult→assistant), but they represent one
+   * coherent turn that should display as a single message.
    */
   private mergeHistoryToolResults(messages: ChatMessage[]): ChatMessage[] {
     const result: ChatMessage[] = [];
 
     for (const msg of messages) {
-      if (msg.role !== 'assistant' || msg.content.length === 0) {
-        result.push(msg);
-        continue;
-      }
-
+      // Collect toolResult blocks
       const toolResultBlocks: MessageContentBlock[] = [];
       const keepBlocks: MessageContentBlock[] = [];
 
@@ -817,34 +830,58 @@ export class ChatPanelElement extends LitElement {
         }
       }
 
-      if (toolResultBlocks.length === 0) {
+      // If this is a toolResult-only message, merge into previous assistant
+      if (msg.role === 'toolResult' && toolResultBlocks.length > 0) {
+        if (result.length > 0 && result[result.length - 1].role === 'assistant') {
+          const prev = result[result.length - 1] as MutableChatMessage;
+          let didMerge = false;
+
+          for (const rb of toolResultBlocks as MutableToolCallBlock[]) {
+            for (let bi = 0; bi < prev.content.length; bi++) {
+              const pb = prev.content[bi] as MutableToolCallBlock;
+              if (pb.kind === 'toolCall' && pb.id === rb.id) {
+                pb.result = rb.result ?? pb.result;
+                didMerge = true;
+                break;
+              }
+            }
+          }
+
+          if (didMerge) {
+            continue; // Merged, don't add this message
+          }
+        }
         result.push(msg);
         continue;
       }
 
-      if (result.length > 0 && result[result.length - 1].role === 'assistant') {
-        const prev = result[result.length - 1];
-        let didMerge = false;
+      // If this is an assistant message with toolCalls, check if we should
+      // merge it with the previous assistant message
+      if (msg.role === 'assistant' && toolResultBlocks.length > 0) {
+        // Check if the previous message was also an assistant message
+        if (result.length > 0 && result[result.length - 1].role === 'assistant') {
+          const prev = result[result.length - 1] as MutableChatMessage;
 
-        for (const rb of toolResultBlocks as MutableToolCallBlock[]) {
-          for (let bi = 0; bi < prev.content.length; bi++) {
-            const pb = prev.content[bi] as MutableToolCallBlock;
-            if (pb.kind === 'toolCall' && pb.id === rb.id) {
-              pb.result = rb.result ?? pb.result;
-              didMerge = true;
-              break;
+          // Merge toolResults from this message into the previous one
+          for (const rb of toolResultBlocks as MutableToolCallBlock[]) {
+            for (let bi = 0; bi < prev.content.length; bi++) {
+              const pb = prev.content[bi] as MutableToolCallBlock;
+              if (pb.kind === 'toolCall' && pb.id === rb.id) {
+                pb.result = rb.result ?? pb.result;
+                break;
+              }
             }
           }
-        }
 
-        if (didMerge) {
+          // Append keepBlocks to the previous message
           if (keepBlocks.length > 0) {
-            result.push({ ...msg, content: keepBlocks });
+            prev.content = [...prev.content, ...keepBlocks];
           }
           continue;
         }
       }
 
+      // Otherwise, just add the message as-is
       result.push(msg);
     }
 

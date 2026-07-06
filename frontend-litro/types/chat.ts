@@ -19,6 +19,15 @@ export type MessageContentBlock =
   | { kind: "thinking"; content: string }
   | { kind: "toolCall"; name: string; args?: string; result?: string; id?: string };
 
+/** Mutable toolCall block — result can be updated during merge */
+export type MutableToolCallBlock = {
+  kind: "toolCall";
+  name: string;
+  args?: string;
+  result?: string;
+  id?: string;
+};
+
 /** A message with role, timestamp, and ordered content blocks */
 export interface ChatMessage {
   id: string;
@@ -26,6 +35,13 @@ export interface ChatMessage {
   timestamp: number;
   content: MessageContentBlock[];
 }
+
+/** Mutable version of ChatMessage for in-place merging */
+export type MutableChatMessage = {
+  [K in keyof ChatMessage]: K extends 'content'
+    ? MutableToolCallBlock[]
+    : ChatMessage[K];
+};
 
 /** Legacy DisplayMessage — kept for backward compatibility during migration */
 export interface DisplayMessage {
