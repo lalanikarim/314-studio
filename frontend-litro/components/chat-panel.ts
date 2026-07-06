@@ -665,6 +665,9 @@ export class ChatPanelElement extends LitElement {
    * Ensure there's an assistant message in displayMessages for the current
    * streaming turn. Creates one if it doesn't exist, updates it if it does.
    * Only creates a new message on the FIRST content event of a turn.
+   *
+   * Tool-result-only turns are skipped — they get merged into the previous
+   * assistant message instead of creating a new one.
    */
   private ensureStreamingMessage() {
     // If we've already created a message for this turn, just update it
@@ -673,11 +676,28 @@ export class ChatPanelElement extends LitElement {
       return;
     }
 
-    // Check if the last message is from a previous turn (completed)
-    const lastMsg = this.displayMessages[this.displayMessages.length - 1];
-    if (lastMsg && lastMsg.role === 'assistant') {
-      // Could be from previous turn or current turn
-      // We'll create a new message for this turn regardless
+    // Check if this turn has only tool results (no thinking, no text)
+    const hasOnlyToolResults =
+      !this.streamingThinkingAccum.trim() &&
+      !this.streamingTextAccum.trim() &&
+      this.streamingToolCalls.length > 0;
+
+    if (hasOnlyToolResults) {
+      // Merge tool result into the previous assistant message
+      const prevMsg = this.displayMessages[this.displayMessages.length - 1];
+      if (prevMsg && prevMsg.role === 'assistant') {
+        for (const tc of this.streamingToolCalls) {
+          for (let bi = 0; bi < prevMsg.content.length; bi++) {
+            const pb = prevMsg.content[bi] as MutableToolCallBlock;
+            if (pb.kind === 'toolCall' && pb.id === tc.id) {
+              pb.result = tc.result ?? pb.result;
+              break;
+            }
+          }
+        }
+        this.displayMessages = [...this.displayMessages]; // Trigger reactivity
+      }
+      return;
     }
 
     // Create a new assistant message for this turn
@@ -710,10 +730,12 @@ export class ChatPanelElement extends LitElement {
     this.streamingMessageCreated = true;
 
     console.debug(
-      '[ChatStream] ENSURE: created streaming message with',
+      '[ChatStream] ENSURE: created streaming message',
+      'id=' + newMsg.id,
       'textLen=' + this.streamingTextAccum.length,
       'thinkingLen=' + this.streamingThinkingAccum.length,
       'toolCalls=' + this.streamingToolCalls.length,
+      'totalMessages=' + this.displayMessages.length,
     );
   }
 
@@ -774,6 +796,12 @@ export class ChatPanelElement extends LitElement {
     this.streamingThinking = '';
     this.streamingToolCalls = [];
     this.streamingMessageCreated = false;
+
+    console.debug(
+      '[ChatStream] COMMIT: displayMessages now has',
+      this.displayMessages.length,
+      'messages'
+    );
   }
 
   /**
