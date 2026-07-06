@@ -355,6 +355,8 @@ export class ChatPanelElement extends LitElement {
   private chatController!: ChatStreamController;
   private modelSetFromState = false;
   private clickOutsideHandler: ((e: Event) => void) | null = null;
+  // Track previous streaming state to detect transitions
+  private prevIsStreaming = false;
 
   connectedCallback() {
     super.connectedCallback();
@@ -382,6 +384,8 @@ export class ChatPanelElement extends LitElement {
     if (changedProperties.has('sessionId')) {
       this.chatController.setSessionId(this.sessionId);
       this.resetDisplayState();
+      this.historyLoaded = false;
+      this.prevIsStreaming = false;
       
       // Load chat history after SSE connects
       if (this.sessionId) {
@@ -404,11 +408,6 @@ export class ChatPanelElement extends LitElement {
     }
   }
 
-  disconnectedCallback() {
-    super.disconnectedCallback();
-    // Controller auto-disconnects via hostDisconnected
-  }
-
   // ── State Management ────────────────────────────────────────
 
   private resetDisplayState() {
@@ -426,64 +425,85 @@ export class ChatPanelElement extends LitElement {
     const newMessages = this.chatController.messages.slice(this.processedCount);
     if (newMessages.length === 0) return;
 
+    // Capture streaming state BEFORE processing (like React's prevIsStreamingRef)
+    const wasStreaming = this.prevIsStreaming;
+    const streamingEnded = !this.chatController.isStreaming && wasStreaming;
+
+    // Debug: log event types to understand format
+    if (newMessages.length <= 3) {
+      console.log('[ChatPanel] Processing', newMessages.length, 'new messages');
+      newMessages.forEach((msg, i) => {
+        if (msg.kind === 'rpc_event') {
+          console.log(`[ChatPanel] Event ${i}:`, JSON.stringify(msg.event).substring(0, 200));
+        } else if (msg.kind === 'rpc_response') {
+          console.log(`[ChatPanel] Response ${i}:`, JSON.stringify(msg.response).substring(0, 200));
+        }
+      });
+    }
+
     let finalizerSeen = false;
 
-    // First pass: process rpc_response and rpc_event messages
+    // Process ALL messages (rpc_response and rpc_event)
     for (const msg of newMessages) {
       if (msg.kind === 'rpc_response') {
         this.processRpcResponse(msg as any);
-      } else if (msg.kind === 'rpc_event') {
-        const event = (msg as any).event;
-        const eventType = event.type || '';
+        continue;
+      }
+      
+      if (msg.kind !== 'rpc_event') continue;
 
-        // Track streaming state
-        if (
-          eventType === 'turn_start' ||
-          eventType === 'agent_start' ||
-          eventType === 'message_start'
-        ) {
-          this.streamingContent = '';
-          this.toolCalls = [];
-        }
+      const event = (msg as any).event;
+      const eventType = event.type || '';
 
-        // Extract text
-        const text = extractText(event);
-        if (text && text !== this.streamingContent) {
-          this.streamingContent = text;
-        }
+      // Track streaming state transitions
+      if (
+        eventType === 'turn_start' ||
+        eventType === 'agent_start' ||
+        eventType === 'message_start'
+      ) {
+        this.prevIsStreaming = true;
+        this.streamingContent = '';
+        this.toolCalls = [];
+      }
 
-        // Extract tool call with update logic
-        const toolCall = extractToolCall(event);
-        if (toolCall) {
-          const existingIdx = this.toolCalls.findIndex(
-            (tc) => tc.name === toolCall.name
-          );
-          
-          if (existingIdx >= 0) {
-            // Update existing tool call
-            const updated = [...this.toolCalls];
-            if (toolCall.args) {
-              updated[existingIdx] = { ...updated[existingIdx], args: toolCall.args };
-            }
-            if (toolCall.result) {
-              updated[existingIdx] = { ...updated[existingIdx], result: toolCall.result };
-            }
-            this.toolCalls = updated;
-          } else {
-            // Add new tool call
-            this.toolCalls = [...this.toolCalls, toolCall];
+      // Extract text — ACCUMULATE (append) not replace
+      const text = extractText(event);
+      if (text) {
+        this.streamingContent += text;
+      }
+
+      // Extract tool call with update logic
+      const toolCall = extractToolCall(event);
+      if (toolCall) {
+        const existingIdx = this.toolCalls.findIndex(
+          (tc) => tc.name === toolCall.name
+        );
+        
+        if (existingIdx >= 0) {
+          // Update existing tool call
+          const updated = [...this.toolCalls];
+          if (toolCall.args) {
+            updated[existingIdx] = { ...updated[existingIdx], args: toolCall.args };
           }
+          if (toolCall.result) {
+            updated[existingIdx] = { ...updated[existingIdx], result: toolCall.result };
+          }
+          this.toolCalls = updated;
+        } else {
+          // Add new tool call
+          this.toolCalls = [...this.toolCalls, toolCall];
         }
+      }
 
-        // Check for finalizer
-        if (isStreamFinalizer(event)) {
-          finalizerSeen = true;
-        }
+      // Check for finalizer
+      if (isStreamFinalizer(event)) {
+        finalizerSeen = true;
+        this.prevIsStreaming = false;
       }
     }
 
-    // Second pass: finalize if streaming ended and finalizer seen
-    if (!this.chatController.isStreaming && finalizerSeen) {
+    // Finalize ONLY when streaming JUST ended AND a finalizer was seen
+    if (streamingEnded && finalizerSeen) {
       this.finalizeStreamingMessage();
     }
 
@@ -497,8 +517,27 @@ export class ChatPanelElement extends LitElement {
     const command = response.command || response.commandName;
 
     // Handle get_messages response (chat history)
-    if (command === 'get_messages') {
-      const messages = (response.data as any)?.messages || [];
+    // React checks: response.type === "response" && response.command === "get_messages"
+    if (
+      (response.type === 'response' || response.type === 'get_messages') &&
+      command === 'get_messages'
+    ) {
+      const messages = (response.data as any)?.messages || (response as any).messages || [];
+      const history = messages
+        .map(agentMessageToDisplay)
+        .filter((m): m is DisplayMessage => m !== null);
+      
+      if (history.length > 0) {
+        this.displayMessages = [...this.displayMessages, ...history];
+        this.scrollToBottom();
+      }
+      this.historyLoaded = true;
+      return;
+    }
+    
+    // Also try without type check (for some backend response formats)
+    if (command === 'get_messages' && !response.type) {
+      const messages = (response.data as any)?.messages || (response as any).messages || [];
       const history = messages
         .map(agentMessageToDisplay)
         .filter((m): m is DisplayMessage => m !== null);

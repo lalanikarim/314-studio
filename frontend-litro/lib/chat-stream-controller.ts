@@ -177,6 +177,12 @@ export class ChatStreamController implements ReactiveController {
     const eventPayload = event.event ?? event;
     const eventType = (eventPayload as Record<string, unknown>)?.type || "";
 
+    // Debug: log event types
+    console.log('[SSE] rpc_event type:', eventType);
+    if (eventType === 'agent_message') {
+      console.log('[SSE] agent_message text:', (eventPayload as any).text?.substring(0, 100));
+    }
+
     // Track streaming state based on event type
     if (
       eventType === "turn_start" ||
@@ -199,6 +205,8 @@ export class ChatStreamController implements ReactiveController {
 
   private handleRpcResponse(data: Record<string, unknown>) {
     if (this.disposed) return;
+    const command = data.command || data.commandName || data.type || 'unknown';
+    console.log('[SSE] rpc_response command:', command);
     this.pushMessage({
       kind: "rpc_response",
       response: data as Record<string, unknown>,
