@@ -96,7 +96,7 @@ export class ChatToolCallElement extends LitElement {
   render() {
     const hasContent = this.args || this.result;
     return html`
-      <details ?open=${this.isStreaming || hasContent}>
+      <details ?open=${this.isStreaming}>
         <summary>
           <span class="tool-call__name">${this.name}</span>
           ${this.id ? html`<span class="tool-call__id">${this.id}</span>` : ''}
