@@ -1,8 +1,11 @@
 /**
  * Message processing helpers for the ChatPanel.
  *
- * Pure functions with zero DOM/React dependencies — safely testable in
- * isolation. Ported 1:1 from the React ChatPanel component.
+ * Pure functions with zero DOM dependencies — safely testable in isolation.
+ *
+ * Each function extracts ONE specific piece of data from an RPC event,
+ * returning either the extracted value or a sentinel (null / "" / false).
+ * The component assembles these into display state.
  */
 
 import type {
@@ -12,32 +15,21 @@ import type {
   ToolCallEntry,
 } from "../types/chat.js";
 
+// ============================================================================
+// History: AgentMessage → ChatMessage
+// ============================================================================
+
 /**
- * Convert a Pi RPC AgentMessage into a ChatMessage with content blocks.
- * Each content block (text, thinking, toolCall) becomes a separate entry
- * in the content array, preserving the original order from the RPC response.
+ * Convert a Pi RPC AgentMessage into ChatMessage(s) for display.
+ * Used for hydrating history from get_messages / agent_end messages.
  */
-export function agentMessageToDisplay(
-  msg: AgentMessage,
-): ChatMessage[] {
+export function agentMessageToDisplay(msg: AgentMessage): ChatMessage[] {
   const role = msg.role as string;
   const timestamp =
     typeof msg.timestamp === "number" ? msg.timestamp : Date.now();
 
   if (role === "user") {
-    let content: string;
-    if (typeof msg.content === "string") {
-      content = msg.content;
-    } else if (Array.isArray(msg.content)) {
-      const blocks = msg.content as Array<{ type?: string; text?: string }>;
-      content =
-        blocks
-          .filter((b) => b.type === "text")
-          .map((b) => b.text || "")
-          .join("\n") || "[image attachment]";
-    } else {
-      content = "";
-    }
+    const content = extractUserContent(msg);
     return [
       {
         id: `history-user-${crypto.randomUUID()}`,
@@ -49,244 +41,118 @@ export function agentMessageToDisplay(
   }
 
   if (role === "assistant") {
-    const blocks = msg.content as
-      | Array<{
-          type?: string;
-          text?: string;
-          thinking?: string;
-          name?: string;
-          arguments?: unknown;
-          id?: string;
-        }>
-      | undefined;
-    if (!blocks) return [];
-
-    const contentBlocks: MessageContentBlock[] = [];
-
-    for (const block of blocks) {
-      if (typeof block !== "object" || block === null) continue;
-
-      if (block.type === "text" && block.text) {
-        contentBlocks.push({ kind: "text", content: block.text });
-      } else if (block.type === "thinking" && block.thinking) {
-        contentBlocks.push({ kind: "thinking", content: block.thinking });
-      } else if (block.type === "toolCall") {
-        const entry: ToolCallEntry = {
-          id: block.id,
-          name: block.name || "unknown",
-        };
-        if (block.arguments) {
-          try {
-            entry.args =
-              typeof block.arguments === "string"
-                ? block.arguments
-                : JSON.stringify(block.arguments);
-          } catch {
-            entry.args = String(block.arguments);
-          }
-        }
-        contentBlocks.push({ kind: "toolCall", ...entry });
-      }
-    }
-
-    if (contentBlocks.length === 0) return [];
-
-    return [
-      {
-        id: `history-assistant-${crypto.randomUUID()}`,
-        role: "assistant",
-        timestamp,
-        content: contentBlocks,
-      },
-    ];
+    return buildAssistantBlocks(msg, timestamp);
   }
 
   if (role === "toolResult" && msg.content) {
-    let content: string;
-    if (Array.isArray(msg.content)) {
-      const blocks = msg.content as Array<{ type?: string; text?: string }>;
-      content = blocks
-        .filter((b) => b.type === "text")
-        .map((b) => b.text || "")
-        .join("\n");
-    } else if (typeof msg.content === "string") {
-      content = msg.content;
-    } else {
-      content = "";
-    }
-    if (!content) return [];
-
-    // Attach to the matching toolCall via toolCallId — this is the canonical
-    // matching key from Pi's get_messages response.
-    const toolCallId = (msg.toolCallId as string) || undefined;
-    const toolName = (msg.toolName as string) || "tool";
-    const isError = msg.isError;
-    const resultText =
-      `${isError ? "(error) " : ""}\`${content.substring(0, 200)}${content.length > 200 ? "..." : ""}\``;
-
-    return [
-      {
-        id: `history-tool-${crypto.randomUUID()}`,
-        role: "assistant",
-        timestamp,
-        content: [
-          {
-            kind: "toolCall",
-            id: toolCallId,
-            name: toolName,
-            result: resultText,
-          },
-        ],
-      },
-    ];
+    return buildToolResultBlock(msg);
   }
 
   if (role === "bashExecution" && msg.command) {
-    const output = (msg.output as string) || "";
-    return [
-      {
-        id: `history-bash-${crypto.randomUUID()}`,
-        role: "assistant",
-        timestamp,
-        content: [
-          {
-            kind: "text",
-            content: `\`bash\` ${msg.command as string} → exit code ${msg.exitCode ?? "?"}\n\n${output.substring(0, 300)}${output.length > 300 ? "..." : ""}`,
-          },
-        ],
-      },
-    ];
+    return buildBashBlock(msg);
   }
 
   return [];
 }
 
+// ============================================================================
+// Streaming: Delta extraction from assistantMessageEvent
+// ============================================================================
+
 /**
- * Extract a *streaming text chunk* from a Pi RPC event.
+ * Extract an incremental text chunk from a streaming event.
  *
- * Per rpc.md, `message_update` events stream content via deltas:
- *   - `text_delta`     → `assistantMessageEvent.delta` is a text chunk
- *   - `thinking_delta` → `assistantMessageEvent.delta` is a thinking chunk
- *   - `text_start` / `text_end` / `thinking_start` / `thinking_end` carry the
- *     *accumulated* `partial` state, NOT a chunk to append.
- *
- * The caller *appends* whatever this returns to `streamingContent`. Therefore
- * we MUST only return the incremental `delta` — returning the accumulated
- * `partial.content[].text` on `text_end` would re-append the full message and
- * double the displayed text.
+ * Per Pi RPC docs, only `text_delta` carries an incremental `delta` string.
+ * `text_start`, `text_end`, `start`, `done` carry accumulated state — NOT
+ * chunks to append. Returning their content would double the displayed text.
  */
 export function extractText(event: Record<string, unknown>): string {
-  // Direct fields (fallback for non-message_update events)
-  if (typeof event.content === "string") return event.content;
-  if (typeof event.text === "string") return event.text;
-  if (typeof event.message === "string") return event.message;
-
-  const ami = event.assistantMessageEvent as
-    | { type?: string; delta?: unknown }
-    | undefined;
+  const ami = getAssistantMessageEvent(event);
   if (!ami) return "";
-
-  // Only true streaming chunks contribute. Everything else (start/end/done)
-  // carries accumulated state and must NOT be appended.
-  if (ami.type === "text_delta") {
-    const delta = ami.delta;
-    if (typeof delta === "string" && delta) return delta;
-  }
-
-  return "";
+  if (ami.type !== "text_delta") return "";
+  const delta = ami.delta;
+  return typeof delta === "string" && delta ? delta : "";
 }
 
 /**
- * Extract a *streaming thinking chunk* from a Pi RPC event.
- *
- * Mirrors `extractText` but only matches `thinking_delta` (not `text_delta`).
- * Thinking deltas are accumulated separately so the thinking block can be
- * rendered in a collapsible container.
+ * Extract an incremental thinking chunk from a streaming event.
+ * Same rules as extractText but for thinking blocks.
  */
 export function extractThinking(event: Record<string, unknown>): string {
-  const ami = event.assistantMessageEvent as
-    | { type?: string; delta?: unknown }
-    | undefined;
+  const ami = getAssistantMessageEvent(event);
   if (!ami) return "";
-
-  if (ami.type === "thinking_delta") {
-    const delta = ami.delta;
-    if (typeof delta === "string" && delta) return delta;
-  }
-
-  return "";
+  if (ami.type !== "thinking_delta") return "";
+  const delta = ami.delta;
+  return typeof delta === "string" && delta ? delta : "";
 }
 
 /**
- * Extract a tool call entry from a Pi RPC event.
- * Returns null if the event doesn't represent a tool call.
+ * Extract an incremental tool call args chunk.
+ *
+ * Only `toolcall_delta` carries incremental args.
+ * `toolcall_end` carries the FULL toolCall object — use extractToolCallEnd()
+ * for that instead to avoid duplication.
  */
-export function extractToolCall(
+export function extractToolCallDelta(
   event: Record<string, unknown>,
 ): ToolCallEntry | null {
-  // Direct fields (fallback)
-  if (typeof event.tool_name === "string") {
-    return { name: event.tool_name, args: undefined, result: undefined };
-  }
-  if (typeof event.command === "string") {
-    return { name: event.command, args: undefined, result: undefined };
-  }
-  if (typeof event.function === "string") {
-    return { name: event.function, args: undefined, result: undefined };
+  const ami = getAssistantMessageEvent(event);
+  if (!ami) return null;
+  if (ami.type !== "toolcall_delta") return null;
+  return buildToolCallEntryFromAmi(ami);
+}
+
+/**
+ * Extract the FULL tool call object from a `toolcall_end` event.
+ *
+ * Per Pi RPC docs, `toolcall_end` carries the complete `toolCall` object
+ * with name, arguments, and id — NOT a delta. Use this to set the complete
+ * tool call entry, not to accumulate.
+ */
+export function extractToolCallEnd(
+  event: Record<string, unknown>,
+): ToolCallEntry | null {
+  const ami = getAssistantMessageEvent(event);
+  if (!ami) return null;
+  if (ami.type !== "toolcall_end") return null;
+  if (!ami.toolCall) return null;
+  return buildToolCallEntryFromToolCall(ami.toolCall, ami.id);
+}
+
+/**
+ * Extract a tool call result from a streaming event.
+ *
+ * Handles two sources:
+ * 1. `assistantMessageEvent.type === "toolcall_result"` with `ami.result.output`
+ * 2. `tool_execution_end` events with `result.content[]`
+ */
+export function extractToolCallResult(
+  event: Record<string, unknown>,
+): { id?: string; result: string } | null {
+  // Source 1: assistantMessageEvent toolcall_result
+  const ami = getAssistantMessageEvent(event);
+  if (ami && ami.type === "toolcall_result" && ami.result?.output !== undefined) {
+    const toolCallId = ami.toolCall?.id || ami.id;
+    const output =
+      typeof ami.result.output === "string"
+        ? ami.result.output
+        : JSON.stringify(ami.result.output);
+    return { id: toolCallId, result: output };
   }
 
-  const ami = event.assistantMessageEvent as
-    | {
-        type?: string;
-        id?: string;
-        toolCall?: { id?: string; name?: unknown; arguments?: unknown };
-        result?: { output?: unknown };
-      }
-    | undefined;
-  if (ami) {
-    const deltaType = ami.type;
-
-    // toolcall_delta: toolCall.name + toolCall.arguments + toolCall.id
-    if (deltaType === "toolcall_delta" || deltaType === "toolcall_end") {
-      if (ami.toolCall) {
-        const toolCallId = ami.toolCall.id || ami.id;
-        const entry: ToolCallEntry = {
-          id: toolCallId,
-          name: "",
-          args: undefined,
-          result: undefined,
-        };
-        if (typeof ami.toolCall.name === "string" && ami.toolCall.name) {
-          entry.name = ami.toolCall.name;
-        }
-        if (ami.toolCall.arguments) {
-          try {
-            entry.args =
-              typeof ami.toolCall.arguments === "string"
-                ? ami.toolCall.arguments
-                : JSON.stringify(ami.toolCall.arguments);
-          } catch {
-            entry.args = String(ami.toolCall.arguments);
-          }
-        }
-        return entry;
-      }
-    }
-
-    // toolcall_result: capture result output + toolCallId for matching
-    if (
-      deltaType === "toolcall_result" &&
-      ami.result?.output !== undefined
-    ) {
-      const toolCallId = ami.toolCall?.id || ami.id;
+  // Source 2: tool_execution_end
+  if (event.type === "tool_execution_end") {
+    const result = event.result as
+      | { content?: Array<{ type?: string; text?: string }>; isError?: boolean }
+      | undefined;
+    if (result?.content) {
+      const text = result.content
+        .filter((c) => c.type === "text")
+        .map((c) => c.text || "")
+        .join("\n");
       return {
-        id: toolCallId,
-        name: (event._toolName as string) || "unknown",
-        args: undefined,
-        result:
-          typeof ami.result.output === "string"
-            ? ami.result.output
-            : JSON.stringify(ami.result.output),
+        id: (event.toolCallId as string) || undefined,
+        result: text,
       };
     }
   }
@@ -295,14 +161,251 @@ export function extractToolCall(
 }
 
 /**
- * Check if an event is a stream finalizer (end_turn, agent_end, turn_end, etc.).
- * These signal the end of a streaming turn.
+ * Extract tool execution progress update.
+ *
+ * Per Pi RPC docs: `tool_execution_update` carries ACCUMULATED output
+ * (not deltas), so clients should replace their display on each update.
  */
-export function isStreamFinalizer(event: Record<string, unknown>): boolean {
-  if (event.type === "end_turn" || event.type === "end") return true;
-  if (event.type === "agent_end") return true;
-  if (event.type === "turn_end") return true;
-  if (event.status === "done" || event.status === "finished") return true;
-  if (event.type === "response" && event.id) return true;
-  return false;
+export function extractToolExecutionUpdate(
+  event: Record<string, unknown>,
+): { id: string; partialText: string } | null {
+  if (event.type !== "tool_execution_update") return null;
+
+  const partial = event.partialResult as
+    | { content?: Array<{ type?: string; text?: string }> }
+    | undefined;
+  if (!partial?.content) return null;
+
+  const text = partial.content
+    .filter((c) => c.type === "text")
+    .map((c) => c.text || "")
+    .join("\n");
+
+  return {
+    id: (event.toolCallId as string) || "",
+    partialText: text,
+  };
+}
+
+// ============================================================================
+// Event classification predicates
+// ============================================================================
+
+/** Whether this event is `message_end` (authoritative message checkpoint) */
+export function isMessageEnd(event: Record<string, unknown>): boolean {
+  return event.type === "message_end";
+}
+
+/** Whether this event is `turn_end` (turn completed) */
+export function isTurnEnd(event: Record<string, unknown>): boolean {
+  return event.type === "turn_end";
+}
+
+/** Whether this event is `agent_end` (agent completed all turns) */
+export function isAgentEnd(event: Record<string, unknown>): boolean {
+  return event.type === "agent_end";
+}
+
+/**
+ * Whether the assistantMessageEvent signals message completion.
+ * `done` = generation finished normally (stop/length/toolUse).
+ * `error` = generation failed (aborted/error).
+ */
+export function isMessageTerminal(event: Record<string, unknown>): boolean {
+  const ami = getAssistantMessageEvent(event);
+  if (!ami) return false;
+  return ami.type === "done" || ami.type === "error";
+}
+
+// ============================================================================
+// Internal helpers
+// ============================================================================
+
+/**
+ * Get the assistantMessageEvent payload from a streaming event.
+ * Returns null if the event is not a streaming update with ami data.
+ */
+function getAssistantMessageEvent(
+  event: Record<string, unknown>,
+): {
+  type: string;
+  delta?: unknown;
+  toolCall?: {
+    id?: string;
+    name?: unknown;
+    arguments?: unknown;
+  };
+  result?: { output?: unknown };
+  id?: string;
+} | null {
+  const ami = event.assistantMessageEvent;
+  if (!ami || typeof ami !== "object") return null;
+  return ami as {
+    type: string;
+    delta?: unknown;
+    toolCall?: {
+      id?: string;
+      name?: unknown;
+      arguments?: unknown;
+    };
+    result?: { output?: unknown };
+    id?: string;
+  };
+}
+
+function buildToolCallEntryFromAmi(
+  ami: ReturnType<typeof getAssistantMessageEvent>,
+): ToolCallEntry | null {
+  if (!ami || !ami.toolCall) return null;
+  return buildToolCallEntryFromToolCall(ami.toolCall, ami.id);
+}
+
+function buildToolCallEntryFromToolCall(
+  toolCall: { id?: string; name?: unknown; arguments?: unknown },
+  amiId?: string,
+): ToolCallEntry {
+  const entry: ToolCallEntry = {
+    id: toolCall.id || amiId || undefined,
+    name: "",
+  };
+  if (typeof toolCall.name === "string" && toolCall.name) {
+    entry.name = toolCall.name;
+  }
+  if (toolCall.arguments) {
+    try {
+      entry.args =
+        typeof toolCall.arguments === "string"
+          ? toolCall.arguments
+          : JSON.stringify(toolCall.arguments);
+    } catch {
+      entry.args = String(toolCall.arguments);
+    }
+  }
+  return entry;
+}
+
+// ============================================================================
+// History building helpers
+// ============================================================================
+
+function extractUserContent(msg: AgentMessage): string {
+  if (typeof msg.content === "string") return msg.content;
+  if (Array.isArray(msg.content)) {
+    const blocks = msg.content as Array<{ type?: string; text?: string }>;
+    return (
+      blocks.filter((b) => b.type === "text").map((b) => b.text || "").join("\n") ||
+      "[image attachment]"
+    );
+  }
+  return "";
+}
+
+function buildAssistantBlocks(
+  msg: AgentMessage,
+  timestamp: number,
+): ChatMessage[] {
+  const blocks = msg.content as
+    | Array<{
+        type?: string;
+        text?: string;
+        thinking?: string;
+        name?: string;
+        arguments?: unknown;
+        id?: string;
+      }>
+    | undefined;
+  if (!blocks) return [];
+
+  const contentBlocks: MessageContentBlock[] = [];
+
+  for (const block of blocks) {
+    if (typeof block !== "object" || block === null) continue;
+
+    if (block.type === "text" && block.text) {
+      contentBlocks.push({ kind: "text", content: block.text });
+    } else if (block.type === "thinking" && block.thinking) {
+      contentBlocks.push({ kind: "thinking", content: block.thinking });
+    } else if (block.type === "toolCall") {
+      contentBlocks.push({
+        kind: "toolCall",
+        id: block.id,
+        name: block.name || "unknown",
+        args: block.arguments
+          ? safeStringify(block.arguments)
+          : undefined,
+      });
+    }
+  }
+
+  if (contentBlocks.length === 0) return [];
+
+  return [
+    {
+      id: `history-assistant-${crypto.randomUUID()}`,
+      role: "assistant",
+      timestamp,
+      content: contentBlocks,
+    },
+  ];
+}
+
+function buildToolResultBlock(msg: AgentMessage): ChatMessage[] {
+  const content =
+    Array.isArray(msg.content)
+      ? (msg.content as Array<{ type?: string; text?: string }>)
+          .filter((b) => b.type === "text")
+          .map((b) => b.text || "")
+          .join("\n")
+      : typeof msg.content === "string"
+        ? msg.content
+        : "";
+
+  if (!content) return [];
+
+  const toolCallId = (msg.toolCallId as string) || undefined;
+  const toolName = (msg.toolName as string) || "tool";
+  const isError = msg.isError;
+  const resultText =
+    `${isError ? "(error) " : ""}\`${content.substring(0, 200)}${content.length > 200 ? "..." : ""}\``;
+
+  return [
+    {
+      id: `history-tool-${crypto.randomUUID()}`,
+      role: "assistant",
+      timestamp: typeof msg.timestamp === "number" ? msg.timestamp : Date.now(),
+      content: [
+        {
+          kind: "toolCall",
+          id: toolCallId,
+          name: toolName,
+          result: resultText,
+        },
+      ],
+    },
+  ];
+}
+
+function buildBashBlock(msg: AgentMessage): ChatMessage[] {
+  const output = (msg.output as string) || "";
+  return [
+    {
+      id: `history-bash-${crypto.randomUUID()}`,
+      role: "assistant",
+      timestamp: typeof msg.timestamp === "number" ? msg.timestamp : Date.now(),
+      content: [
+        {
+          kind: "text",
+          content: `\`bash\` ${msg.command as string} → exit code ${msg.exitCode ?? "?"}\n\n${output.substring(0, 300)}${output.length > 300 ? "..." : ""}`,
+        },
+      ],
+    },
+  ];
+}
+
+function safeStringify(value: unknown): string {
+  try {
+    return typeof value === "string" ? value : JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
 }

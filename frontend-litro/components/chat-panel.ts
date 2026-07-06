@@ -1,8 +1,20 @@
 import { html, css, LitElement } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { ChatStreamController } from '../lib/chat-stream-controller.js';
-import { agentMessageToDisplay, extractText, extractThinking, extractToolCall, isStreamFinalizer } from '../lib/chat-processor.js';
-import { deriveModelName, createMinimalModel, extractProvider } from '../lib/model.js';
+import {
+  agentMessageToDisplay,
+  extractText,
+  extractThinking,
+  extractToolCallDelta,
+  extractToolCallEnd,
+  extractToolCallResult,
+  extractToolExecutionUpdate,
+  isMessageEnd,
+  isMessageTerminal,
+  isTurnEnd,
+  isAgentEnd,
+} from '../lib/chat-processor.js';
+import { createMinimalModel, extractProvider } from '../lib/model.js';
 import { closeSession, deleteSession, switchModel, sendCommand } from '../services/api.js';
 import { designTokens } from '../styles/design-tokens.js';
 import { buttonStyles } from '../styles/shared.js';
@@ -19,17 +31,23 @@ type MutableToolCallBlock = MessageContentBlock & { id?: string; result?: string
 /**
  * ChatPanel — main container for the chat interface.
  *
- * Wires together:
- * - ChatStreamController for SSE transport
- * - Message processing helpers for converting RPC events to display messages
- * - Sub-components: chat-message, chat-input, chat-tool-call
+ * Architecture: Queue/Drain
  *
- * Handles:
- * - SSE streaming state management
- * - Message processing and display
- * - User input handling (send/abort)
- * - Model switching
- * - Session controls (compact/close/delete)
+ *   SSE → Controller.queue[] → Component.drainQueue() → display
+ *                                    │
+ *                              accumulates deltas during streaming
+ *                              on message_end: commits to displayMessages
+ *                              on turn_end/agent_end: commits remaining
+ *                              on tool_execution_update: updates tool results
+ *
+ * The controller owns transport (SSE connection, event parsing, queueing).
+ * The component owns presentation (draining queue, building display messages).
+ *
+ * Key design principles:
+ * - Every event in the queue is processed — nothing is dropped
+ * - Finalization is driven by CONTENT-BEARING events (message_end, turn_end, agent_end)
+ *   NOT by state transitions (prevIsStreaming)
+ * - Streaming accumulators are reset only after content is committed
  */
 @customElement('chat-panel')
 export class ChatPanelElement extends LitElement {
@@ -349,7 +367,6 @@ export class ChatPanelElement extends LitElement {
   currentModel: Model | null = null;
   projectPath = '';
 
-  @state() processedCount = 0;
   @state() displayMessages: ChatMessage[] = [];
   @state() streamingContent = '';
   @state() streamingThinking = '';
@@ -363,13 +380,16 @@ export class ChatPanelElement extends LitElement {
   private chatController!: ChatStreamController;
   private modelSetFromState = false;
   private clickOutsideHandler: ((e: Event) => void) | null = null;
+
+  // Streaming accumulators — reset after commit to displayMessages
   private streamingTextAccum = '';
   private streamingThinkingAccum = '';
+  private streamingToolCalls: ToolCallEntry[] = [];
+  private queueDrainIndex = 0;
 
   connectedCallback() {
     super.connectedCallback();
     this.chatController = new ChatStreamController(this, this.sessionId);
-    // Add click-outside listener for dropdown
     this.clickOutsideHandler = (e: Event) => {
       if (this.modelDropdownOpen && !this.shadowRoot?.contains(e.target as Node)) {
         this.modelDropdownOpen = false;
@@ -380,12 +400,10 @@ export class ChatPanelElement extends LitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    // Remove click-outside listener
     if (this.clickOutsideHandler) {
       document.removeEventListener('click', this.clickOutsideHandler);
       this.clickOutsideHandler = null;
     }
-    // Controller auto-disconnects via hostDisconnected
   }
 
   updated(changedProperties: Map<string, unknown>) {
@@ -394,161 +412,38 @@ export class ChatPanelElement extends LitElement {
       this.resetDisplayState();
       this.historyLoaded = false;
 
-      // Load chat history after SSE connects
       if (this.sessionId) {
-        setTimeout(() => {
-          this.loadChatHistory();
-        }, 500);
+        setTimeout(() => this.loadChatHistory(), 500);
       }
     }
-    this.processNewMessages();
+
+    // Drain ALL new messages from the queue — queue/drain architecture
+    this.drainQueue();
   }
 
-  private async loadChatHistory() {
-    if (this.historyLoaded || !this.sessionId) return;
-
-    try {
-      // The backend's REST command endpoint returns the RPC response inline
-      // for commands that include a generated request id (like get_messages).
-      // Those responses are routed to the pending_request Future and are NOT
-      // re-broadcast on the SSE stream, so we must hydrate from the HTTP body.
-      const result = await sendCommand(this.sessionId, { command: 'get_messages' });
-      const rpcResponse = (result as any)?.response ?? result;
-      this.applyHistoryResponse(rpcResponse);
-      this.historyLoaded = true;
-    } catch (err) {
-      console.error('Failed to load chat history:', err);
-    }
-  }
-
-  private applyHistoryResponse(response: Record<string, unknown>) {
-    const messages =
-      ((response?.data as any)?.messages as any[]) ||
-      ((response as any)?.messages as any[]) ||
-      [];
-    const raw = messages.flatMap((m: any) => agentMessageToDisplay(m));
-
-    // Post-process: merge toolResult toolCall blocks into their matching
-    // assistant messages by toolCallId. This ensures that a toolResult is
-    // displayed as part of the assistant's tool call (with result filled in)
-    // rather than as a separate message.
-    const merged = this.mergeHistoryToolResults(raw);
-
-    if (merged.length > 0) {
-      this.displayMessages = [...this.displayMessages, ...merged];
-      this.scrollToBottom();
-    }
-  }
+  // ========================================================================
+  // Queue/Drain
+  // ========================================================================
 
   /**
-   * Merge toolResult messages into the previous assistant message's matching
-   * toolCall blocks. A toolResult is identified by a toolCall block that has
-   * `result` set (toolResult content blocks always carry the result text,
-   * while assistant toolCall blocks carry `args`).
+   * Drain new messages from the controller's queue.
    *
-   * Matching key: `toolResult.content[toolCall].id === assistant.content[toolCall].id`
-   *
-   * Pure toolResult messages (only toolCall blocks with `result`) are consumed.
-   * Mixed messages keep their non-toolResult blocks as a standalone message.
+   * Processes every event in order, accumulating streaming deltas and
+   * committing them to displayMessages when content-bearing events arrive
+   * (message_end, turn_end, agent_end).
    */
-  private mergeHistoryToolResults(
-    messages: ChatMessage[],
-  ): ChatMessage[] {
-    const result: ChatMessage[] = [];
+  private drainQueue() {
+    const messages = this.chatController.messages;
+    if (this.queueDrainIndex >= messages.length) return;
 
-    for (const msg of messages) {
-      // Only process assistant messages for merging
-      if (msg.role !== 'assistant' || msg.content.length === 0) {
-        result.push(msg);
-        continue;
-      }
+    let messageEnded = false;
+    let turnEnded = false;
+    let agentEnded = false;
+    let messageTerminal = false;
 
-      // Split content blocks: toolCall blocks WITH result (from toolResult)
-      // vs everything else (text, thinking, toolCall-without-result)
-      const toolResultBlocks: MessageContentBlock[] = [];
-      const keepBlocks: MessageContentBlock[] = [];
-      for (const block of msg.content) {
-        if (
-          block.kind === 'toolCall' &&
-          block.id &&
-          block.result !== undefined &&
-          block.result !== ''
-        ) {
-          toolResultBlocks.push(block);
-        } else {
-          keepBlocks.push(block);
-        }
-      }
+    for (let i = this.queueDrainIndex; i < messages.length; i++) {
+      const msg = messages[i];
 
-      // No toolResult blocks to merge — keep message as-is
-      if (toolResultBlocks.length === 0) {
-        result.push(msg);
-        continue;
-      }
-
-      // Try to merge toolResult blocks into the previous assistant message
-      if (result.length > 0 && result[result.length - 1].role === 'assistant') {
-        const prev = result[result.length - 1];
-        let didMerge = false;
-
-        for (const rb of toolResultBlocks as MutableToolCallBlock[]) {
-          for (let bi = 0; bi < prev.content.length; bi++) {
-            const pb = prev.content[bi] as MutableToolCallBlock;
-            if (pb.kind === 'toolCall' && pb.id === rb.id) {
-              pb.result = rb.result ?? pb.result;
-              didMerge = true;
-              break;
-            }
-          }
-        }
-
-        if (didMerge) {
-          // Drop pure toolResult messages; keep mixed ones minus toolResult blocks
-          if (keepBlocks.length > 0) {
-            result.push({ ...msg, content: keepBlocks });
-          }
-          continue;
-        }
-      }
-
-      // No previous assistant to merge into — keep as standalone
-      result.push(msg);
-    }
-
-    return result;
-  }
-
-  // ── State Management ────────────────────────────────────────
-
-  private resetDisplayState() {
-    this.processedCount = 0;
-    this.displayMessages = [];
-    this.streamingContent = '';
-    this.streamingThinking = '';
-    this.streamingTextAccum = '';
-    this.streamingThinkingAccum = '';
-    this.toolCalls = [];
-    this.modelSetFromState = false;
-    this.errorMessage = null;
-    // Controller owns prevIsStreaming; it resets it in setSessionId().
-  }
-
-  // ── Message Processing ──────────────────────────────────────
-
-  private processNewMessages() {
-    const newMessages = this.chatController.messages.slice(this.processedCount);
-    if (newMessages.length === 0) return;
-
-    // The controller updates `prevIsStreaming` synchronously in its event
-    // handler (mirroring React's prevIsStreamingRef). Read it here to detect
-    // the streaming→idle transition reliably, even across batched updates.
-    const wasStreaming = this.chatController.prevIsStreaming;
-    const streamingEnded =
-      !this.chatController.isStreaming && wasStreaming;
-
-    let finalizerSeen = false;
-
-    for (const msg of newMessages) {
       if (msg.kind === 'rpc_response') {
         this.processRpcResponse(msg as InboundMessage);
         continue;
@@ -558,102 +453,107 @@ export class ChatPanelElement extends LitElement {
 
       const event = (msg as any).event as Record<string, unknown>;
 
-      // ── Text content → accumulate (only real deltas; see extractText) ──
-      // We intentionally do NOT reset on turn_start: a single agent run
-      // spans multiple turns (text → tool call → more text) and all text
-      // must accumulate until agent_end finalizes the whole run.
+      // ── Streaming content accumulation ────────────────────────────
+      // Text deltas accumulate into streamingTextAccum
       const text = extractText(event);
       if (text) {
         this.streamingTextAccum += text;
         this.streamingContent = this.streamingTextAccum;
       }
 
-      // ── Thinking content → accumulate separately ──
+      // Thinking deltas accumulate into streamingThinkingAccum
       const thinking = extractThinking(event);
       if (thinking) {
         this.streamingThinkingAccum += thinking;
         this.streamingThinking = this.streamingThinkingAccum;
       }
 
-      // ── Tool call → track / update by id (not name) ──────────────────
-      const toolCall = extractToolCall(event);
-      if (toolCall) {
-        // Prefer id-based matching; fall back to name if id is not available
-        const existingIdx = toolCall.id
-          ? this.toolCalls.findIndex((tc) => tc.id === toolCall.id)
-          : this.toolCalls.findIndex((tc) => tc.name === toolCall.name);
+      // Tool call deltas (incremental args)
+      const toolCallDelta = extractToolCallDelta(event);
+      if (toolCallDelta) {
+        this.upsertToolCall(toolCallDelta);
+      }
 
-        if (existingIdx >= 0) {
-          const updated = [...this.toolCalls];
-          if (toolCall.args) {
-            updated[existingIdx] = { ...updated[existingIdx], args: toolCall.args };
-          }
-          if (toolCall.result) {
-            updated[existingIdx] = { ...updated[existingIdx], result: toolCall.result };
-          }
-          // Carry forward id if the new entry has one and the existing doesn't
-          if (toolCall.id && !updated[existingIdx].id) {
-            updated[existingIdx] = { ...updated[existingIdx], id: toolCall.id };
-          }
-          this.toolCalls = updated;
+      // Tool call end (FULL toolCall object — sets complete entry)
+      const toolCallEnd = extractToolCallEnd(event);
+      if (toolCallEnd) {
+        // Replace or insert: toolcall_end carries the complete object
+        const idx = this.streamingToolCalls.findIndex((tc) => tc.id === toolCallEnd.id);
+        if (idx >= 0) {
+          const updated = [...this.streamingToolCalls];
+          updated[idx] = toolCallEnd;
+          this.streamingToolCalls = updated;
         } else {
-          this.toolCalls = [...this.toolCalls, toolCall];
+          this.streamingToolCalls = [...this.streamingToolCalls, toolCallEnd];
         }
       }
 
-      if (isStreamFinalizer(event)) {
-        finalizerSeen = true;
+      // Tool call result (from assistantMessageEvent or tool_execution_end)
+      const toolResult = extractToolCallResult(event);
+      if (toolResult) {
+        const idx = this.streamingToolCalls.findIndex((tc) => tc.id === toolResult.id);
+        if (idx >= 0) {
+          const updated = [...this.streamingToolCalls];
+          updated[idx] = { ...updated[idx], result: toolResult.result };
+          this.streamingToolCalls = updated;
+        }
+      }
+
+      // Tool execution update (accumulated output — replace display)
+      const toolExecUpdate = extractToolExecutionUpdate(event);
+      if (toolExecUpdate) {
+        const idx = this.streamingToolCalls.findIndex((tc) => tc.id === toolExecUpdate.id);
+        if (idx >= 0) {
+          const updated = [...this.streamingToolCalls];
+          updated[idx] = { ...updated[idx], result: toolExecUpdate.partialText };
+          this.streamingToolCalls = updated;
+        } else {
+          this.streamingToolCalls = [...this.streamingToolCalls, {
+            id: toolExecUpdate.id,
+            name: 'tool',
+            result: toolExecUpdate.partialText,
+          }];
+        }
+      }
+
+      // ── Finalization triggers ─────────────────────────────────────
+      // Primary: message_end carries the FULL message — commit now
+      if (isMessageEnd(event)) {
+        this.commitStreamingMessage();
+        messageEnded = true;
+        continue;
+      }
+
+      // Message terminal (done/error) — marks end of generation for this message
+      if (isMessageTerminal(event)) {
+        messageTerminal = true;
+      }
+
+      // Fallback: turn_end — commit remaining accumulated content
+      if (isTurnEnd(event)) {
+        turnEnded = true;
+      }
+
+      // Fallback: agent_end — commit remaining accumulated content
+      if (isAgentEnd(event)) {
+        agentEnded = true;
       }
     }
 
-    // Finalize once the whole run ended (agent_end) and we saw a finalizer.
-    if (streamingEnded && finalizerSeen) {
-      this.finalizeStreamingMessage();
+    // Commit any remaining accumulated content if the run ended
+    // (turn_end or agent_end without a preceding message_end)
+    if ((turnEnded || agentEnded) && !messageEnded) {
+      this.commitStreamingMessage();
     }
 
-    this.processedCount = this.chatController.messages.length;
+    this.queueDrainIndex = messages.length;
   }
 
-  private processRpcResponse(msg: InboundMessage) {
-    if (msg.kind !== 'rpc_response') return;
-
-    const response = (msg as any).response;
-    const command = response.command || response.commandName;
-
-    // ── get_messages: hydrate chat history ────────────────────────────
-    // Per rpc.md: { type: "response", command: "get_messages", data: { messages: [...] } }
-    if (command === 'get_messages') {
-      this.applyHistoryResponse(response);
-      this.historyLoaded = true;
-      return;
-    }
-
-    // ── get_state: update current model from session state ────────────
-    // Per rpc.md: { type: "response", command: "get_state", data: { model: {...} } }
-    if (command === 'get_state' && !this.modelSetFromState) {
-      const model = (response.data as any)?.model;
-      if (model && typeof model.id === 'string' && typeof model.provider === 'string') {
-        this.currentModel = createMinimalModel(model.id, model.provider);
-        this.modelSetFromState = true;
-      } else if (typeof response.modelId === 'string' && response.modelId) {
-        // Fallback for the SSE set_model-style payload ({ modelId, provider })
-        const provider = extractProvider(response.modelId);
-        this.currentModel = createMinimalModel(response.modelId, provider);
-        this.modelSetFromState = true;
-      }
-    } else if (command === 'compact') {
-      // Compact completed — reset streaming state
-      this.streamingContent = '';
-      this.toolCalls = [];
-      this.closingState = 'none';
-    } else if (command === 'abort') {
-      // Abort completed
-      this.streamingContent = '';
-      this.toolCalls = [];
-    }
-  }
-
-  private finalizeStreamingMessage() {
+  /**
+   * Commit accumulated streaming content to displayMessages.
+   * Called when message_end, turn_end, or agent_end arrives.
+   */
+  private commitStreamingMessage() {
     const textContent = this.streamingTextAccum.trim();
     const thinkingContent = this.streamingThinkingAccum.trim();
     const ts = Date.now();
@@ -663,8 +563,7 @@ export class ChatPanelElement extends LitElement {
       contentBlocks.push({ kind: 'thinking', content: thinkingContent });
     }
 
-    // Emit toolCall content blocks (proper typed blocks, not serialized text)
-    for (const tc of this.toolCalls) {
+    for (const tc of this.streamingToolCalls) {
       contentBlocks.push({
         kind: 'toolCall',
         id: tc.id,
@@ -690,26 +589,202 @@ export class ChatPanelElement extends LitElement {
       ];
     }
 
+    // Reset accumulators
+    this.streamingTextAccum = '';
+    this.streamingThinkingAccum = '';
+    this.streamingContent = '';
+    this.streamingThinking = '';
+    this.streamingToolCalls = [];
+  }
+
+  /**
+   * Upsert a tool call entry by id (or name as fallback).
+   * Handles incremental updates from toolcall_delta events.
+   */
+  private upsertToolCall(tc: ToolCallEntry) {
+    const idx = this.streamingToolCalls.findIndex(
+      (existing) => existing.id === tc.id || existing.name === tc.name,
+    );
+
+    if (idx >= 0) {
+      const updated = [...this.streamingToolCalls];
+      const merged = { ...updated[idx] };
+
+      if (tc.id && !merged.id) merged.id = tc.id;
+      if (tc.name) merged.name = tc.name;
+      if (tc.args !== undefined) merged.args = tc.args;
+      if (tc.result !== undefined) merged.result = tc.result;
+
+      updated[idx] = merged;
+      this.streamingToolCalls = updated;
+    } else {
+      this.streamingToolCalls = [...this.streamingToolCalls, tc];
+    }
+  }
+
+  // ========================================================================
+  // RPC Response processing
+  // ========================================================================
+
+  private processRpcResponse(msg: InboundMessage) {
+    if (msg.kind !== 'rpc_response') return;
+
+    const response = (msg as any).response;
+    const command = response.command || response.commandName;
+
+    // ── get_messages: hydrate chat history ──────────────────────────
+    if (command === 'get_messages') {
+      this.applyHistoryResponse(response);
+      this.historyLoaded = true;
+      return;
+    }
+
+    // ── get_state: update current model from session state ──────────
+    if (command === 'get_state' && !this.modelSetFromState) {
+      const model = (response.data as any)?.model;
+      if (model && typeof model.id === 'string' && typeof model.provider === 'string') {
+        this.currentModel = createMinimalModel(model.id, model.provider);
+        this.modelSetFromState = true;
+      } else if (typeof response.modelId === 'string' && response.modelId) {
+        const provider = extractProvider(response.modelId);
+        this.currentModel = createMinimalModel(response.modelId, provider);
+        this.modelSetFromState = true;
+      }
+    } else if (command === 'compact') {
+      this.streamingContent = '';
+      this.streamingToolCalls = [];
+      this.closingState = 'none';
+    } else if (command === 'abort') {
+      this.streamingContent = '';
+      this.streamingToolCalls = [];
+    }
+  }
+
+  // ========================================================================
+  // History loading
+  // ========================================================================
+
+  private async loadChatHistory() {
+    if (this.historyLoaded || !this.sessionId) return;
+
+    try {
+      const result = await sendCommand(this.sessionId, { command: 'get_messages' });
+      const rpcResponse = (result as any)?.response ?? result;
+      this.applyHistoryResponse(rpcResponse);
+      this.historyLoaded = true;
+    } catch (err) {
+      console.error('Failed to load chat history:', err);
+    }
+  }
+
+  private applyHistoryResponse(response: Record<string, unknown>) {
+    const messages =
+      ((response?.data as any)?.messages as any[]) ||
+      ((response as any)?.messages as any[]) ||
+      [];
+    const raw = messages.flatMap((m: any) => agentMessageToDisplay(m));
+    const merged = this.mergeHistoryToolResults(raw);
+
+    if (merged.length > 0) {
+      this.displayMessages = [...this.displayMessages, ...merged];
+      this.scrollToBottom();
+    }
+  }
+
+  /**
+   * Merge toolResult toolCall blocks into the previous assistant message's
+   * matching toolCall blocks by id.
+   */
+  private mergeHistoryToolResults(messages: ChatMessage[]): ChatMessage[] {
+    const result: ChatMessage[] = [];
+
+    for (const msg of messages) {
+      if (msg.role !== 'assistant' || msg.content.length === 0) {
+        result.push(msg);
+        continue;
+      }
+
+      const toolResultBlocks: MessageContentBlock[] = [];
+      const keepBlocks: MessageContentBlock[] = [];
+
+      for (const block of msg.content) {
+        if (
+          block.kind === 'toolCall' &&
+          block.id &&
+          block.result !== undefined &&
+          block.result !== ''
+        ) {
+          toolResultBlocks.push(block);
+        } else {
+          keepBlocks.push(block);
+        }
+      }
+
+      if (toolResultBlocks.length === 0) {
+        result.push(msg);
+        continue;
+      }
+
+      if (result.length > 0 && result[result.length - 1].role === 'assistant') {
+        const prev = result[result.length - 1];
+        let didMerge = false;
+
+        for (const rb of toolResultBlocks as MutableToolCallBlock[]) {
+          for (let bi = 0; bi < prev.content.length; bi++) {
+            const pb = prev.content[bi] as MutableToolCallBlock;
+            if (pb.kind === 'toolCall' && pb.id === rb.id) {
+              pb.result = rb.result ?? pb.result;
+              didMerge = true;
+              break;
+            }
+          }
+        }
+
+        if (didMerge) {
+          if (keepBlocks.length > 0) {
+            result.push({ ...msg, content: keepBlocks });
+          }
+          continue;
+        }
+      }
+
+      result.push(msg);
+    }
+
+    return result;
+  }
+
+  // ========================================================================
+  // State management
+  // ========================================================================
+
+  private resetDisplayState() {
+    this.displayMessages = [];
     this.streamingContent = '';
     this.streamingThinking = '';
     this.streamingTextAccum = '';
     this.streamingThinkingAccum = '';
-    this.toolCalls = [];
+    this.streamingToolCalls = [];
+    this.queueDrainIndex = 0;
+    this.modelSetFromState = false;
+    this.errorMessage = null;
   }
 
-  // ── User Actions ────────────────────────────────────────────
+  // ========================================================================
+  // User actions
+  // ========================================================================
 
   private handleSend(message: string) {
-    // Finalize any current streaming content
-    if (this.streamingTextAccum.trim() || this.streamingThinkingAccum.trim() || this.toolCalls.length > 0) {
-      this.finalizeStreamingMessage();
+    // Commit any current streaming content before sending new message
+    if (this.streamingTextAccum.trim() || this.streamingThinkingAccum.trim() || this.streamingToolCalls.length > 0) {
+      this.commitStreamingMessage();
     }
 
     this.streamingContent = '';
     this.streamingThinking = '';
     this.streamingTextAccum = '';
     this.streamingThinkingAccum = '';
-    this.toolCalls = [];
+    this.streamingToolCalls = [];
 
     // Add user message to display
     this.displayMessages = [
@@ -722,10 +797,7 @@ export class ChatPanelElement extends LitElement {
       },
     ];
 
-    // Forward to Pi
     this.chatController.prompt(message);
-
-    // Scroll to bottom
     this.scrollToBottom();
   }
 
@@ -736,15 +808,13 @@ export class ChatPanelElement extends LitElement {
     this.currentModel = model;
 
     const provider = extractProvider(model.id);
-    
-    // Update session metadata via REST
+
     switchModel(this.sessionId, model.id, provider).catch((err) => {
       console.error('Failed to switch model:', err);
       this.errorMessage = `Failed to switch model: ${(err as Error).message}`;
       setTimeout(() => (this.errorMessage = null), 5000);
     });
 
-    // Send set_model command via REST for immediate effect
     sendCommand(this.sessionId, {
       command: 'set_model',
       modelId: model.id,
@@ -753,69 +823,19 @@ export class ChatPanelElement extends LitElement {
       console.error('Failed to send set_model command:', err);
     });
 
-    // Update SSE session model
     this.chatController.setModel(model.id, provider);
 
-    // Dispatch event for parent
     this.dispatchEvent(
       new CustomEvent('model-switch', {
         detail: model,
         bubbles: true,
         composed: true,
-      })
+      }),
     );
   }
 
-  private handleClose() {
-    if (!this.sessionId || this.closingState !== 'none') return;
-
-    this.closingState = 'compact';
-
-    this.chatController.compact().catch((err) => {
-      console.error('Failed to compact:', err);
-      this.closingState = 'none';
-      this.errorMessage = `Failed to compact: ${(err as Error).message}`;
-      setTimeout(() => (this.errorMessage = null), 5000);
-    });
-
-    // Dispatch event for parent
-    this.dispatchEvent(
-      new CustomEvent('session-close', {
-        bubbles: true,
-        composed: true,
-      })
-    );
-  }
-
-  private handleDelete() {
-    if (!this.sessionId || this.closingState !== 'none') return;
-
-    this.closingState = 'delete';
-
-    deleteSession(this.sessionId).catch((err) => {
-      console.error('Failed to delete:', err);
-      this.closingState = 'none';
-      this.errorMessage = `Failed to delete: ${(err as Error).message}`;
-      setTimeout(() => (this.errorMessage = null), 5000);
-    });
-
-    // Dispatch event for parent
-    this.dispatchEvent(
-      new CustomEvent('session-delete', {
-        bubbles: true,
-        composed: true,
-      })
-    );
-  }
-
-  /**
-   * Compact the conversation context (session stays alive).
-   * The closing indicator resets when the `compact` RPC response arrives
-   * (handled in processRpcResponse).
-   */
   private handleCompact() {
     if (!this.sessionId || this.closingState !== 'none') return;
-
     this.closingState = 'compact';
 
     this.chatController.compact().catch((err) => {
@@ -832,17 +852,15 @@ export class ChatPanelElement extends LitElement {
     this.streamingThinking = '';
     this.streamingTextAccum = '';
     this.streamingThinkingAccum = '';
-    this.toolCalls = [];
+    this.streamingToolCalls = [];
   }
 
   private async handleCloseSession() {
     if (!this.sessionId || this.closingState !== 'none') return;
-    
     this.closingState = 'compact';
-    
+
     try {
       await closeSession(this.sessionId);
-      // Dispatch event to navigate away
       this.dispatchEvent(new CustomEvent('session-close', {
         bubbles: true,
         composed: true,
@@ -855,7 +873,26 @@ export class ChatPanelElement extends LitElement {
     }
   }
 
-  // ── Utilities ───────────────────────────────────────────────
+  private handleDelete() {
+    if (!this.sessionId || this.closingState !== 'none') return;
+    this.closingState = 'delete';
+
+    deleteSession(this.sessionId).catch((err) => {
+      console.error('Failed to delete:', err);
+      this.closingState = 'none';
+      this.errorMessage = `Failed to delete: ${(err as Error).message}`;
+      setTimeout(() => (this.errorMessage = null), 5000);
+    });
+
+    this.dispatchEvent(new CustomEvent('session-delete', {
+      bubbles: true,
+      composed: true,
+    }));
+  }
+
+  // ========================================================================
+  // Utilities
+  // ========================================================================
 
   private get sortedMessages(): ChatMessage[] {
     return [...this.displayMessages].sort((a, b) => a.timestamp - b.timestamp);
@@ -867,17 +904,14 @@ export class ChatPanelElement extends LitElement {
       if (messagesContainer) {
         messagesContainer.scrollTo({
           top: messagesContainer.scrollHeight,
-          behavior: 'smooth'
+          behavior: 'smooth',
         });
       }
     });
   }
 
   private getModelName(): string {
-    if (this.currentModel) {
-      return this.currentModel.name;
-    }
-    return 'Select model';
+    return this.currentModel?.name || 'Select model';
   }
 
   private clearError() {
@@ -891,8 +925,8 @@ export class ChatPanelElement extends LitElement {
   private confirmClearChat() {
     this.displayMessages = [];
     this.streamingContent = '';
-    this.toolCalls = [];
-    this.processedCount = 0;
+    this.streamingToolCalls = [];
+    this.queueDrainIndex = 0;
     this.showClearConfirm = false;
   }
 
@@ -901,12 +935,14 @@ export class ChatPanelElement extends LitElement {
       this.chatController.respondToUi(
         this.chatController.pendingUiRequest.id,
         value,
-        value === null
+        value === null,
       );
     }
   }
 
-  // ── Render ──────────────────────────────────────────────────
+  // ========================================================================
+  // Render
+  // ========================================================================
 
   render() {
     return html`
@@ -914,7 +950,6 @@ export class ChatPanelElement extends LitElement {
         <!-- Header -->
         <div class="chat-panel__header">
           <div class="chat-panel__header-left">
-            <!-- Model Selector -->
             <div class="chat-panel__model-selector">
               <button
                 class="chat-panel__model-btn"
@@ -927,8 +962,7 @@ export class ChatPanelElement extends LitElement {
               </button>
               ${this.modelDropdownOpen ? this.renderModelDropdown() : ''}
             </div>
-            
-            <!-- Connection Status -->
+
             <span class="chat-panel__status">
               <span
                 class="chat-panel__status-dot ${this.chatController.isStreaming
@@ -948,7 +982,7 @@ export class ChatPanelElement extends LitElement {
                 : 'Idle'}
             </span>
           </div>
-          
+
           <div class="chat-panel__header-right">
             <button
               class="chat-panel__btn-close"
@@ -1003,7 +1037,7 @@ export class ChatPanelElement extends LitElement {
           ? html`<div class="chat-panel__clear-confirm">
               <span class="clear-confirm__text">Clear all messages?</span>
               <div class="clear-confirm__actions">
-                <button class="btn btn--sm" @click=${() => this.showClearConfirm = false}>Cancel</button>
+                <button class="btn btn--sm" @click=${() => (this.showClearConfirm = false)}>Cancel</button>
                 <button class="btn btn--primary btn--sm" @click=${this.confirmClearChat}>Clear</button>
               </div>
             </div>`
@@ -1027,7 +1061,7 @@ export class ChatPanelElement extends LitElement {
                       .timestamp=${msg.timestamp}
                       .contentBlocks=${msg.content}
                     ></chat-message>
-                  `
+                  `,
                 )}
                 ${this.streamingContent
                   ? html`
@@ -1078,7 +1112,7 @@ export class ChatPanelElement extends LitElement {
                 ${model.provider} ${model.contextWindow > 0 ? `· ${model.contextWindow.toLocaleString()} ctx` : ''}
               </div>
             </button>
-          `
+          `,
         )}
       </div>
     `;
