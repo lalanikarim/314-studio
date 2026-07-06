@@ -804,121 +804,103 @@ export class ChatPanelElement extends LitElement {
   }
 
   /**
-   * Merge consecutive assistant messages (with optional toolResults between)
-   * into single turn-level messages. Pi returns separate AgentMessages for
-   * each step (assistant→toolResult→assistant), but they represent one
-   * coherent turn that should display as a single message.
+   * Merge all assistant and toolResult messages within each turn into a
+   * single assistant message. Pi returns separate AgentMessages for each
+   * step (assistant→toolResult→assistant), but they represent one coherent
+   * turn that should display as a single message.
+   *
+   * Strategy:
+   * 1. Group messages by turn (split on user messages)
+   * 2. For each turn: merge all assistant + toolResult messages into one
+   * 3. Within the merged message: match toolResult.toolCall.id → assistant.toolCall.id and update result
    */
   private mergeHistoryToolResults(messages: ChatMessage[]): ChatMessage[] {
     const result: ChatMessage[] = [];
+    let i = 0;
 
-    for (const msg of messages) {
-      // Collect toolResult blocks from this message
-      const toolResultBlocks: MessageContentBlock[] = [];
-      const keepBlocks: MessageContentBlock[] = [];
+    while (i < messages.length) {
+      const msg = messages[i];
 
-      for (const block of msg.content) {
-        if (
-          block.kind === 'toolCall' &&
-          block.id &&
-          block.result !== undefined &&
-          block.result !== ''
-        ) {
-          toolResultBlocks.push(block);
-        } else {
-          keepBlocks.push(block);
-        }
-      }
-
-      // If this is a toolResult message, try to merge into the most recent assistant
-      if (msg.role === 'toolResult' && toolResultBlocks.length > 0) {
-        const prevAssistant = this.findLastAssistant(result);
-        if (prevAssistant) {
-          let didMerge = false;
-          for (const rb of toolResultBlocks as MutableToolCallBlock[]) {
-            for (let bi = 0; bi < prevAssistant.content.length; bi++) {
-              const pb = prevAssistant.content[bi] as MutableToolCallBlock;
-              if (pb.kind === 'toolCall' && pb.id === rb.id) {
-                pb.result = rb.result ?? pb.result;
-                didMerge = true;
-                break;
-              }
-            }
-          }
-          if (didMerge) {
-            continue; // Merged, skip this message
-          }
-        }
+      if (msg.role === 'user') {
+        // User message: just push
         result.push(msg);
+        i++;
         continue;
       }
 
-      // If this is an assistant message, merge into the most recent assistant
-      // (skipping any toolResult messages in between)
       if (msg.role === 'assistant') {
-        const prevAssistant = this.findLastAssistant(result);
-        if (prevAssistant && prevAssistant !== result[result.length - 1]) {
-          // There's a toolResult between us and the previous assistant — merge
-          console.debug('[ChatStream] Merge: assistant merging with prev assistant (toolResults in between)');
+        // Start of a new turn — collect all assistant + toolResult messages
+        const turnBlocks: MessageContentBlock[] = [...msg.content];
+        i++;
 
-          // Merge toolResults from this message into the previous one
-          for (const rb of toolResultBlocks as MutableToolCallBlock[]) {
-            for (let bi = 0; bi < prevAssistant.content.length; bi++) {
-              const pb = prevAssistant.content[bi] as MutableToolCallBlock;
-              if (pb.kind === 'toolCall' && pb.id === rb.id) {
-                pb.result = rb.result ?? pb.result;
-                break;
-              }
-            }
+        // Collect subsequent toolResult and assistant messages in the same turn
+        while (i < messages.length && messages[i].role !== 'user') {
+          const next = messages[i];
+          if (next.role === 'toolResult' || next.role === 'assistant') {
+            turnBlocks.push(...next.content);
+            i++;
+          } else {
+            // Unexpected role in turn, push and break
+            result.push(next);
+            i++;
+            break;
           }
-
-          // Append keepBlocks to the previous message
-          if (keepBlocks.length > 0) {
-            prevAssistant.content = [...prevAssistant.content, ...keepBlocks];
-          }
-
-          // Remove the toolResult messages that were between them
-          // (they've already been merged or are unmerged garbage)
-          while (result.length > 0 && result[result.length - 1].role === 'toolResult') {
-            result.pop();
-          }
-
-          continue;
         }
 
-        // If prev is assistant (no toolResults in between), just push
-        result.push(msg);
+        // Now merge toolResults into matching toolCalls
+        const merged = this.mergeToolResultsIntoAssistantBlocks(turnBlocks);
+        result.push({
+          ...msg,
+          timestamp: msg.timestamp,
+          content: merged,
+        });
         continue;
       }
 
-      // User messages and other roles: just push
+      // Other roles (shouldn't happen): push as-is
       result.push(msg);
+      i++;
     }
 
     return result;
   }
 
   /**
-   * Find the most recent assistant message that's in the same turn
-   * (i.e., after the most recent user message or start of array).
+   * Merge toolResult blocks into matching toolCall blocks by id.
+   * Returns a new block array with results filled in.
    */
-  private findLastAssistant(result: ChatMessage[]): ChatMessage | null {
-    // Find the index of the most recent user message
-    let lastUserIndex = -1;
-    for (let i = result.length - 1; i >= 0; i--) {
-      if (result[i].role === 'user') {
-        lastUserIndex = i;
-        break;
+  private mergeToolResultsIntoAssistantBlocks(
+    blocks: MessageContentBlock[],
+  ): MessageContentBlock[] {
+    const result: MessageContentBlock[] = [];
+    const resultById = new Map<string, string>();
+
+    // First pass: collect all toolResults by id
+    for (const block of blocks) {
+      if (
+        block.kind === 'toolCall' &&
+        block.result !== undefined &&
+        block.result !== ''
+      ) {
+        resultById.set(block.id!, block.result);
       }
     }
 
-    // Search backwards from the end, but stop at the last user message
-    for (let i = result.length - 1; i > lastUserIndex; i--) {
-      if (result[i].role === 'assistant') {
-        return result[i] as MutableChatMessage;
+    // Second pass: rebuild blocks, filling in results
+    for (const block of blocks) {
+      if (block.kind === 'toolCall' && block.id && resultById.has(block.id)) {
+        const existing = block as MutableToolCallBlock;
+        existing.result = resultById.get(block.id) ?? existing.result;
+        result.push(existing);
+      } else if (block.kind === 'toolCall' && block.result !== undefined && block.result !== '') {
+        // Skip duplicate toolResults — they've been merged into the toolCall
+        continue;
+      } else {
+        result.push(block);
       }
     }
-    return null;
+
+    return result;
   }
 
   // ========================================================================
