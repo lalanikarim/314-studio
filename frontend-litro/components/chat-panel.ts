@@ -804,8 +804,8 @@ export class ChatPanelElement extends LitElement {
   }
 
   /**
-   * Merge consecutive assistant messages connected by toolResults into
-   * single turn-level messages. Pi returns separate AgentMessages for
+   * Merge consecutive assistant messages (with optional toolResults between)
+   * into single turn-level messages. Pi returns separate AgentMessages for
    * each step (assistant→toolResult→assistant), but they represent one
    * coherent turn that should display as a single message.
    */
@@ -813,7 +813,7 @@ export class ChatPanelElement extends LitElement {
     const result: ChatMessage[] = [];
 
     for (const msg of messages) {
-      // Collect toolResult blocks
+      // Collect toolResult blocks from this message
       const toolResultBlocks: MessageContentBlock[] = [];
       const keepBlocks: MessageContentBlock[] = [];
 
@@ -830,15 +830,14 @@ export class ChatPanelElement extends LitElement {
         }
       }
 
-      // If this is a toolResult-only message, merge into previous assistant
+      // If this is a toolResult message, try to merge into the most recent assistant
       if (msg.role === 'toolResult' && toolResultBlocks.length > 0) {
-        if (result.length > 0 && result[result.length - 1].role === 'assistant') {
-          const prev = result[result.length - 1] as MutableChatMessage;
+        const prevAssistant = this.findLastAssistant(result);
+        if (prevAssistant) {
           let didMerge = false;
-
           for (const rb of toolResultBlocks as MutableToolCallBlock[]) {
-            for (let bi = 0; bi < prev.content.length; bi++) {
-              const pb = prev.content[bi] as MutableToolCallBlock;
+            for (let bi = 0; bi < prevAssistant.content.length; bi++) {
+              const pb = prevAssistant.content[bi] as MutableToolCallBlock;
               if (pb.kind === 'toolCall' && pb.id === rb.id) {
                 pb.result = rb.result ?? pb.result;
                 didMerge = true;
@@ -846,26 +845,26 @@ export class ChatPanelElement extends LitElement {
               }
             }
           }
-
           if (didMerge) {
-            continue; // Merged, don't add this message
+            continue; // Merged, skip this message
           }
         }
         result.push(msg);
         continue;
       }
 
-      // If this is an assistant message with toolCalls, check if we should
-      // merge it with the previous assistant message
-      if (msg.role === 'assistant' && toolResultBlocks.length > 0) {
-        // Check if the previous message was also an assistant message
-        if (result.length > 0 && result[result.length - 1].role === 'assistant') {
-          const prev = result[result.length - 1] as MutableChatMessage;
+      // If this is an assistant message, merge into the most recent assistant
+      // (skipping any toolResult messages in between)
+      if (msg.role === 'assistant') {
+        const prevAssistant = this.findLastAssistant(result);
+        if (prevAssistant && prevAssistant !== result[result.length - 1]) {
+          // There's a toolResult between us and the previous assistant — merge
+          console.debug('[ChatStream] Merge: assistant merging with prev assistant (toolResults in between)');
 
           // Merge toolResults from this message into the previous one
           for (const rb of toolResultBlocks as MutableToolCallBlock[]) {
-            for (let bi = 0; bi < prev.content.length; bi++) {
-              const pb = prev.content[bi] as MutableToolCallBlock;
+            for (let bi = 0; bi < prevAssistant.content.length; bi++) {
+              const pb = prevAssistant.content[bi] as MutableToolCallBlock;
               if (pb.kind === 'toolCall' && pb.id === rb.id) {
                 pb.result = rb.result ?? pb.result;
                 break;
@@ -875,17 +874,38 @@ export class ChatPanelElement extends LitElement {
 
           // Append keepBlocks to the previous message
           if (keepBlocks.length > 0) {
-            prev.content = [...prev.content, ...keepBlocks];
+            prevAssistant.content = [...prevAssistant.content, ...keepBlocks];
           }
+
+          // Remove the toolResult messages that were between them
+          // (they've already been merged or are unmerged garbage)
+          while (result.length > 0 && result[result.length - 1].role === 'toolResult') {
+            result.pop();
+          }
+
           continue;
         }
+
+        // If prev is assistant (no toolResults in between), just push
+        result.push(msg);
+        continue;
       }
 
-      // Otherwise, just add the message as-is
+      // User messages and other roles: just push
       result.push(msg);
     }
 
     return result;
+  }
+
+  /** Find the most recent assistant message in the result array */
+  private findLastAssistant(result: ChatMessage[]): ChatMessage | null {
+    for (let i = result.length - 1; i >= 0; i--) {
+      if (result[i].role === 'assistant') {
+        return result[i] as MutableChatMessage;
+      }
+    }
+    return null;
   }
 
   // ========================================================================
