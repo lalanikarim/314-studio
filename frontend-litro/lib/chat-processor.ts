@@ -75,8 +75,9 @@ export function extractText(event: Record<string, unknown>): string | null {
   if (!ami) return null;
   if (ami.type !== "text_delta") return null;
 
-  // Read the FULL accumulated text from partial (authoritative source)
-  const partial = event.partial as { content?: Array<{ text?: string }> } | undefined;
+  // The `partial` field is inside `assistantMessageEvent`, not at the top level.
+  // Structure: event.assistantMessageEvent.partial.content[contentIndex].text
+  const partial = ami.partial as { content?: Array<{ text?: string }> } | undefined;
   if (partial?.content && ami.contentIndex !== undefined) {
     const textBlock = partial.content[ami.contentIndex];
     if (textBlock?.text) {
@@ -100,8 +101,9 @@ export function extractThinking(event: Record<string, unknown>): string | null {
   if (!ami) return null;
   if (ami.type !== "thinking_delta") return null;
 
-  // Read the FULL accumulated thinking from partial (authoritative source)
-  const partial = event.partial as { content?: Array<{ thinking?: string }> } | undefined;
+  // The `partial` field is inside `assistantMessageEvent`, not at the top level.
+  // Structure: event.assistantMessageEvent.partial.content[contentIndex].thinking
+  const partial = ami.partial as { content?: Array<{ thinking?: string }> } | undefined;
   if (partial?.content && ami.contentIndex !== undefined) {
     const thinkingBlock = partial.content[ami.contentIndex];
     if (thinkingBlock?.thinking) {
@@ -258,6 +260,12 @@ function getAssistantMessageEvent(
 ): {
   type: string;
   delta?: unknown;
+  partial?: {
+    content?: Array<{
+      text?: string;
+      thinking?: string;
+    }>;
+  };
   toolCall?: {
     id?: string;
     name?: unknown;
@@ -271,6 +279,12 @@ function getAssistantMessageEvent(
   return ami as {
     type: string;
     delta?: unknown;
+    partial?: {
+      content?: Array<{
+        text?: string;
+        thinking?: string;
+      }>;
+    };
     toolCall?: {
       id?: string;
       name?: unknown;
