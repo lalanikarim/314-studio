@@ -355,8 +355,6 @@ export class ChatPanelElement extends LitElement {
   private chatController!: ChatStreamController;
   private modelSetFromState = false;
   private clickOutsideHandler: ((e: Event) => void) | null = null;
-  // Track previous streaming state to detect transitions
-  private prevIsStreaming = false;
 
   connectedCallback() {
     super.connectedCallback();
@@ -385,8 +383,7 @@ export class ChatPanelElement extends LitElement {
       this.chatController.setSessionId(this.sessionId);
       this.resetDisplayState();
       this.historyLoaded = false;
-      this.prevIsStreaming = false;
-      
+
       // Load chat history after SSE connects
       if (this.sessionId) {
         setTimeout(() => {
@@ -399,12 +396,33 @@ export class ChatPanelElement extends LitElement {
 
   private async loadChatHistory() {
     if (this.historyLoaded || !this.sessionId) return;
-    
+
     try {
-      await sendCommand(this.sessionId, { command: 'get_messages' });
+      // The backend's REST command endpoint returns the RPC response inline
+      // for commands that include a generated request id (like get_messages).
+      // Those responses are routed to the pending_request Future and are NOT
+      // re-broadcast on the SSE stream, so we must hydrate from the HTTP body.
+      const result = await sendCommand(this.sessionId, { command: 'get_messages' });
+      const rpcResponse = (result as any)?.response ?? result;
+      this.applyHistoryResponse(rpcResponse);
       this.historyLoaded = true;
     } catch (err) {
       console.error('Failed to load chat history:', err);
+    }
+  }
+
+  private applyHistoryResponse(response: Record<string, unknown>) {
+    const messages =
+      ((response?.data as any)?.messages as any[]) ||
+      ((response as any)?.messages as any[]) ||
+      [];
+    const history = messages
+      .map((m: any) => agentMessageToDisplay(m))
+      .filter((m: DisplayMessage | null): m is DisplayMessage => m !== null);
+
+    if (history.length > 0) {
+      this.displayMessages = [...this.displayMessages, ...history];
+      this.scrollToBottom();
     }
   }
 
@@ -417,6 +435,7 @@ export class ChatPanelElement extends LitElement {
     this.toolCalls = [];
     this.modelSetFromState = false;
     this.errorMessage = null;
+    // Controller owns prevIsStreaming; it resets it in setSessionId().
   }
 
   // ── Message Processing ──────────────────────────────────────
@@ -425,74 +444,42 @@ export class ChatPanelElement extends LitElement {
     const newMessages = this.chatController.messages.slice(this.processedCount);
     if (newMessages.length === 0) return;
 
-    // Capture streaming state BEFORE processing (like React's prevIsStreamingRef)
-    const wasStreaming = this.prevIsStreaming;
-    const streamingEnded = !this.chatController.isStreaming && wasStreaming;
-
-    // Debug: log event types to understand format
-    if (newMessages.length <= 5) {
-      console.log('[ChatPanel] Processing', newMessages.length, 'new messages');
-      newMessages.forEach((msg, i) => {
-        if (msg.kind === 'rpc_event') {
-          const evt = msg.event as any;
-          const preview = evt.type + (evt.assistantMessageEvent?.type ? ' [' + evt.assistantMessageEvent.type + ']' : '');
-          const delta = evt.assistantMessageEvent?.delta ? ' delta="' + String(evt.assistantMessageEvent.delta).substring(0, 50) + '"' : '';
-          console.log(`[ChatPanel] Event ${i}:`, preview, delta);
-        } else if (msg.kind === 'rpc_response') {
-          console.log(`[ChatPanel] Response ${i}:`, (msg as any).response?.command || (msg as any).response?.type || 'unknown');
-        }
-      });
-    }
+    // The controller updates `prevIsStreaming` synchronously in its event
+    // handler (mirroring React's prevIsStreamingRef). Read it here to detect
+    // the streaming→idle transition reliably, even across batched updates.
+    const wasStreaming = this.chatController.prevIsStreaming;
+    const streamingEnded =
+      !this.chatController.isStreaming && wasStreaming;
 
     let finalizerSeen = false;
 
-    // Process ALL messages (rpc_response and rpc_event)
     for (const msg of newMessages) {
       if (msg.kind === 'rpc_response') {
-        this.processRpcResponse(msg as any);
+        this.processRpcResponse(msg as InboundMessage);
         continue;
       }
-      
+
       if (msg.kind !== 'rpc_event') continue;
 
-      const event = (msg as any).event;
-      const eventType = event.type || '';
+      const event = (msg as any).event as Record<string, unknown>;
 
-      // Track streaming state transitions
-      // message_update with text_delta/thinking_delta indicates streaming
-      if (eventType === 'message_update') {
-        const ami = (event as any).assistantMessageEvent;
-        if (ami?.type === 'text_delta' || ami?.type === 'thinking_delta' || ami?.type === 'text_start' || ami?.type === 'thinking_start') {
-          // Reset only on transition from non-streaming to streaming (new turn)
-          if (!this.prevIsStreaming) {
-            this.streamingContent = '';
-            this.toolCalls = [];
-          }
-          this.prevIsStreaming = true;
-        }
-      } else if (
-        eventType === 'agent_end' ||
-        eventType === 'turn_end'
-      ) {
-        // Finalizer events also update streaming state
-        this.prevIsStreaming = false;
-      }
-
-      // Extract text — ACCUMULATE (append) not replace
+      // ── Text content → accumulate (only real deltas; see extractText) ──
+      // We intentionally do NOT reset on turn_start: a single agent run
+      // spans multiple turns (text → tool call → more text) and all text
+      // must accumulate until agent_end finalizes the whole run.
       const text = extractText(event);
       if (text) {
         this.streamingContent += text;
       }
 
-      // Extract tool call with update logic
+      // ── Tool call → track / update ───────────────────────────────────
       const toolCall = extractToolCall(event);
       if (toolCall) {
         const existingIdx = this.toolCalls.findIndex(
           (tc) => tc.name === toolCall.name
         );
-        
+
         if (existingIdx >= 0) {
-          // Update existing tool call
           const updated = [...this.toolCalls];
           if (toolCall.args) {
             updated[existingIdx] = { ...updated[existingIdx], args: toolCall.args };
@@ -502,26 +489,18 @@ export class ChatPanelElement extends LitElement {
           }
           this.toolCalls = updated;
         } else {
-          // Add new tool call
           this.toolCalls = [...this.toolCalls, toolCall];
         }
       }
 
-      // Check for finalizer
       if (isStreamFinalizer(event)) {
         finalizerSeen = true;
-        this.prevIsStreaming = false;
       }
     }
 
-    // Finalize ONLY when streaming JUST ended AND a finalizer was seen
+    // Finalize once the whole run ended (agent_end) and we saw a finalizer.
     if (streamingEnded && finalizerSeen) {
-      console.log('[ChatPanel] Finalizing streaming message (streamingEnded=true, finalizerSeen=true)');
-      console.log('[ChatPanel]   streamingContent length:', this.streamingContent.length);
-      console.log('[ChatPanel]   toolCalls count:', this.toolCalls.length);
       this.finalizeStreamingMessage();
-    } else if (finalizerSeen && !streamingEnded) {
-      console.log('[ChatPanel] Finalizer seen but streaming not ended yet (prevIsStreaming:', wasStreaming, ', isStreaming:', this.chatController.isStreaming, ')');
     }
 
     this.processedCount = this.chatController.messages.length;
@@ -533,43 +512,23 @@ export class ChatPanelElement extends LitElement {
     const response = (msg as any).response;
     const command = response.command || response.commandName;
 
-    // Handle get_messages response (chat history)
-    // React checks: response.type === "response" && response.command === "get_messages"
-    if (
-      (response.type === 'response' || response.type === 'get_messages') &&
-      command === 'get_messages'
-    ) {
-      const messages = (response.data as any)?.messages || (response as any).messages || [];
-      const history = messages
-        .map(agentMessageToDisplay)
-        .filter((m): m is DisplayMessage => m !== null);
-      
-      if (history.length > 0) {
-        this.displayMessages = [...this.displayMessages, ...history];
-        this.scrollToBottom();
-      }
-      this.historyLoaded = true;
-      return;
-    }
-    
-    // Also try without type check (for some backend response formats)
-    if (command === 'get_messages' && !response.type) {
-      const messages = (response.data as any)?.messages || (response as any).messages || [];
-      const history = messages
-        .map(agentMessageToDisplay)
-        .filter((m): m is DisplayMessage => m !== null);
-      
-      if (history.length > 0) {
-        this.displayMessages = [...this.displayMessages, ...history];
-        this.scrollToBottom();
-      }
+    // ── get_messages: hydrate chat history ────────────────────────────
+    // Per rpc.md: { type: "response", command: "get_messages", data: { messages: [...] } }
+    if (command === 'get_messages') {
+      this.applyHistoryResponse(response);
       this.historyLoaded = true;
       return;
     }
 
-    if (command === 'get_state') {
-      // Update current model from state
-      if (response.modelId && !this.modelSetFromState) {
+    // ── get_state: update current model from session state ────────────
+    // Per rpc.md: { type: "response", command: "get_state", data: { model: {...} } }
+    if (command === 'get_state' && !this.modelSetFromState) {
+      const model = (response.data as any)?.model;
+      if (model && typeof model.id === 'string' && typeof model.provider === 'string') {
+        this.currentModel = createMinimalModel(model.id, model.provider);
+        this.modelSetFromState = true;
+      } else if (typeof response.modelId === 'string' && response.modelId) {
+        // Fallback for the SSE set_model-style payload ({ modelId, provider })
         const provider = extractProvider(response.modelId);
         this.currentModel = createMinimalModel(response.modelId, provider);
         this.modelSetFromState = true;
@@ -655,7 +614,7 @@ export class ChatPanelElement extends LitElement {
     // Update session metadata via REST
     switchModel(this.sessionId, model.id, provider).catch((err) => {
       console.error('Failed to switch model:', err);
-      this.errorMessage = `Failed to switch model: ${err.message}`;
+      this.errorMessage = `Failed to switch model: ${(err as Error).message}`;
       setTimeout(() => (this.errorMessage = null), 5000);
     });
 
@@ -689,7 +648,7 @@ export class ChatPanelElement extends LitElement {
     this.chatController.compact().catch((err) => {
       console.error('Failed to compact:', err);
       this.closingState = 'none';
-      this.errorMessage = `Failed to compact: ${err.message}`;
+      this.errorMessage = `Failed to compact: ${(err as Error).message}`;
       setTimeout(() => (this.errorMessage = null), 5000);
     });
 
@@ -710,7 +669,7 @@ export class ChatPanelElement extends LitElement {
     deleteSession(this.sessionId).catch((err) => {
       console.error('Failed to delete:', err);
       this.closingState = 'none';
-      this.errorMessage = `Failed to delete: ${err.message}`;
+      this.errorMessage = `Failed to delete: ${(err as Error).message}`;
       setTimeout(() => (this.errorMessage = null), 5000);
     });
 
@@ -721,6 +680,24 @@ export class ChatPanelElement extends LitElement {
         composed: true,
       })
     );
+  }
+
+  /**
+   * Compact the conversation context (session stays alive).
+   * The closing indicator resets when the `compact` RPC response arrives
+   * (handled in processRpcResponse).
+   */
+  private handleCompact() {
+    if (!this.sessionId || this.closingState !== 'none') return;
+
+    this.closingState = 'compact';
+
+    this.chatController.compact().catch((err) => {
+      console.error('Failed to compact:', err);
+      this.closingState = 'none';
+      this.errorMessage = `Failed to compact: ${(err as Error).message}`;
+      setTimeout(() => (this.errorMessage = null), 5000);
+    });
   }
 
   private handleAbort() {
@@ -744,7 +721,7 @@ export class ChatPanelElement extends LitElement {
     } catch (err) {
       console.error('Failed to close session:', err);
       this.closingState = 'none';
-      this.errorMessage = `Failed to close: ${err.message}`;
+      this.errorMessage = `Failed to close: ${(err as Error).message}`;
       setTimeout(() => (this.errorMessage = null), 5000);
     }
   }
@@ -990,36 +967,6 @@ export class ChatPanelElement extends LitElement {
           <button class="btn btn--sm" @click=${() => this.respondToUi(null)}>Cancel</button>
           <button class="btn btn--primary btn--sm" @click=${() => this.respondToUi(true)}>Accept</button>
         </div>
-      </div>
-    `;
-  }
-
-  private renderModelDropdown() {
-    if (this.models.length === 0) {
-      return html`<div class="chat-panel__model-dropdown">
-        <div style="padding: 0.75rem; text-align: center; color: var(--text-muted); font-size: 0.8125rem;">
-          No models available
-        </div>
-      </div>`;
-    }
-
-    return html`
-      <div class="chat-panel__model-dropdown">
-        ${this.models.map(
-          (model) => html`
-            <button
-              class="chat-panel__model-option ${this.currentModel?.id === model.id
-                ? 'chat-panel__model-option--active'
-                : ''}"
-              @click=${() => this.handleSwitchModel(model)}
-            >
-              <div style="font-weight: 500;">${model.name}</div>
-              <div style="font-size: 0.75rem; opacity: 0.7; margin-top: 0.25rem;">
-                ${model.provider} ${model.contextWindow > 0 ? `· ${model.contextWindow.toLocaleString()} ctx` : ''}
-              </div>
-            </button>
-          `
-        )}
       </div>
     `;
   }
