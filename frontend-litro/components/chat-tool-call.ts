@@ -83,17 +83,20 @@ export class ChatToolCallElement extends LitElement {
     args: { type: String, attribute: false },
     result: { type: String, attribute: false },
     id: { type: String, attribute: false },
+    /** When true, keeps <details> open so the user can watch the tool stream. */
+    isStreaming: { type: Boolean, attribute: false },
   };
 
   name: string = '';
   args?: string;
   result?: string;
   id: string = '';
+  isStreaming = false;
 
   render() {
     const hasContent = this.args || this.result;
     return html`
-      <details ?open=${hasContent}>
+      <details ?open=${this.isStreaming || hasContent}>
         <summary>
           <span class="tool-call__name">${this.name}</span>
           ${this.id ? html`<span class="tool-call__id">${this.id}</span>` : ''}

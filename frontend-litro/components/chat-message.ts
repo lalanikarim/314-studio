@@ -254,6 +254,7 @@ export class ChatMessageElement extends LitElement {
           .args=${block.args}
           .result=${block.result}
           .id=${block.id ?? ''}
+          .isStreaming=${this.isStreaming}
         ></chat-tool-call>`;
     }
   }
