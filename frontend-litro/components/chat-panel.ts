@@ -436,6 +436,12 @@ export class ChatPanelElement extends LitElement {
     const messages = this.chatController.messages;
     if (this.queueDrainIndex >= messages.length) return;
 
+    const newEventCount = messages.length - this.queueDrainIndex;
+    console.debug(
+      '[ChatStream] DRAIN START:',
+      newEventCount, 'new events (queueIdx:', this.queueDrainIndex, '→', messages.length, ')',
+    );
+
     let messageEnded = false;
     let turnEnded = false;
     let agentEnded = false;
@@ -445,6 +451,7 @@ export class ChatPanelElement extends LitElement {
       const msg = messages[i];
 
       if (msg.kind === 'rpc_response') {
+        console.debug('[ChatStream]   drain: rpc_response → processing');
         this.processRpcResponse(msg as InboundMessage);
         continue;
       }
@@ -452,32 +459,54 @@ export class ChatPanelElement extends LitElement {
       if (msg.kind !== 'rpc_event') continue;
 
       const event = (msg as any).event as Record<string, unknown>;
+      const eventType = event.type || 'unknown';
 
       // ── Streaming content accumulation ────────────────────────────
       // Text deltas accumulate into streamingTextAccum
       const text = extractText(event);
       if (text) {
+        const prevLen = this.streamingTextAccum.length;
         this.streamingTextAccum += text;
         this.streamingContent = this.streamingTextAccum;
+        console.debug(
+          '[ChatStream]   drain:', eventType,
+          '→ text_delta +', text.length, 'chars (accum:', prevLen, '→', this.streamingTextAccum.length, ')',
+        );
       }
 
       // Thinking deltas accumulate into streamingThinkingAccum
       const thinking = extractThinking(event);
       if (thinking) {
+        const prevLen = this.streamingThinkingAccum.length;
         this.streamingThinkingAccum += thinking;
         this.streamingThinking = this.streamingThinkingAccum;
+        console.debug(
+          '[ChatStream]   drain:', eventType,
+          '→ thinking_delta +', thinking.length, 'chars (accum:', prevLen, '→', this.streamingThinkingAccum.length, ')',
+        );
       }
 
       // Tool call deltas (incremental args)
       const toolCallDelta = extractToolCallDelta(event);
       if (toolCallDelta) {
+        console.debug(
+          '[ChatStream]   drain:', eventType,
+          '→ toolcall_delta:', toolCallDelta.name,
+          toolCallDelta.id ? '(id:' + toolCallDelta.id + ')' : '',
+          toolCallDelta.args ? 'argsLen=' + toolCallDelta.args.length : '',
+        );
         this.upsertToolCall(toolCallDelta);
       }
 
       // Tool call end (FULL toolCall object — sets complete entry)
       const toolCallEnd = extractToolCallEnd(event);
       if (toolCallEnd) {
-        // Replace or insert: toolcall_end carries the complete object
+        console.debug(
+          '[ChatStream]   drain:', eventType,
+          '→ toolcall_end (FULL):', toolCallEnd.name,
+          toolCallEnd.id ? '(id:' + toolCallEnd.id + ')' : '',
+          toolCallEnd.args ? 'argsLen=' + toolCallEnd.args.length : '',
+        );
         const idx = this.streamingToolCalls.findIndex((tc) => tc.id === toolCallEnd.id);
         if (idx >= 0) {
           const updated = [...this.streamingToolCalls];
@@ -491,6 +520,11 @@ export class ChatPanelElement extends LitElement {
       // Tool call result (from assistantMessageEvent or tool_execution_end)
       const toolResult = extractToolCallResult(event);
       if (toolResult) {
+        console.debug(
+          '[ChatStream]   drain:', eventType,
+          '→ tool_result:', toolResult.id ? '(id:' + toolResult.id + ')' : '',
+          'resultLen=' + toolResult.result.length,
+        );
         const idx = this.streamingToolCalls.findIndex((tc) => tc.id === toolResult.id);
         if (idx >= 0) {
           const updated = [...this.streamingToolCalls];
@@ -502,6 +536,11 @@ export class ChatPanelElement extends LitElement {
       // Tool execution update (accumulated output — replace display)
       const toolExecUpdate = extractToolExecutionUpdate(event);
       if (toolExecUpdate) {
+        console.debug(
+          '[ChatStream]   drain:', eventType,
+          '→ tool_exec_update:', toolExecUpdate.id,
+          'partialLen=' + toolExecUpdate.partialText.length,
+        );
         const idx = this.streamingToolCalls.findIndex((tc) => tc.id === toolExecUpdate.id);
         if (idx >= 0) {
           const updated = [...this.streamingToolCalls];
@@ -519,6 +558,7 @@ export class ChatPanelElement extends LitElement {
       // ── Finalization triggers ─────────────────────────────────────
       // Primary: message_end carries the FULL message — commit now
       if (isMessageEnd(event)) {
+        console.debug('[ChatStream]   drain:', eventType, '→ COMMITTING message (primary trigger)');
         this.commitStreamingMessage();
         messageEnded = true;
         continue;
@@ -526,16 +566,19 @@ export class ChatPanelElement extends LitElement {
 
       // Message terminal (done/error) — marks end of generation for this message
       if (isMessageTerminal(event)) {
+        console.debug('[ChatStream]   drain:', eventType, '→ message terminal (no commit yet)');
         messageTerminal = true;
       }
 
       // Fallback: turn_end — commit remaining accumulated content
       if (isTurnEnd(event)) {
+        console.debug('[ChatStream]   drain:', eventType, '→ fallback commit trigger');
         turnEnded = true;
       }
 
       // Fallback: agent_end — commit remaining accumulated content
       if (isAgentEnd(event)) {
+        console.debug('[ChatStream]   drain:', eventType, '→ fallback commit trigger');
         agentEnded = true;
       }
     }
@@ -543,10 +586,14 @@ export class ChatPanelElement extends LitElement {
     // Commit any remaining accumulated content if the run ended
     // (turn_end or agent_end without a preceding message_end)
     if ((turnEnded || agentEnded) && !messageEnded) {
+      console.debug(
+        '[ChatStream] DRAIN END: committing remaining (text:', this.streamingTextAccum.length, 'chars, thinking:', this.streamingThinkingAccum.length, 'chars, tools:', this.streamingToolCalls.length, ')',
+      );
       this.commitStreamingMessage();
     }
 
     this.queueDrainIndex = messages.length;
+    console.debug('[ChatStream] DRAIN COMPLETE: queueIdx at', this.queueDrainIndex, '/', messages.length);
   }
 
   /**
@@ -578,15 +625,25 @@ export class ChatPanelElement extends LitElement {
     }
 
     if (contentBlocks.length > 0) {
-      this.displayMessages = [
-        ...this.displayMessages,
-        {
-          id: `assistant-${ts}`,
-          role: 'assistant',
-          timestamp: ts,
-          content: contentBlocks,
-        },
-      ];
+      const newMsg: ChatMessage = {
+        id: `assistant-${ts}`,
+        role: 'assistant',
+        timestamp: ts,
+        content: contentBlocks,
+      };
+      this.displayMessages = [...this.displayMessages, newMsg];
+
+      console.debug(
+        '[ChatStream] COMMITTED message:',
+        'textLen=' + textContent.length,
+        'thinkingLen=' + thinkingContent.length,
+        'toolCalls=' + this.streamingToolCalls.length,
+        'blocks=' + contentBlocks.length,
+        'blockTypes=' + contentBlocks.map(b => b.kind).join(','),
+      );
+      console.debug('[ChatStream]   message preview:', textContent.substring(0, 100) + (textContent.length > 100 ? '...' : ''));
+    } else {
+      console.debug('[ChatStream] COMMIT: no content to commit (text:', textContent.length, 'chars, tools:', this.streamingToolCalls.length, ')');
     }
 
     // Reset accumulators
