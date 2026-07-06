@@ -898,9 +898,22 @@ export class ChatPanelElement extends LitElement {
     return result;
   }
 
-  /** Find the most recent assistant message in the result array */
+  /**
+   * Find the most recent assistant message that's in the same turn
+   * (i.e., after the most recent user message or start of array).
+   */
   private findLastAssistant(result: ChatMessage[]): ChatMessage | null {
+    // Find the index of the most recent user message
+    let lastUserIndex = -1;
     for (let i = result.length - 1; i >= 0; i--) {
+      if (result[i].role === 'user') {
+        lastUserIndex = i;
+        break;
+      }
+    }
+
+    // Search backwards from the end, but stop at the last user message
+    for (let i = result.length - 1; i > lastUserIndex; i--) {
       if (result[i].role === 'assistant') {
         return result[i] as MutableChatMessage;
       }
