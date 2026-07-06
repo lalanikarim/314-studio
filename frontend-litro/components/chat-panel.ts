@@ -435,6 +435,12 @@ export class ChatPanelElement extends LitElement {
 
     // Drain ALL new messages from the queue — queue/drain architecture
     this.drainQueue();
+
+    // Auto-scroll to bottom while streaming so the user always sees
+    // the latest content (whether thinking, tool calls, or text).
+    if (this.chatController.isStreaming) {
+      this.scrollToBottom();
+    }
   }
 
   // ========================================================================
