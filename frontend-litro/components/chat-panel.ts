@@ -430,13 +430,16 @@ export class ChatPanelElement extends LitElement {
     const streamingEnded = !this.chatController.isStreaming && wasStreaming;
 
     // Debug: log event types to understand format
-    if (newMessages.length <= 3) {
+    if (newMessages.length <= 5) {
       console.log('[ChatPanel] Processing', newMessages.length, 'new messages');
       newMessages.forEach((msg, i) => {
         if (msg.kind === 'rpc_event') {
-          console.log(`[ChatPanel] Event ${i}:`, JSON.stringify(msg.event).substring(0, 200));
+          const evt = msg.event as any;
+          const preview = evt.type + (evt.assistantMessageEvent?.type ? ' [' + evt.assistantMessageEvent.type + ']' : '');
+          const delta = evt.assistantMessageEvent?.delta ? ' delta="' + String(evt.assistantMessageEvent.delta).substring(0, 50) + '"' : '';
+          console.log(`[ChatPanel] Event ${i}:`, preview, delta);
         } else if (msg.kind === 'rpc_response') {
-          console.log(`[ChatPanel] Response ${i}:`, JSON.stringify(msg.response).substring(0, 200));
+          console.log(`[ChatPanel] Response ${i}:`, (msg as any).response?.command || (msg as any).response?.type || 'unknown');
         }
       });
     }
@@ -510,7 +513,12 @@ export class ChatPanelElement extends LitElement {
 
     // Finalize ONLY when streaming JUST ended AND a finalizer was seen
     if (streamingEnded && finalizerSeen) {
+      console.log('[ChatPanel] Finalizing streaming message (streamingEnded=true, finalizerSeen=true)');
+      console.log('[ChatPanel]   streamingContent length:', this.streamingContent.length);
+      console.log('[ChatPanel]   toolCalls count:', this.toolCalls.length);
       this.finalizeStreamingMessage();
+    } else if (finalizerSeen && !streamingEnded) {
+      console.log('[ChatPanel] Finalizer seen but streaming not ended yet (prevIsStreaming:', wasStreaming, ', isStreaming:', this.chatController.isStreaming, ')');
     }
 
     this.processedCount = this.chatController.messages.length;
