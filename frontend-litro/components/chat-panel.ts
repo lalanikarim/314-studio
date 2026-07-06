@@ -462,29 +462,30 @@ export class ChatPanelElement extends LitElement {
       const eventType = event.type || 'unknown';
 
       // ── Streaming content accumulation ────────────────────────────
-      // Text deltas accumulate into streamingTextAccum
+      // Text deltas: REPLACE accumulator (deltas are not incremental, they
+      // contain the last word/phrase. The partial field has the full text).
       const text = extractText(event);
-      if (text) {
+      if (text !== null) {
         const prevLen = this.streamingTextAccum.length;
-        this.streamingTextAccum += text;
+        this.streamingTextAccum = text;
         this.streamingContent = this.streamingTextAccum;
         console.debug(
           '[ChatStream]   drain:', eventType,
-          '→ text_delta:', JSON.stringify(text),
-          '(accum:', prevLen, '→', this.streamingTextAccum.length, ')',
+          '→ text (REPLACE):', JSON.stringify(text),
+          '(was:', prevLen, '→ now', this.streamingTextAccum.length, ')',
         );
       }
 
-      // Thinking deltas accumulate into streamingThinkingAccum
+      // Thinking deltas: REPLACE accumulator (same issue as text)
       const thinking = extractThinking(event);
-      if (thinking) {
+      if (thinking !== null) {
         const prevLen = this.streamingThinkingAccum.length;
-        this.streamingThinkingAccum += thinking;
+        this.streamingThinkingAccum = thinking;
         this.streamingThinking = this.streamingThinkingAccum;
         console.debug(
           '[ChatStream]   drain:', eventType,
-          '→ thinking_delta:', JSON.stringify(thinking),
-          '(accum:', prevLen, '→', this.streamingThinkingAccum.length, ')',
+          '→ thinking (REPLACE):', JSON.stringify(thinking),
+          '(was:', prevLen, '→ now', this.streamingThinkingAccum.length, ')',
         );
       }
 

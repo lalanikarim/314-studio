@@ -60,30 +60,58 @@ export function agentMessageToDisplay(msg: AgentMessage): ChatMessage[] {
 // ============================================================================
 
 /**
- * Extract an incremental text chunk from a streaming event.
+ * Extract text content from a streaming event.
  *
- * Per Pi RPC docs, only `text_delta` carries an incremental `delta` string.
- * `text_start`, `text_end`, `start`, `done` carry accumulated state — NOT
- * chunks to append. Returning their content would double the displayed text.
+ * IMPORTANT: The `delta` field in text_delta events contains the LAST WORD/
+ * PHRASE ADDED, NOT the incremental text chunk. Accumulating deltas produces
+ * gibberish. Instead, we read the accumulated text from `partial.content[contentIndex].text`.
+ *
+ * This function returns the FULL accumulated text for the content block,
+ * not just the delta. The component should REPLACE its accumulator with
+ * this value, not append to it.
  */
-export function extractText(event: Record<string, unknown>): string {
+export function extractText(event: Record<string, unknown>): string | null {
   const ami = getAssistantMessageEvent(event);
-  if (!ami) return "";
-  if (ami.type !== "text_delta") return "";
+  if (!ami) return null;
+  if (ami.type !== "text_delta") return null;
+
+  // Read the FULL accumulated text from partial (authoritative source)
+  const partial = event.partial as { content?: Array<{ text?: string }> } | undefined;
+  if (partial?.content && ami.contentIndex !== undefined) {
+    const textBlock = partial.content[ami.contentIndex];
+    if (textBlock?.text) {
+      return textBlock.text;
+    }
+  }
+
+  // Fallback: try delta (only for initial text_start events)
   const delta = ami.delta;
-  return typeof delta === "string" && delta ? delta : "";
+  return typeof delta === "string" && delta ? delta : null;
 }
 
 /**
- * Extract an incremental thinking chunk from a streaming event.
- * Same rules as extractText but for thinking blocks.
+ * Extract thinking content from a streaming event.
+ *
+ * Same issue as extractText: delta contains the last phrase, not incremental.
+ * Read from partial.content[contentIndex].thinking (authoritative).
  */
-export function extractThinking(event: Record<string, unknown>): string {
+export function extractThinking(event: Record<string, unknown>): string | null {
   const ami = getAssistantMessageEvent(event);
-  if (!ami) return "";
-  if (ami.type !== "thinking_delta") return "";
+  if (!ami) return null;
+  if (ami.type !== "thinking_delta") return null;
+
+  // Read the FULL accumulated thinking from partial (authoritative source)
+  const partial = event.partial as { content?: Array<{ thinking?: string }> } | undefined;
+  if (partial?.content && ami.contentIndex !== undefined) {
+    const thinkingBlock = partial.content[ami.contentIndex];
+    if (thinkingBlock?.thinking) {
+      return thinkingBlock.thinking;
+    }
+  }
+
+  // Fallback: try delta
   const delta = ami.delta;
-  return typeof delta === "string" && delta ? delta : "";
+  return typeof delta === "string" && delta ? delta : null;
 }
 
 /**
