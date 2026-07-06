@@ -3,7 +3,7 @@ import { customElement, state } from 'lit/decorators.js';
 import { ChatStreamController } from '../lib/chat-stream-controller.js';
 import { agentMessageToDisplay, extractText, extractToolCall, isStreamFinalizer } from '../lib/chat-processor.js';
 import { deriveModelName, createMinimalModel, extractProvider } from '../lib/model.js';
-import { closeSession, deleteSession, switchModel } from '../services/api.js';
+import { closeSession, deleteSession, switchModel, sendCommand } from '../services/api.js';
 import { designTokens } from '../styles/design-tokens.js';
 import { buttonStyles } from '../styles/shared.js';
 import type { Model } from '../types/index.js';
@@ -350,6 +350,7 @@ export class ChatPanelElement extends LitElement {
   @state() closingState: 'none' | 'compact' | 'delete' = 'none';
   @state() errorMessage: string | null = null;
   @state() showClearConfirm = false;
+  @state() historyLoaded = false;
 
   private chatController!: ChatStreamController;
   private modelSetFromState = false;
@@ -381,8 +382,26 @@ export class ChatPanelElement extends LitElement {
     if (changedProperties.has('sessionId')) {
       this.chatController.setSessionId(this.sessionId);
       this.resetDisplayState();
+      
+      // Load chat history after SSE connects
+      if (this.sessionId) {
+        setTimeout(() => {
+          this.loadChatHistory();
+        }, 500);
+      }
     }
     this.processNewMessages();
+  }
+
+  private async loadChatHistory() {
+    if (this.historyLoaded || !this.sessionId) return;
+    
+    try {
+      await sendCommand(this.sessionId, { command: 'get_messages' });
+      this.historyLoaded = true;
+    } catch (err) {
+      console.error('Failed to load chat history:', err);
+    }
   }
 
   disconnectedCallback() {
@@ -433,10 +452,27 @@ export class ChatPanelElement extends LitElement {
           this.streamingContent = text;
         }
 
-        // Extract tool call
+        // Extract tool call with update logic
         const toolCall = extractToolCall(event);
-        if (toolCall && !this.toolCalls.find((tc) => tc.name === toolCall.name)) {
-          this.toolCalls.push(toolCall);
+        if (toolCall) {
+          const existingIdx = this.toolCalls.findIndex(
+            (tc) => tc.name === toolCall.name
+          );
+          
+          if (existingIdx >= 0) {
+            // Update existing tool call
+            const updated = [...this.toolCalls];
+            if (toolCall.args) {
+              updated[existingIdx] = { ...updated[existingIdx], args: toolCall.args };
+            }
+            if (toolCall.result) {
+              updated[existingIdx] = { ...updated[existingIdx], result: toolCall.result };
+            }
+            this.toolCalls = updated;
+          } else {
+            // Add new tool call
+            this.toolCalls = [...this.toolCalls, toolCall];
+          }
         }
 
         // Check for finalizer
@@ -459,6 +495,21 @@ export class ChatPanelElement extends LitElement {
 
     const response = (msg as any).response;
     const command = response.command || response.commandName;
+
+    // Handle get_messages response (chat history)
+    if (command === 'get_messages') {
+      const messages = (response.data as any)?.messages || [];
+      const history = messages
+        .map(agentMessageToDisplay)
+        .filter((m): m is DisplayMessage => m !== null);
+      
+      if (history.length > 0) {
+        this.displayMessages = [...this.displayMessages, ...history];
+        this.scrollToBottom();
+      }
+      this.historyLoaded = true;
+      return;
+    }
 
     if (command === 'get_state') {
       // Update current model from state
@@ -543,12 +594,22 @@ export class ChatPanelElement extends LitElement {
     this.modelDropdownOpen = false;
     this.currentModel = model;
 
-    // Update session metadata
     const provider = extractProvider(model.id);
+    
+    // Update session metadata via REST
     switchModel(this.sessionId, model.id, provider).catch((err) => {
       console.error('Failed to switch model:', err);
       this.errorMessage = `Failed to switch model: ${err.message}`;
       setTimeout(() => (this.errorMessage = null), 5000);
+    });
+
+    // Send set_model command via REST for immediate effect
+    sendCommand(this.sessionId, {
+      command: 'set_model',
+      modelId: model.id,
+      provider: provider,
+    }).catch((err) => {
+      console.error('Failed to send set_model command:', err);
     });
 
     // Update SSE session model
@@ -612,13 +673,40 @@ export class ChatPanelElement extends LitElement {
     this.toolCalls = [];
   }
 
+  private async handleCloseSession() {
+    if (!this.sessionId || this.closingState !== 'none') return;
+    
+    this.closingState = 'compact';
+    
+    try {
+      await closeSession(this.sessionId);
+      // Dispatch event to navigate away
+      this.dispatchEvent(new CustomEvent('session-close', {
+        bubbles: true,
+        composed: true,
+      }));
+    } catch (err) {
+      console.error('Failed to close session:', err);
+      this.closingState = 'none';
+      this.errorMessage = `Failed to close: ${err.message}`;
+      setTimeout(() => (this.errorMessage = null), 5000);
+    }
+  }
+
   // ── Utilities ───────────────────────────────────────────────
+
+  private get sortedMessages(): DisplayMessage[] {
+    return [...this.displayMessages].sort((a, b) => a.timestamp - b.timestamp);
+  }
 
   private scrollToBottom() {
     requestAnimationFrame(() => {
       const messagesContainer = this.shadowRoot?.querySelector('.chat-panel__messages');
       if (messagesContainer) {
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        messagesContainer.scrollTo({
+          top: messagesContainer.scrollHeight,
+          behavior: 'smooth'
+        });
       }
     });
   }
@@ -711,10 +799,18 @@ export class ChatPanelElement extends LitElement {
             <button
               class="chat-panel__btn-close"
               ?disabled=${this.closingState !== 'none'}
-              @click=${this.handleClose}
+              @click=${this.handleCompact}
               title="Compact session"
             >
               Compact
+            </button>
+            <button
+              class="chat-panel__btn-close"
+              ?disabled=${this.closingState !== 'none'}
+              @click=${this.handleCloseSession}
+              title="Close session (compact + terminate)"
+            >
+              Close
             </button>
             <button
               class="chat-panel__btn-close chat-panel__btn--danger"
@@ -762,7 +858,7 @@ export class ChatPanelElement extends LitElement {
                 </p>
               </div>`
             : html`
-                ${this.displayMessages.map(
+                ${this.sortedMessages.map(
                   (msg) =>
                     html`<chat-message .message=${msg}></chat-message>`
                 )}
