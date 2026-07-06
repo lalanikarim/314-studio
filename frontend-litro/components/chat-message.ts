@@ -191,6 +191,8 @@ export class ChatMessageElement extends LitElement {
   @property({ type: String }) role = '';
   @property({ type: Number }) timestamp = 0;
   @property({ type: Array, attribute: false }) contentBlocks: MessageContentBlock[] = [];
+  /** When true, thinking <details> stay open so the user can see them stream. */
+  @property({ type: Boolean, attribute: false }) isStreaming = false;
 
   private formatTime(timestamp: number): string {
     return new Date(timestamp).toLocaleTimeString([], {
@@ -240,7 +242,7 @@ export class ChatMessageElement extends LitElement {
       case 'thinking':
         return html`
           <div class="message__thinking">
-            <details>
+            <details ?open=${this.isStreaming}>
               <summary>Thinking</summary>
               <div class="thinking__content">${block.content}</div>
             </details>

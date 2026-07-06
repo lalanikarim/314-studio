@@ -1071,6 +1071,7 @@ export class ChatPanelElement extends LitElement {
         .role=${streamingMsg.role}
         .timestamp=${streamingMsg.timestamp}
         .contentBlocks=${streamingMsg.content}
+        .isStreaming=${true}
       ></chat-message>
       <div class="chat-panel__streaming-indicator">
         <span class="chat-panel__typing"></span>
