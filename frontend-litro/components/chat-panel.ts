@@ -641,7 +641,7 @@ export class ChatPanelElement extends LitElement {
         'blocks=' + contentBlocks.length,
         'blockTypes=' + contentBlocks.map(b => b.kind).join(','),
       );
-      console.debug('[ChatStream]   message preview:', textContent.substring(0, 100) + (textContent.length > 100 ? '...' : ''));
+      console.debug('[ChatStream]   message preview:', textContent);
     } else {
       console.debug('[ChatStream] COMMIT: no content to commit (text:', textContent.length, 'chars, tools:', this.streamingToolCalls.length, ')');
     }
