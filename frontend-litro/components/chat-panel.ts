@@ -776,11 +776,22 @@ export class ChatPanelElement extends LitElement {
    * The message should already exist in displayMessages from ensureStreamingMessage().
    */
   private commitStreamingMessage() {
-    // Update the last message with final content
-    this.updateStreamingMessageContent();
-
+    // Skip if there's no content to commit
     const textContent = this.streamingTextAccum.trim();
     const thinkingContent = this.streamingThinkingAccum.trim();
+    if (!textContent && !thinkingContent && this.streamingToolCalls.length === 0) {
+      // Nothing to commit — just reset accumulators
+      this.streamingTextAccum = '';
+      this.streamingThinkingAccum = '';
+      this.streamingContent = '';
+      this.streamingThinking = '';
+      this.streamingToolCalls = [];
+      this.streamingMessageCreated = false;
+      return;
+    }
+
+    // Update the last message with final content
+    this.updateStreamingMessageContent();
 
     console.debug(
       '[ChatStream] COMMITTED message:',
