@@ -7,17 +7,19 @@
 
 import type {
   AgentMessage,
-  DisplayMessage,
+  ChatMessage,
+  MessageContentBlock,
   ToolCallEntry,
 } from "../types/chat.js";
 
 /**
- * Convert a Pi RPC AgentMessage into a DisplayMessage for rendering.
- * Handles user, assistant, tool result, and bash execution messages.
+ * Convert a Pi RPC AgentMessage into a ChatMessage with content blocks.
+ * Each content block (text, thinking, toolCall) becomes a separate entry
+ * in the content array, preserving the original order from the RPC response.
  */
 export function agentMessageToDisplay(
   msg: AgentMessage,
-): DisplayMessage | null {
+): ChatMessage[] {
   const role = msg.role as string;
   const timestamp =
     typeof msg.timestamp === "number" ? msg.timestamp : Date.now();
@@ -36,13 +38,14 @@ export function agentMessageToDisplay(
     } else {
       content = "";
     }
-    return {
-      id: `history-user-${crypto.randomUUID()}`,
-      role: "user",
-      content,
-      toolCalls: [],
-      timestamp,
-    };
+    return [
+      {
+        id: `history-user-${crypto.randomUUID()}`,
+        role: "user",
+        timestamp,
+        content: [{ kind: "text", content }],
+      },
+    ];
   }
 
   if (role === "assistant") {
@@ -53,21 +56,25 @@ export function agentMessageToDisplay(
           thinking?: string;
           name?: string;
           arguments?: unknown;
+          id?: string;
         }>
       | undefined;
-    if (!blocks) return null;
-    const textParts: string[] = [];
-    const toolCalls: ToolCallEntry[] = [];
-    const thinkingParts: string[] = [];
+    if (!blocks) return [];
+
+    const contentBlocks: MessageContentBlock[] = [];
+
     for (const block of blocks) {
       if (typeof block !== "object" || block === null) continue;
-      if (block.type === "text" && block.text) textParts.push(block.text);
-      else if (block.type === "thinking" && block.thinking)
-        thinkingParts.push(
-          "[thinking] " + block.thinking.substring(0, 120) + "...",
-        );
-      else if (block.type === "toolCall") {
-        const entry: ToolCallEntry = { name: block.name || "unknown" };
+
+      if (block.type === "text" && block.text) {
+        contentBlocks.push({ kind: "text", content: block.text });
+      } else if (block.type === "thinking" && block.thinking) {
+        contentBlocks.push({ kind: "thinking", content: block.thinking });
+      } else if (block.type === "toolCall") {
+        const entry: ToolCallEntry = {
+          id: block.id,
+          name: block.name || "unknown",
+        };
         if (block.arguments) {
           try {
             entry.args =
@@ -78,20 +85,20 @@ export function agentMessageToDisplay(
             entry.args = String(block.arguments);
           }
         }
-        toolCalls.push(entry);
+        contentBlocks.push({ kind: "toolCall", ...entry });
       }
     }
-    const content = [thinkingParts.join("\n"), textParts.join("\n")]
-      .filter(Boolean)
-      .join("\n\n");
-    if (!content && toolCalls.length === 0) return null;
-    return {
-      id: `history-assistant-${crypto.randomUUID()}`,
-      role: "assistant",
-      content,
-      toolCalls,
-      timestamp,
-    };
+
+    if (contentBlocks.length === 0) return [];
+
+    return [
+      {
+        id: `history-assistant-${crypto.randomUUID()}`,
+        role: "assistant",
+        timestamp,
+        content: contentBlocks,
+      },
+    ];
   }
 
   if (role === "toolResult" && msg.content) {
@@ -107,39 +114,66 @@ export function agentMessageToDisplay(
     } else {
       content = "";
     }
-    if (!content) return null;
+    if (!content) return [];
+
+    // Attach to the matching toolCall via toolCallId — this is the canonical
+    // matching key from Pi's get_messages response.
+    const toolCallId = (msg.toolCallId as string) || undefined;
     const toolName = (msg.toolName as string) || "tool";
     const isError = msg.isError;
-    return {
-      id: `history-tool-${crypto.randomUUID()}`,
-      role: "assistant",
-      content: `> ${toolName}${isError ? " (error)" : ""}\n\n\`${content.substring(0, 200)}${content.length > 200 ? "..." : ""}\``,
-      toolCalls: [],
-      timestamp,
-    };
+    const resultText =
+      `${isError ? "(error) " : ""}\`${content.substring(0, 200)}${content.length > 200 ? "..." : ""}\``;
+
+    return [
+      {
+        id: `history-tool-${crypto.randomUUID()}`,
+        role: "assistant",
+        timestamp,
+        content: [
+          {
+            kind: "toolCall",
+            id: toolCallId,
+            name: toolName,
+            result: resultText,
+          },
+        ],
+      },
+    ];
   }
 
   if (role === "bashExecution" && msg.command) {
     const output = (msg.output as string) || "";
-    return {
-      id: `history-bash-${crypto.randomUUID()}`,
-      role: "assistant",
-      content: `\`bash\` ${msg.command as string} → exit code ${msg.exitCode ?? "?"}\n\n${output.substring(0, 300)}${output.length > 300 ? "..." : ""}`,
-      toolCalls: [],
-      timestamp,
-    };
+    return [
+      {
+        id: `history-bash-${crypto.randomUUID()}`,
+        role: "assistant",
+        timestamp,
+        content: [
+          {
+            kind: "text",
+            content: `\`bash\` ${msg.command as string} → exit code ${msg.exitCode ?? "?"}\n\n${output.substring(0, 300)}${output.length > 300 ? "..." : ""}`,
+          },
+        ],
+      },
+    ];
   }
 
-  return null;
+  return [];
 }
 
 /**
- * Extract streaming text content from a Pi RPC event.
+ * Extract a *streaming text chunk* from a Pi RPC event.
  *
- * Per the official RPC protocol, message_update events contain:
- *   event.assistantMessageEvent.delta    — streaming text chunk
- *   event.assistantMessageEvent.partial.content[N].text — accumulated text
- *   event.assistantMessageEvent.partial.content[N].thinking — accumulated thinking
+ * Per rpc.md, `message_update` events stream content via deltas:
+ *   - `text_delta`     → `assistantMessageEvent.delta` is a text chunk
+ *   - `thinking_delta` → `assistantMessageEvent.delta` is a thinking chunk
+ *   - `text_start` / `text_end` / `thinking_start` / `thinking_end` carry the
+ *     *accumulated* `partial` state, NOT a chunk to append.
+ *
+ * The caller *appends* whatever this returns to `streamingContent`. Therefore
+ * we MUST only return the incremental `delta` — returning the accumulated
+ * `partial.content[].text` on `text_end` would re-append the full message and
+ * double the displayed text.
  */
 export function extractText(event: Record<string, unknown>): string {
   // Direct fields (fallback for non-message_update events)
@@ -148,56 +182,36 @@ export function extractText(event: Record<string, unknown>): string {
   if (typeof event.message === "string") return event.message;
 
   const ami = event.assistantMessageEvent as
-    | {
-        type?: string;
-        delta?: unknown;
-        contentIndex?: number;
-        partial?: { content?: unknown[] };
-      }
+    | { type?: string; delta?: unknown }
     | undefined;
-  if (ami) {
-    const deltaType = ami.type;
+  if (!ami) return "";
 
-    // text_delta / thinking_delta: single chunk in delta field
-    if (deltaType === "text_delta" || deltaType === "thinking_delta") {
-      const delta = ami.delta;
-      if (typeof delta === "string" && delta) return delta;
-    }
+  // Only true streaming chunks contribute. Everything else (start/end/done)
+  // carries accumulated state and must NOT be appended.
+  if (ami.type === "text_delta") {
+    const delta = ami.delta;
+    if (typeof delta === "string" && delta) return delta;
+  }
 
-    // text_start / thinking_start / other: accumulated in partial.content[N]
-    const partial = ami.partial;
-    if (partial) {
-      const content = partial.content;
-      if (Array.isArray(content) && content.length > 0) {
-        // Try contentIndex first if available
-        const idx = ami.contentIndex;
-        if (typeof idx === "number" && idx >= 0 && idx < content.length) {
-          const block = content[idx];
-          if (typeof block === "object" && block !== null) {
-            if ("text" in block) {
-              const text = (block as { text: unknown }).text;
-              if (typeof text === "string" && text) return text;
-            }
-            if ("thinking" in block) {
-              const thinking = (block as { thinking: unknown }).thinking;
-              if (typeof thinking === "string" && thinking) return "[thinking] " + thinking;
-            }
-          }
-        }
-        // Fallback: check first block
-        const first = content[0];
-        if (typeof first === "object" && first !== null) {
-          if ("text" in first) {
-            const text = (first as { text: unknown }).text;
-            if (typeof text === "string" && text) return text;
-          }
-          if ("thinking" in first) {
-            const thinking = (first as { thinking: unknown }).thinking;
-            if (typeof thinking === "string" && thinking) return "[thinking] " + thinking;
-          }
-        }
-      }
-    }
+  return "";
+}
+
+/**
+ * Extract a *streaming thinking chunk* from a Pi RPC event.
+ *
+ * Mirrors `extractText` but only matches `thinking_delta` (not `text_delta`).
+ * Thinking deltas are accumulated separately so the thinking block can be
+ * rendered in a collapsible container.
+ */
+export function extractThinking(event: Record<string, unknown>): string {
+  const ami = event.assistantMessageEvent as
+    | { type?: string; delta?: unknown }
+    | undefined;
+  if (!ami) return "";
+
+  if (ami.type === "thinking_delta") {
+    const delta = ami.delta;
+    if (typeof delta === "string" && delta) return delta;
   }
 
   return "";
@@ -224,17 +238,20 @@ export function extractToolCall(
   const ami = event.assistantMessageEvent as
     | {
         type?: string;
-        toolCall?: { name?: unknown; arguments?: unknown };
+        id?: string;
+        toolCall?: { id?: string; name?: unknown; arguments?: unknown };
         result?: { output?: unknown };
       }
     | undefined;
   if (ami) {
     const deltaType = ami.type;
 
-    // toolcall_delta: toolCall.name + toolCall.arguments
+    // toolcall_delta: toolCall.name + toolCall.arguments + toolCall.id
     if (deltaType === "toolcall_delta" || deltaType === "toolcall_end") {
       if (ami.toolCall) {
+        const toolCallId = ami.toolCall.id || ami.id;
         const entry: ToolCallEntry = {
+          id: toolCallId,
           name: "",
           args: undefined,
           result: undefined,
@@ -256,12 +273,14 @@ export function extractToolCall(
       }
     }
 
-    // toolcall_result: capture result output
+    // toolcall_result: capture result output + toolCallId for matching
     if (
       deltaType === "toolcall_result" &&
       ami.result?.output !== undefined
     ) {
+      const toolCallId = ami.toolCall?.id || ami.id;
       return {
+        id: toolCallId,
         name: (event._toolName as string) || "unknown",
         args: undefined,
         result:

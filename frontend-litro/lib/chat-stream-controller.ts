@@ -34,6 +34,20 @@ export class ChatStreamController implements ReactiveController {
   state: ConversationState = "idle";
   messages: InboundMessage[] = [];
   isStreaming = false;
+  /**
+   * Lagging streaming indicator, updated *synchronously* in the SSE event
+   * handler — mirroring the React `prevIsStreamingRef` design.
+   *
+   * - Set to `false` the instant a turn starts (before `isStreaming` flips
+   *   to `true`).
+   * - Set to `true` the instant `agent_end` arrives (before `isStreaming`
+   *   flips to `false`).
+   *
+   * The host reads this in its `updated()` callback to detect the
+   * streaming→idle *transition* reliably, even when multiple events are
+   * batched into one update cycle: `streamingEnded = !isStreaming && prevIsStreaming`.
+   */
+  prevIsStreaming = false;
   errorMessage: string | null = null;
   pendingUiRequest: ExtensionUiRequestMessage | null = null;
 
@@ -103,6 +117,7 @@ export class ChatStreamController implements ReactiveController {
   private resetState() {
     this.messages = [];
     this.isStreaming = false;
+    this.prevIsStreaming = false;
     this.state = "idle";
     this.errorMessage = null;
     this.pendingUiRequest = null;
@@ -173,29 +188,35 @@ export class ChatStreamController implements ReactiveController {
   private handleRpcEvent(data: Record<string, unknown>) {
     if (this.disposed) return;
 
-    const event = data as { event?: Record<string, unknown> };
-    const eventPayload = event.event ?? event;
-    const eventType = (eventPayload as Record<string, unknown>)?.type || "";
+    // Backend wraps streaming events as `{ kind: "rpc_event", event: <pi event> }`.
+    const eventPayload =
+      (data as { event?: Record<string, unknown> }).event ?? data;
+    const eventType =
+      (eventPayload as Record<string, unknown>)?.type as string | undefined ??
+      "";
 
-    // Debug: log event types
-    console.log('[SSE] rpc_event type:', eventType);
-    if (eventType === 'message_update') {
-      const ami = (eventPayload as any).assistantMessageEvent;
-      if (ami?.type) {
-        console.log('[SSE] message_update sub-type:', ami.type, 'delta:', String(ami.delta || '').substring(0, 50));
-      }
-    }
-
-    // Track streaming state based on event type
-    // message_update with text_delta/thinking_delta indicates streaming
-    if (eventType === "message_update") {
-      const ami = (eventPayload as any).assistantMessageEvent;
-      if (ami?.type === "text_delta" || ami?.type === "thinking_delta" || ami?.type === "text_start" || ami?.type === "thinking_start") {
-        this.isStreaming = true;
-        this.state = "streaming";
-      }
-    } else if (eventType === "agent_end" || eventType === "turn_end") {
-      // agent_end or turn_end signals end of streaming turn
+    // ── Streaming state transitions ────────────────────────────────────
+    // Match the proven React useSSE semantics exactly:
+    //   turn_start / agent_start / message_start  → start streaming
+    //   agent_end                                  → stop streaming (ONLY)
+    //
+    // `turn_end` is intentionally NOT a stopper: a single agent run emits
+    // one `turn_end` per assistant turn (e.g. between tool calls), so
+    // stopping there would flip the status to idle mid-run and finalize
+    // prematurely. `agent_end` is the definitive end of the whole run.
+    //
+    // `prevIsStreaming` is updated synchronously here so the host can
+    // detect the streaming→idle transition even across batched updates.
+    if (
+      eventType === "turn_start" ||
+      eventType === "agent_start" ||
+      eventType === "message_start"
+    ) {
+      this.prevIsStreaming = false;
+      this.isStreaming = true;
+      this.state = "streaming";
+    } else if (eventType === "agent_end") {
+      this.prevIsStreaming = true;
       this.isStreaming = false;
       this.state = "idle";
     }

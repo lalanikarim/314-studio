@@ -1,19 +1,19 @@
 import { css, html, LitElement } from 'lit';
-import { customElement } from 'lit/decorators.js';
+import { customElement, property } from 'lit/decorators.js';
 import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import { designTokens } from '../styles/design-tokens.js';
 import { renderMarkdown } from '../lib/markdown.js';
-import type { DisplayMessage } from '../types/chat.js';
+import type { MessageContentBlock } from '../types/chat.js';
 
 /**
- * Render a single chat message (user or assistant).
+ * Render a single chat message with ordered content blocks.
  *
- * - User messages: plain text, right-aligned
- * - Assistant messages: markdown rendering via `renderMarkdown()`,
- *   with tool calls rendered as <chat-tool-call> sub-components
+ * Content blocks can be:
+ * - `text`: rendered as markdown
+ * - `thinking`: rendered as a collapsible container (default collapsed)
+ * - `toolCall`: rendered as a `<chat-tool-call>` sub-component
  *
- * Uses `unsafeHTML` directive for markdown output. Source is trusted
- * (Pi agent output, closed Shadow DOM).
+ * All blocks are rendered within the same message body, preserving order.
  */
 @customElement('chat-message')
 export class ChatMessageElement extends LitElement {
@@ -145,14 +145,52 @@ export class ChatMessageElement extends LitElement {
       .message__tools chat-tool-call {
         display: block;
       }
+      .message__thinking {
+        margin: 0.5rem 0;
+      }
+      .message__thinking details {
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--bg-secondary);
+        font-size: 0.8125rem;
+      }
+      .message__thinking summary {
+        cursor: pointer;
+        padding: 0.375rem 0.625rem;
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        user-select: none;
+        display: flex;
+        align-items: center;
+        gap: 0.375rem;
+      }
+      .message__thinking summary:hover {
+        color: var(--text-secondary);
+      }
+      .message__thinking summary::before {
+        content: '🧠';
+        font-size: 0.75rem;
+      }
+      .message__thinking details[open] summary {
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 0.375rem;
+      }
+      .message__thinking .thinking__content {
+        padding: 0.5rem 0.625rem;
+        white-space: pre-wrap;
+        word-break: break-word;
+        color: var(--text-secondary);
+        font-size: 0.8125rem;
+        line-height: 1.5;
+        max-height: 300px;
+        overflow-y: auto;
+      }
     `,
   ];
 
-  static properties = {
-    message: { type: Object, attribute: false },
-  };
-
-  message?: DisplayMessage;
+  @property({ type: String }) role = '';
+  @property({ type: Number }) timestamp = 0;
+  @property({ type: Array, attribute: false }) contentBlocks: MessageContentBlock[] = [];
 
   private formatTime(timestamp: number): string {
     return new Date(timestamp).toLocaleTimeString([], {
@@ -162,11 +200,9 @@ export class ChatMessageElement extends LitElement {
   }
 
   render() {
-    if (!this.message) return html``;
-
-    const isUser = this.message.role === 'user';
+    const isUser = this.role === 'user';
     const name = isUser ? 'You' : 'Pi';
-    const time = this.formatTime(this.message.timestamp);
+    const time = this.formatTime(this.timestamp);
 
     return html`
       <div class="message ${isUser ? 'message--user' : 'message--assistant'}">
@@ -176,25 +212,47 @@ export class ChatMessageElement extends LitElement {
             <span class="message__meta__name">${name}</span>
             <span class="message__meta__time">${time}</span>
           </div>
-          ${!isUser && this.message.toolCalls.length > 0
-            ? html`<div class="message__tools">
-                ${this.message.toolCalls.map(
-                  (tc) =>
-                    html`<chat-tool-call
-                      .name=${tc.name}
-                      .args=${tc.args}
-                      .result=${tc.result}
-                    ></chat-tool-call>`
-                )}
-              </div>`
-            : ''}
-          <div class="message__content">
-            ${isUser
-              ? html`<p>${this.message.content}</p>`
-              : unsafeHTML(renderMarkdown(this.message.content))}
-          </div>
+          ${this.renderContentBlocks(isUser)}
         </div>
       </div>
     `;
+  }
+
+  private renderContentBlocks(isUser: boolean) {
+    if (this.contentBlocks.length === 0) return html``;
+
+    return html`
+      <div class="message__content">
+        ${this.contentBlocks.map((block) => this.renderBlock(block, isUser))}
+      </div>
+    `;
+  }
+
+  private renderBlock(
+    block: MessageContentBlock,
+    isUser: boolean,
+  ) {
+    switch (block.kind) {
+      case 'text':
+        return isUser
+          ? html`<p>${block.content}</p>`
+          : unsafeHTML(renderMarkdown(block.content));
+      case 'thinking':
+        return html`
+          <div class="message__thinking">
+            <details>
+              <summary>Thinking</summary>
+              <div class="thinking__content">${block.content}</div>
+            </details>
+          </div>
+        `;
+      case 'toolCall':
+        return html`<chat-tool-call
+          .name=${block.name}
+          .args=${block.args}
+          .result=${block.result}
+          .id=${block.id ?? ''}
+        ></chat-tool-call>`;
+    }
   }
 }

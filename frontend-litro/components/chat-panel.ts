@@ -1,13 +1,20 @@
 import { html, css, LitElement } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { ChatStreamController } from '../lib/chat-stream-controller.js';
-import { agentMessageToDisplay, extractText, extractToolCall, isStreamFinalizer } from '../lib/chat-processor.js';
+import { agentMessageToDisplay, extractText, extractThinking, extractToolCall, isStreamFinalizer } from '../lib/chat-processor.js';
 import { deriveModelName, createMinimalModel, extractProvider } from '../lib/model.js';
 import { closeSession, deleteSession, switchModel, sendCommand } from '../services/api.js';
 import { designTokens } from '../styles/design-tokens.js';
 import { buttonStyles } from '../styles/shared.js';
 import type { Model } from '../types/index.js';
-import type { DisplayMessage, ToolCallEntry, InboundMessage } from '../types/chat.js';
+import type {
+  ChatMessage,
+  MessageContentBlock,
+  ToolCallEntry,
+  InboundMessage,
+} from '../types/chat.js';
+
+type MutableToolCallBlock = MessageContentBlock & { id?: string; result?: string };
 
 /**
  * ChatPanel — main container for the chat interface.
@@ -343,8 +350,9 @@ export class ChatPanelElement extends LitElement {
   projectPath = '';
 
   @state() processedCount = 0;
-  @state() displayMessages: DisplayMessage[] = [];
+  @state() displayMessages: ChatMessage[] = [];
   @state() streamingContent = '';
+  @state() streamingThinking = '';
   @state() toolCalls: ToolCallEntry[] = [];
   @state() modelDropdownOpen = false;
   @state() closingState: 'none' | 'compact' | 'delete' = 'none';
@@ -355,6 +363,8 @@ export class ChatPanelElement extends LitElement {
   private chatController!: ChatStreamController;
   private modelSetFromState = false;
   private clickOutsideHandler: ((e: Event) => void) | null = null;
+  private streamingTextAccum = '';
+  private streamingThinkingAccum = '';
 
   connectedCallback() {
     super.connectedCallback();
@@ -416,14 +426,96 @@ export class ChatPanelElement extends LitElement {
       ((response?.data as any)?.messages as any[]) ||
       ((response as any)?.messages as any[]) ||
       [];
-    const history = messages
-      .map((m: any) => agentMessageToDisplay(m))
-      .filter((m: DisplayMessage | null): m is DisplayMessage => m !== null);
+    const raw = messages.flatMap((m: any) => agentMessageToDisplay(m));
 
-    if (history.length > 0) {
-      this.displayMessages = [...this.displayMessages, ...history];
+    // Post-process: merge toolResult toolCall blocks into their matching
+    // assistant messages by toolCallId. This ensures that a toolResult is
+    // displayed as part of the assistant's tool call (with result filled in)
+    // rather than as a separate message.
+    const merged = this.mergeHistoryToolResults(raw);
+
+    if (merged.length > 0) {
+      this.displayMessages = [...this.displayMessages, ...merged];
       this.scrollToBottom();
     }
+  }
+
+  /**
+   * Merge toolResult messages into the previous assistant message's matching
+   * toolCall blocks. A toolResult is identified by a toolCall block that has
+   * `result` set (toolResult content blocks always carry the result text,
+   * while assistant toolCall blocks carry `args`).
+   *
+   * Matching key: `toolResult.content[toolCall].id === assistant.content[toolCall].id`
+   *
+   * Pure toolResult messages (only toolCall blocks with `result`) are consumed.
+   * Mixed messages keep their non-toolResult blocks as a standalone message.
+   */
+  private mergeHistoryToolResults(
+    messages: ChatMessage[],
+  ): ChatMessage[] {
+    const result: ChatMessage[] = [];
+
+    for (const msg of messages) {
+      // Only process assistant messages for merging
+      if (msg.role !== 'assistant' || msg.content.length === 0) {
+        result.push(msg);
+        continue;
+      }
+
+      // Split content blocks: toolCall blocks WITH result (from toolResult)
+      // vs everything else (text, thinking, toolCall-without-result)
+      const toolResultBlocks: MessageContentBlock[] = [];
+      const keepBlocks: MessageContentBlock[] = [];
+      for (const block of msg.content) {
+        if (
+          block.kind === 'toolCall' &&
+          block.id &&
+          block.result !== undefined &&
+          block.result !== ''
+        ) {
+          toolResultBlocks.push(block);
+        } else {
+          keepBlocks.push(block);
+        }
+      }
+
+      // No toolResult blocks to merge — keep message as-is
+      if (toolResultBlocks.length === 0) {
+        result.push(msg);
+        continue;
+      }
+
+      // Try to merge toolResult blocks into the previous assistant message
+      if (result.length > 0 && result[result.length - 1].role === 'assistant') {
+        const prev = result[result.length - 1];
+        let didMerge = false;
+
+        for (const rb of toolResultBlocks as MutableToolCallBlock[]) {
+          for (let bi = 0; bi < prev.content.length; bi++) {
+            const pb = prev.content[bi] as MutableToolCallBlock;
+            if (pb.kind === 'toolCall' && pb.id === rb.id) {
+              pb.result = rb.result ?? pb.result;
+              didMerge = true;
+              break;
+            }
+          }
+        }
+
+        if (didMerge) {
+          // Drop pure toolResult messages; keep mixed ones minus toolResult blocks
+          if (keepBlocks.length > 0) {
+            result.push({ ...msg, content: keepBlocks });
+          }
+          continue;
+        }
+      }
+
+      // No previous assistant to merge into — keep as standalone
+      result.push(msg);
+    }
+
+    return result;
   }
 
   // ── State Management ────────────────────────────────────────
@@ -432,6 +524,9 @@ export class ChatPanelElement extends LitElement {
     this.processedCount = 0;
     this.displayMessages = [];
     this.streamingContent = '';
+    this.streamingThinking = '';
+    this.streamingTextAccum = '';
+    this.streamingThinkingAccum = '';
     this.toolCalls = [];
     this.modelSetFromState = false;
     this.errorMessage = null;
@@ -469,15 +564,24 @@ export class ChatPanelElement extends LitElement {
       // must accumulate until agent_end finalizes the whole run.
       const text = extractText(event);
       if (text) {
-        this.streamingContent += text;
+        this.streamingTextAccum += text;
+        this.streamingContent = this.streamingTextAccum;
       }
 
-      // ── Tool call → track / update ───────────────────────────────────
+      // ── Thinking content → accumulate separately ──
+      const thinking = extractThinking(event);
+      if (thinking) {
+        this.streamingThinkingAccum += thinking;
+        this.streamingThinking = this.streamingThinkingAccum;
+      }
+
+      // ── Tool call → track / update by id (not name) ──────────────────
       const toolCall = extractToolCall(event);
       if (toolCall) {
-        const existingIdx = this.toolCalls.findIndex(
-          (tc) => tc.name === toolCall.name
-        );
+        // Prefer id-based matching; fall back to name if id is not available
+        const existingIdx = toolCall.id
+          ? this.toolCalls.findIndex((tc) => tc.id === toolCall.id)
+          : this.toolCalls.findIndex((tc) => tc.name === toolCall.name);
 
         if (existingIdx >= 0) {
           const updated = [...this.toolCalls];
@@ -486,6 +590,10 @@ export class ChatPanelElement extends LitElement {
           }
           if (toolCall.result) {
             updated[existingIdx] = { ...updated[existingIdx], result: toolCall.result };
+          }
+          // Carry forward id if the new entry has one and the existing doesn't
+          if (toolCall.id && !updated[existingIdx].id) {
+            updated[existingIdx] = { ...updated[existingIdx], id: toolCall.id };
           }
           this.toolCalls = updated;
         } else {
@@ -546,30 +654,46 @@ export class ChatPanelElement extends LitElement {
   }
 
   private finalizeStreamingMessage() {
-    const toolLines = this.toolCalls
-      .map((tc) => {
-        const argsLine = tc.args ? `\n  args: ${tc.args}` : '';
-        const resultLine = tc.result ? `\n  result: ${tc.result}` : '';
-        return `> ${tc.name}${argsLine}${resultLine}`;
-      })
-      .filter(Boolean);
+    const textContent = this.streamingTextAccum.trim();
+    const thinkingContent = this.streamingThinkingAccum.trim();
+    const ts = Date.now();
+    const contentBlocks: MessageContentBlock[] = [];
 
-    const lines = [...toolLines, this.streamingContent.trim()].filter(Boolean);
+    if (thinkingContent) {
+      contentBlocks.push({ kind: 'thinking', content: thinkingContent });
+    }
 
-    if (lines.length) {
+    // Emit toolCall content blocks (proper typed blocks, not serialized text)
+    for (const tc of this.toolCalls) {
+      contentBlocks.push({
+        kind: 'toolCall',
+        id: tc.id,
+        name: tc.name,
+        args: tc.args,
+        result: tc.result,
+      });
+    }
+
+    if (textContent) {
+      contentBlocks.push({ kind: 'text', content: textContent });
+    }
+
+    if (contentBlocks.length > 0) {
       this.displayMessages = [
         ...this.displayMessages,
         {
-          id: `assistant-${Date.now()}`,
+          id: `assistant-${ts}`,
           role: 'assistant',
-          content: lines.join('\n\n'),
-          toolCalls: [...this.toolCalls],
-          timestamp: Date.now(),
+          timestamp: ts,
+          content: contentBlocks,
         },
       ];
     }
 
     this.streamingContent = '';
+    this.streamingThinking = '';
+    this.streamingTextAccum = '';
+    this.streamingThinkingAccum = '';
     this.toolCalls = [];
   }
 
@@ -577,11 +701,14 @@ export class ChatPanelElement extends LitElement {
 
   private handleSend(message: string) {
     // Finalize any current streaming content
-    if (this.streamingContent.trim() || this.toolCalls.length > 0) {
+    if (this.streamingTextAccum.trim() || this.streamingThinkingAccum.trim() || this.toolCalls.length > 0) {
       this.finalizeStreamingMessage();
     }
 
     this.streamingContent = '';
+    this.streamingThinking = '';
+    this.streamingTextAccum = '';
+    this.streamingThinkingAccum = '';
     this.toolCalls = [];
 
     // Add user message to display
@@ -590,9 +717,8 @@ export class ChatPanelElement extends LitElement {
       {
         id: `user-${Date.now()}`,
         role: 'user',
-        content: message,
-        toolCalls: [],
         timestamp: Date.now(),
+        content: [{ kind: 'text', content: message }],
       },
     ];
 
@@ -703,6 +829,9 @@ export class ChatPanelElement extends LitElement {
   private handleAbort() {
     this.chatController.abort();
     this.streamingContent = '';
+    this.streamingThinking = '';
+    this.streamingTextAccum = '';
+    this.streamingThinkingAccum = '';
     this.toolCalls = [];
   }
 
@@ -728,7 +857,7 @@ export class ChatPanelElement extends LitElement {
 
   // ── Utilities ───────────────────────────────────────────────
 
-  private get sortedMessages(): DisplayMessage[] {
+  private get sortedMessages(): ChatMessage[] {
     return [...this.displayMessages].sort((a, b) => a.timestamp - b.timestamp);
   }
 
@@ -892,8 +1021,13 @@ export class ChatPanelElement extends LitElement {
               </div>`
             : html`
                 ${this.sortedMessages.map(
-                  (msg) =>
-                    html`<chat-message .message=${msg}></chat-message>`
+                  (msg) => html`
+                    <chat-message
+                      .role=${msg.role}
+                      .timestamp=${msg.timestamp}
+                      .contentBlocks=${msg.content}
+                    ></chat-message>
+                  `
                 )}
                 ${this.streamingContent
                   ? html`
