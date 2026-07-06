@@ -492,6 +492,11 @@ export class ChatPanelElement extends LitElement {
         const prevLen = this.streamingTextAccum.length;
         this.streamingTextAccum = text;
         this.streamingContent = this.streamingTextAccum;
+
+        // Create or update the streaming message in displayMessages
+        this.ensureStreamingMessage();
+        this.updateStreamingMessageContent();
+
         console.debug(
           '[ChatStream]   drain:', eventType,
           '→ text (REPLACE):', JSON.stringify(text),
@@ -505,6 +510,11 @@ export class ChatPanelElement extends LitElement {
         const prevLen = this.streamingThinkingAccum.length;
         this.streamingThinkingAccum = thinking;
         this.streamingThinking = this.streamingThinkingAccum;
+
+        // Create or update the streaming message in displayMessages
+        this.ensureStreamingMessage();
+        this.updateStreamingMessageContent();
+
         console.debug(
           '[ChatStream]   drain:', eventType,
           '→ thinking (REPLACE):', JSON.stringify(thinking),
@@ -530,6 +540,8 @@ export class ChatPanelElement extends LitElement {
           }),
         );
         this.upsertToolCall(toolCallDelta);
+        this.ensureStreamingMessage();
+        this.updateStreamingMessageContent();
       }
 
       // Tool call end (FULL toolCall object — sets complete entry)
@@ -551,6 +563,8 @@ export class ChatPanelElement extends LitElement {
         } else {
           this.streamingToolCalls = [...this.streamingToolCalls, toolCallEnd];
         }
+        this.ensureStreamingMessage();
+        this.updateStreamingMessageContent();
       }
 
       // Tool call result (from assistantMessageEvent or tool_execution_end)
@@ -569,6 +583,8 @@ export class ChatPanelElement extends LitElement {
           updated[idx] = { ...updated[idx], result: toolResult.result };
           this.streamingToolCalls = updated;
         }
+        this.ensureStreamingMessage();
+        this.updateStreamingMessageContent();
       }
 
       // Tool execution update (accumulated output — replace display)
@@ -593,6 +609,8 @@ export class ChatPanelElement extends LitElement {
             result: toolExecUpdate.partialText,
           }];
         }
+        this.ensureStreamingMessage();
+        this.updateStreamingMessageContent();
       }
 
       // ── Finalization triggers ─────────────────────────────────────
@@ -643,19 +661,24 @@ export class ChatPanelElement extends LitElement {
   }
 
   /**
-   * Commit accumulated streaming content to displayMessages.
-   * Called when message_end, turn_end, or agent_end arrives.
+   * Ensure there's an assistant message in displayMessages for the current
+   * streaming turn. Creates one if it doesn't exist, updates it if it does.
    */
-  private commitStreamingMessage() {
-    const textContent = this.streamingTextAccum.trim();
-    const thinkingContent = this.streamingThinkingAccum.trim();
+  private ensureStreamingMessage() {
+    const lastMsg = this.displayMessages[this.displayMessages.length - 1];
+    if (lastMsg && lastMsg.role === 'assistant') {
+      // Already have a streaming message, just update it
+      this.updateStreamingMessageContent();
+      return;
+    }
+
+    // Create a new assistant message
     const ts = Date.now();
     const contentBlocks: MessageContentBlock[] = [];
 
-    if (thinkingContent) {
-      contentBlocks.push({ kind: 'thinking', content: thinkingContent });
+    if (this.streamingThinkingAccum.trim()) {
+      contentBlocks.push({ kind: 'thinking', content: this.streamingThinkingAccum });
     }
-
     for (const tc of this.streamingToolCalls) {
       contentBlocks.push({
         kind: 'toolCall',
@@ -665,32 +688,75 @@ export class ChatPanelElement extends LitElement {
         result: tc.result,
       });
     }
-
-    if (textContent) {
-      contentBlocks.push({ kind: 'text', content: textContent });
+    if (this.streamingTextAccum.trim()) {
+      contentBlocks.push({ kind: 'text', content: this.streamingTextAccum });
     }
 
-    if (contentBlocks.length > 0) {
-      const newMsg: ChatMessage = {
-        id: `assistant-${ts}`,
-        role: 'assistant',
-        timestamp: ts,
-        content: contentBlocks,
-      };
-      this.displayMessages = [...this.displayMessages, newMsg];
+    const newMsg: ChatMessage = {
+      id: `assistant-streaming-${ts}`,
+      role: 'assistant',
+      timestamp: ts,
+      content: contentBlocks,
+    };
+    this.displayMessages = [...this.displayMessages, newMsg];
 
-      console.debug(
-        '[ChatStream] COMMITTED message:',
-        'textLen=' + textContent.length,
-        'thinkingLen=' + thinkingContent.length,
-        'toolCalls=' + this.streamingToolCalls.length,
-        'blocks=' + contentBlocks.length,
-        'blockTypes=' + contentBlocks.map(b => b.kind).join(','),
-      );
-      console.debug('[ChatStream]   message preview:', textContent);
-    } else {
-      console.debug('[ChatStream] COMMIT: no content to commit (text:', textContent.length, 'chars, tools:', this.streamingToolCalls.length, ')');
+    console.debug(
+      '[ChatStream] ENSURE: created streaming message with',
+      'textLen=' + this.streamingTextAccum.length,
+      'thinkingLen=' + this.streamingThinkingAccum.length,
+      'toolCalls=' + this.streamingToolCalls.length,
+    );
+  }
+
+  /**
+   * Update the content blocks of the last assistant message in displayMessages.
+   */
+  private updateStreamingMessageContent() {
+    if (this.displayMessages.length === 0) return;
+    const lastMsg = this.displayMessages[this.displayMessages.length - 1];
+    if (lastMsg.role !== 'assistant') return;
+
+    const contentBlocks: MessageContentBlock[] = [];
+
+    if (this.streamingThinkingAccum.trim()) {
+      contentBlocks.push({ kind: 'thinking', content: this.streamingThinkingAccum });
     }
+    for (const tc of this.streamingToolCalls) {
+      contentBlocks.push({
+        kind: 'toolCall',
+        id: tc.id,
+        name: tc.name,
+        args: tc.args,
+        result: tc.result,
+      });
+    }
+    if (this.streamingTextAccum.trim()) {
+      contentBlocks.push({ kind: 'text', content: this.streamingTextAccum });
+    }
+
+    // Update the message in place (mutable)
+    (lastMsg as any).content = contentBlocks;
+    this.displayMessages = [...this.displayMessages]; // Trigger reactivity
+  }
+
+  /**
+   * Commit accumulated streaming content to displayMessages.
+   * Called when message_end, turn_end, or agent_end arrives.
+   * The message should already exist in displayMessages from ensureStreamingMessage().
+   */
+  private commitStreamingMessage() {
+    // Update the last message with final content
+    this.updateStreamingMessageContent();
+
+    const textContent = this.streamingTextAccum.trim();
+    const thinkingContent = this.streamingThinkingAccum.trim();
+
+    console.debug(
+      '[ChatStream] COMMITTED message:',
+      'textLen=' + textContent.length,
+      'thinkingLen=' + thinkingContent.length,
+      'toolCalls=' + this.streamingToolCalls.length,
+    );
 
     // Reset accumulators
     this.streamingTextAccum = '';
@@ -1094,54 +1160,6 @@ export class ChatPanelElement extends LitElement {
   // Render
   // ========================================================================
 
-  /**
-   * Render the in-progress assistant message using the same <chat-message>
-   * component as committed messages. This ensures streaming preview and
-   * final message have identical styling.
-   */
-  private renderStreamingPreview() {
-    const ts = Date.now();
-    const blocks: MessageContentBlock[] = [];
-
-    if (this.streamingThinking) {
-      blocks.push({ kind: 'thinking', content: this.streamingThinking });
-    }
-    for (const tc of this.streamingToolCalls) {
-      blocks.push({
-        kind: 'toolCall',
-        id: tc.id,
-        name: tc.name,
-        args: tc.args,
-        result: tc.result,
-      });
-    }
-    if (this.streamingContent) {
-      blocks.push({ kind: 'text', content: this.streamingContent });
-    }
-
-    const streamingMsg: ChatMessage = {
-      id: `assistant-streaming-${ts}`,
-      role: 'assistant',
-      timestamp: ts,
-      content: blocks,
-    };
-
-    return html`
-      <chat-message
-        .role=${streamingMsg.role}
-        .timestamp=${streamingMsg.timestamp}
-        .contentBlocks=${streamingMsg.content}
-        .isStreaming=${true}
-      ></chat-message>
-      <div class="chat-panel__streaming-indicator">
-        <span class="chat-panel__typing"></span>
-        ${this.streamingThinking && !this.streamingContent
-          ? 'Pi is thinking...'
-          : 'Pi is typing...'}
-      </div>
-    `;
-  }
-
   render() {
     return html`
       <div class="chat-panel">
@@ -1261,8 +1279,13 @@ export class ChatPanelElement extends LitElement {
                     ></chat-message>
                   `,
                 )}
-                ${this.streamingContent || this.streamingThinking || this.streamingToolCalls.length > 0
-                  ? this.renderStreamingPreview()
+                ${this.chatController.isStreaming
+                  ? html`
+                      <div class="chat-panel__streaming-indicator">
+                        <span class="chat-panel__typing"></span>
+                        Pi is typing...
+                      </div>
+                    `
                   : ''}
               `}
         </div>
