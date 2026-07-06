@@ -179,18 +179,21 @@ export class ChatStreamController implements ReactiveController {
 
     // Debug: log event types
     console.log('[SSE] rpc_event type:', eventType);
-    if (eventType === 'agent_message') {
-      console.log('[SSE] agent_message text:', (eventPayload as any).text?.substring(0, 100));
+    if (eventType === 'message_update') {
+      const ami = (eventPayload as any).assistantMessageEvent;
+      if (ami?.type) {
+        console.log('[SSE] message_update sub-type:', ami.type, 'delta:', String(ami.delta || '').substring(0, 50));
+      }
     }
 
     // Track streaming state based on event type
-    if (
-      eventType === "turn_start" ||
-      eventType === "agent_start" ||
-      eventType === "message_start"
-    ) {
-      this.isStreaming = true;
-      this.state = "streaming";
+    // message_update with text_delta/thinking_delta indicates streaming
+    if (eventType === "message_update") {
+      const ami = (eventPayload as any).assistantMessageEvent;
+      if (ami?.type === "text_delta" || ami?.type === "thinking_delta" || ami?.type === "text_start" || ami?.type === "thinking_start") {
+        this.isStreaming = true;
+        this.state = "streaming";
+      }
     } else if (eventType === "agent_end" || eventType === "turn_end") {
       // agent_end or turn_end signals end of streaming turn
       this.isStreaming = false;

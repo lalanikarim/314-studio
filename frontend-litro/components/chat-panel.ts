@@ -456,14 +456,14 @@ export class ChatPanelElement extends LitElement {
       const eventType = event.type || '';
 
       // Track streaming state transitions
-      if (
-        eventType === 'turn_start' ||
-        eventType === 'agent_start' ||
-        eventType === 'message_start'
-      ) {
-        this.prevIsStreaming = true;
-        this.streamingContent = '';
-        this.toolCalls = [];
+      // message_update with text_delta/thinking_delta indicates streaming
+      if (eventType === 'message_update') {
+        const ami = (event as any).assistantMessageEvent;
+        if (ami?.type === 'text_delta' || ami?.type === 'thinking_delta' || ami?.type === 'text_start' || ami?.type === 'thinking_start') {
+          this.prevIsStreaming = true;
+          this.streamingContent = '';
+          this.toolCalls = [];
+        }
       } else if (
         eventType === 'agent_end' ||
         eventType === 'turn_end'

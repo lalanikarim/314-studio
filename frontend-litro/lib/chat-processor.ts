@@ -138,7 +138,8 @@ export function agentMessageToDisplay(
  *
  * Per the official RPC protocol, message_update events contain:
  *   event.assistantMessageEvent.delta    — streaming text chunk
- *   event.assistantMessageEvent.partial.content[0].text — accumulated text
+ *   event.assistantMessageEvent.partial.content[N].text — accumulated text
+ *   event.assistantMessageEvent.partial.content[N].thinking — accumulated thinking
  */
 export function extractText(event: Record<string, unknown>): string {
   // Direct fields (fallback for non-message_update events)
@@ -150,31 +151,50 @@ export function extractText(event: Record<string, unknown>): string {
     | {
         type?: string;
         delta?: unknown;
+        contentIndex?: number;
         partial?: { content?: unknown[] };
       }
     | undefined;
   if (ami) {
     const deltaType = ami.type;
 
-    // text_delta: single chunk in delta field
-    if (deltaType === "text_delta") {
+    // text_delta / thinking_delta: single chunk in delta field
+    if (deltaType === "text_delta" || deltaType === "thinking_delta") {
       const delta = ami.delta;
       if (typeof delta === "string" && delta) return delta;
     }
 
-    // text_start / other: accumulated in partial.content[0].text
+    // text_start / thinking_start / other: accumulated in partial.content[N]
     const partial = ami.partial;
     if (partial) {
       const content = partial.content;
       if (Array.isArray(content) && content.length > 0) {
+        // Try contentIndex first if available
+        const idx = ami.contentIndex;
+        if (typeof idx === "number" && idx >= 0 && idx < content.length) {
+          const block = content[idx];
+          if (typeof block === "object" && block !== null) {
+            if ("text" in block) {
+              const text = (block as { text: unknown }).text;
+              if (typeof text === "string" && text) return text;
+            }
+            if ("thinking" in block) {
+              const thinking = (block as { thinking: unknown }).thinking;
+              if (typeof thinking === "string" && thinking) return "[thinking] " + thinking;
+            }
+          }
+        }
+        // Fallback: check first block
         const first = content[0];
-        if (
-          typeof first === "object" &&
-          first !== null &&
-          "text" in first
-        ) {
-          const text = (first as { text: unknown }).text;
-          if (typeof text === "string" && text) return text;
+        if (typeof first === "object" && first !== null) {
+          if ("text" in first) {
+            const text = (first as { text: unknown }).text;
+            if (typeof text === "string" && text) return text;
+          }
+          if ("thinking" in first) {
+            const thinking = (first as { thinking: unknown }).thinking;
+            if (typeof thinking === "string" && thinking) return "[thinking] " + thinking;
+          }
         }
       }
     }
