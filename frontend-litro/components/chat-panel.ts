@@ -1424,7 +1424,6 @@ export class ChatPanelElement extends LitElement {
   }
 
   // Model selector moved to workspace header (light DOM) — see workspace.ts
-
   private renderExtensionUI() {
     const req = this.chatController.pendingUiRequest;
     if (!req) return html``;

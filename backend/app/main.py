@@ -34,10 +34,10 @@ from app.utils import RateLimiter, get_remote_key
 
 logger = logging.getLogger(__name__)
 
-# Rate limiter: 120 requests per minute per client IP (default).
+# Rate limiter: 1000 requests per minute per client IP (raised for development).
 # Override with RATE_LIMIT_MAX_REQUESTS and RATE_LIMIT_WINDOW env vars,
 # or set RATE_LIMIT_DISABLED=1 to disable entirely.
-rate_limiter = RateLimiter()
+rate_limiter = RateLimiter(max_requests=1000, window_seconds=60.0)
 
 
 @asynccontextmanager
