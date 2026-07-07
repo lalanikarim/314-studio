@@ -1179,8 +1179,7 @@ export class ChatPanelElement extends LitElement {
   // ========================================================================
 
   render() {
-    // Skip SSR — chat panel renders dynamically after client hydration
-    if (typeof window === 'undefined') return html``;
+    console.debug('[ChatStream] render() called, displayMessages.length=', this.displayMessages.length);
     return html`
       <div class="chat-panel">
         <!-- Header -->
