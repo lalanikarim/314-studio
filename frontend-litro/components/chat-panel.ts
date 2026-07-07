@@ -1179,10 +1179,6 @@ export class ChatPanelElement extends LitElement {
   // ========================================================================
 
   render() {
-    // During SSR, return empty — chat panel content is fully dynamic (loaded via loadChatHistory on client)
-    if (typeof window === 'undefined') return html``;
-    const renderId = Math.random().toString(36).substring(7);
-    console.debug('[ChatStream] render() instance', renderId, 'displayMessages.length=', this.displayMessages.length);
     return html`
       <div class="chat-panel">
         <!-- Header -->
@@ -1302,7 +1298,6 @@ export class ChatPanelElement extends LitElement {
 
   private renderMessagesArea() {
     const hasMessages = this.displayMessages.length > 0;
-    console.debug('[ChatStream] RENDER AREA: displayMessages.length=', this.displayMessages.length, 'streamingContent=', !!this.streamingContent, '→ showing', hasMessages ? 'messages' : 'empty');
     if (!hasMessages && !this.streamingContent) {
       return html`<div class="chat-panel__empty">
         <div class="empty__icon">💬</div>
@@ -1342,7 +1337,7 @@ export class ChatPanelElement extends LitElement {
       console.debug('[ChatStream] RENDER ids:', ids.join(', '));
       ChatPanelElement._lastRenderMsgIds = ids;
     }
-    const templates = msgs.map(
+    return msgs.map(
       (msg) => html`
         <chat-message
           .role=${msg.role}
@@ -1351,8 +1346,6 @@ export class ChatPanelElement extends LitElement {
         ></chat-message>
       `,
     );
-    console.debug('[ChatStream] RENDER returning', templates.length, 'templates');
-    return templates;
   }
 
   private renderModelDropdown() {
