@@ -398,7 +398,7 @@ export class ChatPanelElement extends LitElement {
   private modelSetFromState = false;
   private clickOutsideHandler: ((e: Event) => void) | null = null;
   private sendingMessage = false; // Guard against duplicate sends
-  private lastMessageCount = -1; // Track message count changes for render logging
+  private _lastRenderSignature = ''; // Dedupe render logs across re-renders
 
   // Streaming accumulators — reset after commit to displayMessages
   private streamingTextAccum = '';
@@ -1299,8 +1299,12 @@ export class ChatPanelElement extends LitElement {
 
   private renderMessages() {
     const msgs = this.sortedMessages;
-    for (const msg of msgs) {
-      console.debug('[ChatStream] RENDER:', msg.role, 'blocks=', msg.content.length, msg.content.map((b) => b.kind).join(','));
+    const signature = msgs.map((m) => `${m.role}:${m.content.length}:${m.content.map((b) => b.kind).join(',')}`).join('|');
+    if (signature !== this._lastRenderSignature) {
+      for (const msg of msgs) {
+        console.debug('[ChatStream] RENDER:', msg.role, 'blocks=', msg.content.length, msg.content.map((b) => b.kind).join(','));
+      }
+      this._lastRenderSignature = signature;
     }
     return msgs.map(
       (msg) => html`
