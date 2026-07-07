@@ -1299,10 +1299,8 @@ export class ChatPanelElement extends LitElement {
 
   private renderMessages() {
     const msgs = this.sortedMessages;
-    if (msgs.length !== this.lastMessageCount) {
-      const summary = msgs.map((m) => `${m.role}(${m.content.length})`).join(', ');
-      console.debug('[ChatStream] RENDER:', msgs.length, 'messages —', summary);
-      this.lastMessageCount = msgs.length;
+    for (const msg of msgs) {
+      console.debug('[ChatStream] RENDER:', msg.role, 'blocks=', msg.content.length, msg.content.map((b) => b.kind).join(','));
     }
     return msgs.map(
       (msg) => html`
