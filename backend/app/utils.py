@@ -1,5 +1,6 @@
 """Shared utility functions for the backend API."""
 
+import os
 import re
 import time
 from collections import defaultdict
@@ -62,11 +63,19 @@ class RateLimiter:
 
     Tracks request counts per key within a time window. When the limit is
     exceeded, raises ``HTTPException(429)``.
+
+    Configurable via environment variables:
+      RATE_LIMIT_MAX_REQUESTS  — max requests per window (default: 120)
+      RATE_LIMIT_WINDOW        — window size in seconds (default: 60)
     """
 
-    def __init__(self, max_requests: int = 60, window_seconds: float = 60.0):
-        self.max_requests = max_requests
-        self.window_seconds = window_seconds
+    def __init__(
+        self,
+        max_requests: int | None = None,
+        window_seconds: float | None = None,
+    ):
+        self.max_requests = max_requests if max_requests is not None else 120
+        self.window_seconds = window_seconds if window_seconds is not None else 60.0
         self._requests: dict[str, list[float]] = defaultdict(list)
 
     def _clean(self, key: str) -> None:
@@ -86,8 +95,12 @@ class RateLimiter:
         timestamps.append(time.monotonic())
 
 
-# Default rate limiter: 60 requests per 60 seconds per IP
-_default_limiter = RateLimiter(max_requests=60, window_seconds=60.0)
+# Default rate limiter — values can be overridden via RATE_LIMIT_MAX_REQUESTS
+# and RATE_LIMIT_WINDOW environment variables.
+_default_limiter = RateLimiter(
+    max_requests=int(os.environ.get("RATE_LIMIT_MAX_REQUESTS", "120")),
+    window_seconds=float(os.environ.get("RATE_LIMIT_WINDOW", "60")),
+)
 
 
 def get_remote_key(request: Request) -> str:
