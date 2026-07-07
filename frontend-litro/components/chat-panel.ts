@@ -447,7 +447,6 @@ export class ChatPanelElement extends LitElement {
     // Auto-scroll to bottom while streaming so the user always sees
     // the latest content (whether thinking, tool calls, or text).
     if (this.chatController.isStreaming) {
-      console.debug('[ChatStream] Auto-scroll triggered, isStreaming:', this.chatController.isStreaming);
       this.scrollToBottom();
     }
   }
@@ -1121,7 +1120,6 @@ export class ChatPanelElement extends LitElement {
   private scrollToBottom() {
     requestAnimationFrame(() => {
       const messagesContainer = this.shadowRoot?.querySelector('.chat-panel__messages');
-      console.debug('[ChatStream] scrollToBottom: container found:', !!messagesContainer);
       if (messagesContainer) {
         messagesContainer.scrollTo({
           top: messagesContainer.scrollHeight,
