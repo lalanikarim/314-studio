@@ -429,7 +429,10 @@ export class ChatPanelElement extends LitElement {
   updated(changedProperties: Map<string, unknown>) {
     if (changedProperties.has('sessionId')) {
       this.chatController.setSessionId(this.sessionId);
-      this.resetDisplayState();
+      // Only reset if history hasn't been loaded yet (guard against Litro double-render)
+      if (!this.historyLoaded) {
+        this.resetDisplayState();
+      }
       this.historyLoaded = false;
       // Clear the static guard for the old session so a new session can load
       if (this._prevSessionId && this._prevSessionId !== this.sessionId) {
