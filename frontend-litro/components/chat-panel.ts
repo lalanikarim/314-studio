@@ -1296,16 +1296,23 @@ export class ChatPanelElement extends LitElement {
     `;
   }
 
-  private static _lastRenderSignature = '';
+  private static _lastRenderMsgIds: string[] = [];
 
   private renderMessages() {
     const msgs = this.sortedMessages;
-    const signature = msgs.map((m) => `${m.role}:${m.content.length}:${m.content.map((b) => b.kind).join(',')}`).join('|');
-    if (signature !== ChatPanelElement._lastRenderSignature) {
-      for (const msg of msgs) {
-        console.debug('[ChatStream] RENDER:', msg.role, 'blocks=', msg.content.length, msg.content.map((b) => b.kind).join(','));
+    const ids = msgs.map((m) => m.id);
+    const prevIds = ChatPanelElement._lastRenderMsgIds;
+    const added = ids.filter((id) => !prevIds.includes(id));
+    const removed = prevIds.filter((id) => !ids.includes(id));
+    if (added.length > 0 || removed.length > 0) {
+      for (const id of added) {
+        const msg = msgs.find((m) => m.id === id);
+        if (msg) console.debug('[ChatStream] RENDER +:', msg.role, 'blocks=', msg.content.length, msg.content.map((b) => b.kind).join(','));
       }
-      ChatPanelElement._lastRenderSignature = signature;
+      for (const id of removed) {
+        console.debug('[ChatStream] RENDER -:', id);
+      }
+      ChatPanelElement._lastRenderMsgIds = ids;
     }
     return msgs.map(
       (msg) => html`
