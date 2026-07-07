@@ -1082,6 +1082,12 @@ export class ChatPanelElement extends LitElement {
   /**
    * Merge toolResult blocks into matching toolCall blocks by id.
    * Returns a new block array with results filled in.
+   *
+   * Standalone tool result messages (role=assistant, content=[toolCall with
+   * result but no args]) must be merged INTO the original toolCall block
+   * (which has args). After streaming, mergeToolResultIntoLastMessage may
+   * already have set result on the original block, so the skip condition
+   * must match on id + args, not id + !result.
    */
   private mergeToolResultsIntoAssistantBlocks(
     blocks: MessageContentBlock[],
@@ -1089,31 +1095,38 @@ export class ChatPanelElement extends LitElement {
     const result: MessageContentBlock[] = [];
     const resultById = new Map<string, string>();
 
-    // First pass: collect all toolResults by id
+    // First pass: collect all toolResults by id. Prefer results from
+    // original toolCall blocks (have args, from streaming or history)
+    // over standalone tool result blocks (no args, from buildToolResultBlock
+    // which wraps content in backticks).
     for (const block of blocks) {
       if (
         block.kind === 'toolCall' &&
         block.result !== undefined &&
         block.result !== ''
       ) {
-        resultById.set(block.id!, block.result);
+        const existing = resultById.get(block.id!);
+        // Prefer clean result from original block (has args) over
+        // backticked result from standalone block (no args).
+        if (!existing || (block.args !== undefined && block.args !== '')) {
+          resultById.set(block.id!, block.result);
+        }
       }
     }
 
     // Second pass: rebuild blocks, filling in results
     for (const block of blocks) {
-      // toolCall blocks that already have a result: in the history path
-      // there may be a duplicate toolCall (without result) that should
-      // receive this result. In the live path there is only one toolCall
-      // with result — it must be preserved.
+      // Skip standalone tool result blocks (have result but no args) —
+      // they should never be rendered independently. The matching
+      // original toolCall block (with args) receives the result below.
       if (block.kind === 'toolCall' && block.result !== undefined && block.result !== '') {
-        const hasMatchingWithoutResult = blocks.some(
-          (b) => b !== block && b.kind === 'toolCall' && b.id === block.id && (!b.result || b.result === '')
+        const hasMatchingWithArgs = blocks.some(
+          (b) => b !== block && b.kind === 'toolCall' && b.id === block.id && (b.args !== undefined && b.args !== '')
         );
-        if (hasMatchingWithoutResult) {
-          continue;  // Skip this one; the matching one will get the result
+        if (hasMatchingWithArgs) {
+          continue;
         }
-        result.push(block);  // No duplicate without result, keep this one
+        result.push(block);  // No matching original; keep as-is
         continue;
       }
       if (block.kind === 'toolCall' && block.id && resultById.has(block.id)) {
