@@ -1316,11 +1316,12 @@ export class ChatPanelElement extends LitElement {
     if (added.length > 0 || removed.length > 0) {
       for (const id of added) {
         const msg = msgs.find((m) => m.id === id);
-        if (msg) console.debug('[ChatStream] RENDER +:', msg.role, 'blocks=', msg.content.length, msg.content.map((b) => b.kind).join(','));
+        if (msg) console.debug('[ChatStream] RENDER +:', msg.role, msg.id, 'blocks=', msg.content.length, msg.content.map((b) => b.kind).join(','));
       }
       for (const id of removed) {
         console.debug('[ChatStream] RENDER -:', id);
       }
+      console.debug('[ChatStream] RENDER ids:', ids.join(', '));
       ChatPanelElement._lastRenderMsgIds = ids;
     }
     return msgs.map(
