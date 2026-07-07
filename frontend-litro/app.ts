@@ -4,6 +4,10 @@ import '@beatzball/litro/runtime/LitroLink.js';
 
 // Custom elements
 import './components/file-preview.js';
+import './components/file-preview-code.js';
+import './components/file-preview-markdown.js';
+import './components/file-preview-image.js';
+import './components/file-preview-empty.js';
 import './components/project-tree.js';
 import './components/shutdown-dialog.js';
 import './components/session-row.js';
