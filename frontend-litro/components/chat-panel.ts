@@ -398,6 +398,7 @@ export class ChatPanelElement extends LitElement {
   private modelSetFromState = false;
   private clickOutsideHandler: ((e: Event) => void) | null = null;
   private sendingMessage = false; // Guard against duplicate sends
+  private lastMessageCount = -1; // Track message count changes for render logging
 
   // Streaming accumulators — reset after commit to displayMessages
   private streamingTextAccum = '';
@@ -1273,15 +1274,7 @@ export class ChatPanelElement extends LitElement {
                 </p>
               </div>`
             : html`
-                ${this.sortedMessages.map(
-                  (msg) => html`
-                    <chat-message
-                      .role=${msg.role}
-                      .timestamp=${msg.timestamp}
-                      .contentBlocks=${msg.content}
-                    ></chat-message>
-                  `,
-                )}
+                ${this.renderMessages()}`
                 ${this.chatController.isStreaming
                   ? html`
                       <div class="chat-panel__streaming-indicator">
@@ -1302,6 +1295,24 @@ export class ChatPanelElement extends LitElement {
         ></chat-input>
       </div>
     `;
+  }
+
+  private renderMessages() {
+    const msgs = this.sortedMessages;
+    if (msgs.length !== this.lastMessageCount) {
+      const summary = msgs.map((m) => `${m.role}(${m.content.length})`).join(', ');
+      console.debug('[ChatStream] RENDER:', msgs.length, 'messages —', summary);
+      this.lastMessageCount = msgs.length;
+    }
+    return msgs.map(
+      (msg) => html`
+        <chat-message
+          .role=${msg.role}
+          .timestamp=${msg.timestamp}
+          .contentBlocks=${msg.content}
+        ></chat-message>
+      `,
+    );
   }
 
   private renderModelDropdown() {
