@@ -398,6 +398,7 @@ export class ChatPanelElement extends LitElement {
   private modelSetFromState = false;
   private clickOutsideHandler: ((e: Event) => void) | null = null;
   private sendingMessage = false; // Guard against duplicate sends
+  private _prevSessionId = ''; // Track previous session for static guard cleanup
 
   // Streaming accumulators — reset after commit to displayMessages
   private streamingTextAccum = '';
@@ -430,6 +431,11 @@ export class ChatPanelElement extends LitElement {
       this.chatController.setSessionId(this.sessionId);
       this.resetDisplayState();
       this.historyLoaded = false;
+      // Clear the static guard for the old session so a new session can load
+      if (this._prevSessionId && this._prevSessionId !== this.sessionId) {
+        ChatPanelElement._historyLoadedSessions.delete(this._prevSessionId);
+      }
+      this._prevSessionId = this.sessionId;
 
       if (this.sessionId) {
         setTimeout(() => this.loadChatHistory(), 500);
@@ -834,12 +840,14 @@ export class ChatPanelElement extends LitElement {
   // ========================================================================
 
   private async loadChatHistory() {
-    if (this.historyLoaded || !this.sessionId) return;
+    if (!this.sessionId) return;
+    if (ChatPanelElement._historyLoadedSessions.has(this.sessionId)) return;
 
     try {
       const result = await sendCommand(this.sessionId, { command: 'get_messages' });
       const rpcResponse = (result as any)?.response ?? result;
       this.applyHistoryResponse(rpcResponse);
+      ChatPanelElement._historyLoadedSessions.add(this.sessionId);
       this.historyLoaded = true;
     } catch (err) {
       console.error('Failed to load chat history:', err);
@@ -1297,6 +1305,7 @@ export class ChatPanelElement extends LitElement {
   }
 
   private static _lastRenderMsgIds: string[] = [];
+  private static _historyLoadedSessions = new Set<string>();
 
   private renderMessages() {
     const msgs = this.sortedMessages;
