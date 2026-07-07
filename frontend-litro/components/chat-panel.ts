@@ -841,7 +841,11 @@ export class ChatPanelElement extends LitElement {
 
   private async loadChatHistory() {
     if (!this.sessionId) return;
-    if (ChatPanelElement._historyLoadedSessions.has(this.sessionId)) return;
+    if (ChatPanelElement._historyLoadedSessions.has(this.sessionId)) {
+      console.debug('[ChatStream] loadChatHistory: SKIPPED (already loaded for', this.sessionId, ')');
+      return;
+    }
+    console.debug('[ChatStream] loadChatHistory: LOADING for', this.sessionId);
 
     try {
       const result = await sendCommand(this.sessionId, { command: 'get_messages' });
