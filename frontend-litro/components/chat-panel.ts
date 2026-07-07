@@ -1279,7 +1279,8 @@ export class ChatPanelElement extends LitElement {
 
         <!-- Messages Area -->
         <div class="chat-panel__messages">
-          ${this.renderMessagesArea()}`
+          ${this.renderMessagesArea()}
+        </div>
 
         <!-- Input Bar -->
         <chat-input
