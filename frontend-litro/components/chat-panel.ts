@@ -88,64 +88,6 @@ export class ChatPanelElement extends LitElement {
         align-items: center;
         gap: 0.25rem;
       }
-      .chat-panel__model-selector {
-        position: relative;
-      }
-      .chat-panel__model-btn {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 0.375rem 0.75rem;
-        background: var(--bg-hover);
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        color: var(--text-primary);
-        font-size: 0.8125rem;
-        font-weight: 500;
-        font-family: inherit;
-        cursor: pointer;
-        transition: all 0.15s ease;
-      }
-      .chat-panel__model-btn:hover {
-        background: var(--bg-active);
-      }
-      .chat-panel__model-dropdown {
-        position: absolute;
-        top: 100%;
-        right: 0;
-        margin-top: 0.25rem;
-        min-width: 240px;
-        max-height: 300px;
-        overflow-y: auto;
-        background: var(--bg-secondary);
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-        z-index: 100;
-      }
-      .chat-panel__model-option {
-        display: block;
-        width: 100%;
-        padding: 0.5rem 0.75rem;
-        background: none;
-        border: none;
-        color: var(--text-primary);
-        font-size: 0.8125rem;
-        font-family: inherit;
-        text-align: left;
-        cursor: pointer;
-        transition: background 0.15s ease;
-      }
-      .chat-panel__model-option:hover {
-        background: var(--bg-hover);
-      }
-      .chat-panel__model-option--active {
-        background: var(--accent);
-        color: #fff;
-      }
-      .chat-panel__model-option--active:hover {
-        background: var(--accent-hover);
-      }
       .chat-panel__status {
         display: inline-flex;
         align-items: center;
@@ -384,7 +326,6 @@ export class ChatPanelElement extends LitElement {
     streamingContent: { state: true },
     streamingThinking: { state: true },
     toolCalls: { state: true },
-    modelDropdownOpen: { state: true },
     closingState: { state: true },
     errorMessage: { state: true },
     showClearConfirm: { state: true },
@@ -400,7 +341,6 @@ export class ChatPanelElement extends LitElement {
   streamingContent = '';
   streamingThinking = '';
   toolCalls: ToolCallEntry[] = [];
-  modelDropdownOpen = false;
   closingState: 'none' | 'compact' | 'delete' = 'none';
   errorMessage: string | null = null;
   showClearConfirm = false;
@@ -408,7 +348,6 @@ export class ChatPanelElement extends LitElement {
 
   private chatController!: ChatStreamController;
   private modelSetFromState = false;
-  private clickOutsideHandler: ((e: Event) => void) | null = null;
   private sendingMessage = false; // Guard against duplicate sends
   private _prevSessionId = ''; // Track previous session for static guard cleanup
 
@@ -423,12 +362,6 @@ export class ChatPanelElement extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     this.chatController = new ChatStreamController(this, this.sessionId);
-    this.clickOutsideHandler = (e: Event) => {
-      if (this.modelDropdownOpen && !this.shadowRoot?.contains(e.target as Node)) {
-        this.modelDropdownOpen = false;
-      }
-    };
-    document.addEventListener('click', this.clickOutsideHandler);
   }
 
   disconnectedCallback() {
@@ -436,10 +369,6 @@ export class ChatPanelElement extends LitElement {
     // Clear the static guard so a new instance can load history for this session
     if (this.sessionId) {
       ChatPanelElement._historyLoadedSessions.delete(this.sessionId);
-    }
-    if (this.clickOutsideHandler) {
-      document.removeEventListener('click', this.clickOutsideHandler);
-      this.clickOutsideHandler = null;
     }
   }
 
@@ -896,18 +825,30 @@ export class ChatPanelElement extends LitElement {
       return;
     }
 
-    // ── get_state: update current model from session state ──────────
-    if (command === 'get_state' && !this.modelSetFromState) {
-      const model = (response.data as any)?.model;
-      if (model && typeof model.id === 'string' && typeof model.provider === 'string') {
-        this.currentModel = createMinimalModel(model.id, model.provider);
-        this.modelSetFromState = true;
-      } else if (typeof response.modelId === 'string' && response.modelId) {
-        const provider = extractProvider(response.modelId);
-        this.currentModel = createMinimalModel(response.modelId, provider);
-        this.modelSetFromState = true;
+    // ── set_model: initial model from backend (sent on SSE connect) ──
+    // The workspace already sets currentModel from the session record's
+    // model_id via fetchSessionData. This SSE event is the backend's way
+    // of confirming the session's model — use it only if the workspace
+    // hasn't set a model yet (session model_id was null).
+    if (command !== 'get_state') {
+      const type = (response as any).type;
+      if (type === 'set_model' && !this.modelSetFromState) {
+        const modelId = (response as any).modelId;
+        if (typeof modelId === 'string' && modelId) {
+          const provider = extractProvider(modelId);
+          this.currentModel = createMinimalModel(modelId, provider);
+          this.modelSetFromState = true;
+        }
       }
-    } else if (command === 'compact') {
+    }
+
+    // ── get_state: ignore for model purposes — workspace already sets
+    //    currentModel from the session record's model_id (the source of
+    //    truth). The Pi process's actual model may differ temporarily
+    //    during a switch, so we must not let it override the session's
+    //    configured model.
+
+    if (command === 'compact') {
       this.streamingContent = '';
       this.streamingToolCalls = [];
       this.closingState = 'none';
@@ -1186,10 +1127,9 @@ export class ChatPanelElement extends LitElement {
     this.scrollToBottom();
   }
 
-  private handleSwitchModel(model: Model) {
+  handleSwitchModel(model: Model) {
     if (!this.sessionId) return;
 
-    this.modelDropdownOpen = false;
     this.currentModel = model;
 
     const provider = extractProvider(model.id);
@@ -1292,10 +1232,6 @@ export class ChatPanelElement extends LitElement {
     }
   }
 
-  private getModelName(): string {
-    return this.currentModel?.name || 'Select model';
-  }
-
   private clearError() {
     this.errorMessage = null;
   }
@@ -1332,19 +1268,6 @@ export class ChatPanelElement extends LitElement {
         <!-- Header -->
         <div class="chat-panel__header">
           <div class="chat-panel__header-left">
-            <div class="chat-panel__model-selector">
-              <button
-                class="chat-panel__model-btn"
-                @click=${() => (this.modelDropdownOpen = !this.modelDropdownOpen)}
-              >
-                ${this.getModelName()}
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style="transition: transform 0.15s; ${this.modelDropdownOpen ? 'transform: rotate(180deg);' : ''}">
-                  <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-              </button>
-              ${this.modelDropdownOpen ? this.renderModelDropdown() : ''}
-            </div>
-
             <span class="chat-panel__status">
               <span
                 class="chat-panel__status-dot ${this.chatController.isStreaming
@@ -1490,35 +1413,7 @@ export class ChatPanelElement extends LitElement {
     );
   }
 
-  private renderModelDropdown() {
-    if (this.models.length === 0) {
-      return html`<div class="chat-panel__model-dropdown">
-        <div style="padding: 0.75rem; text-align: center; color: var(--text-muted); font-size: 0.8125rem;">
-          No models available
-        </div>
-      </div>`;
-    }
-
-    return html`
-      <div class="chat-panel__model-dropdown">
-        ${this.models.map(
-          (model) => html`
-            <button
-              class="chat-panel__model-option ${this.currentModel?.id === model.id
-                ? 'chat-panel__model-option--active'
-                : ''}"
-              @click=${() => this.handleSwitchModel(model)}
-            >
-              <div style="font-weight: 500;">${model.name}</div>
-              <div style="font-size: 0.75rem; opacity: 0.7; margin-top: 0.25rem;">
-                ${model.provider} ${model.contextWindow > 0 ? `· ${model.contextWindow.toLocaleString()} ctx` : ''}
-              </div>
-            </button>
-          `,
-        )}
-      </div>
-    `;
-  }
+  // Model selector moved to workspace header (light DOM) — see workspace.ts
 
   private renderExtensionUI() {
     const req = this.chatController.pendingUiRequest;

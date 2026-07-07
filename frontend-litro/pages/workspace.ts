@@ -41,7 +41,67 @@ export class WorkspacePage extends LitroPage {
       }
       .view-workspace__header-left { flex: 0 0 auto; }
       .view-workspace__header-center { flex: 1; justify-content: center; }
-      .view-workspace__header-right { flex: 0 0 auto; }
+      .view-workspace__header-right { flex: 0 0 auto; gap: 4px; }
+      /* Model selector — lives in light DOM so real clicks reach it
+         (shadow-DOM-nested buttons lose real-click events to the host). */
+      .view-workspace__model-selector {
+        position: relative;
+      }
+      .view-workspace__model-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.375rem 0.75rem;
+        background: var(--bg-hover);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        color: var(--text-primary);
+        font-size: 0.8125rem;
+        font-weight: 500;
+        font-family: inherit;
+        cursor: pointer;
+        transition: all 0.15s ease;
+      }
+      .view-workspace__model-btn:hover {
+        background: var(--bg-active);
+      }
+      .view-workspace__model-dropdown {
+        position: absolute;
+        top: 100%;
+        right: 0;
+        margin-top: 0.25rem;
+        min-width: 240px;
+        max-height: 300px;
+        overflow-y: auto;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+        z-index: 100;
+      }
+      .view-workspace__model-option {
+        display: block;
+        width: 100%;
+        padding: 0.5rem 0.75rem;
+        background: none;
+        border: none;
+        color: var(--text-primary);
+        font-size: 0.8125rem;
+        font-family: inherit;
+        text-align: left;
+        cursor: pointer;
+        transition: background 0.15s ease;
+      }
+      .view-workspace__model-option:hover {
+        background: var(--bg-hover);
+      }
+      .view-workspace__model-option--active {
+        background: var(--accent);
+        color: #fff;
+      }
+      .view-workspace__model-option--active:hover {
+        background: var(--accent-hover);
+      }
       .view-workspace__project {
         margin-left: 8px;
         font-size: 14px;
@@ -127,14 +187,9 @@ export class WorkspacePage extends LitroPage {
   @state() sessionId = '';
   @state() models: Model[] = [];
   @state() currentModel: Model | null = null;
+  @state() modelDropdownOpen = false;
 
   readonly selectionStore = new SelectionStore();
-
-  connectedCallback() {
-    super.connectedCallback();
-    this.addController(this.selectionStore.controller(this));
-    this.fetchSessionData();
-  }
 
   private async fetchSessionData() {
     if (!this.folderPath) return;
@@ -185,9 +240,74 @@ export class WorkspacePage extends LitroPage {
     this.currentModel = e.detail;
   }
 
+  private handleModelBtnClick() {
+    this.modelDropdownOpen = !this.modelDropdownOpen;
+  }
+
+  private handleModelSelect(model: Model) {
+    this.modelDropdownOpen = false;
+    this.currentModel = model;
+    // Forward to chat-panel to perform the actual switch (API + RPC)
+    const cp = this.shadowRoot?.querySelector('chat-panel');
+    if (cp && typeof (cp as any).handleSwitchModel === 'function') {
+      (cp as any).handleSwitchModel(model);
+    }
+  }
+
+  private handleOutsideModelClick = (e: Event) => {
+    if (this.modelDropdownOpen && this._modelSelectorRef) {
+      if (!this._modelSelectorRef.contains(e.target as Node)) {
+        this.modelDropdownOpen = false;
+      }
+    }
+  };
+
+  private _modelSelectorRef: HTMLElement | null = null;
+
+  connectedCallback() {
+    super.connectedCallback();
+    this.addController(this.selectionStore.controller(this));
+    document.addEventListener('click', this.handleOutsideModelClick);
+    this.fetchSessionData();
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    document.removeEventListener('click', this.handleOutsideModelClick);
+  }
+
   private get folderPath(): string {
     if (typeof window === 'undefined') return '';
     return new URLSearchParams(window.location.search).get('folder') || '';
+  }
+
+  private renderModelDropdown() {
+    if (this.models.length === 0) {
+      return html`<div class="view-workspace__model-dropdown">
+        <div style="padding: 0.75rem; text-align: center; color: var(--text-muted); font-size: 0.8125rem;">
+          No models available
+        </div>
+      </div>`;
+    }
+    return html`
+      <div class="view-workspace__model-dropdown">
+        ${this.models.map(
+          (model) => html`
+            <button
+              class="view-workspace__model-option ${this.currentModel?.id === model.id
+                ? 'view-workspace__model-option--active'
+                : ''}"
+              @click=${() => this.handleModelSelect(model)}
+            >
+              <div style="font-weight: 500;">${model.name}</div>
+              <div style="font-size: 0.75rem; opacity: 0.7; margin-top: 0.25rem;">
+                ${model.provider} ${model.contextWindow > 0 ? `· ${model.contextWindow.toLocaleString()} ctx` : ''}
+              </div>
+            </button>
+          `,
+        )}
+      </div>
+    `;
   }
 
   private handleFileSelect(path: string) {
@@ -218,6 +338,21 @@ export class WorkspacePage extends LitroPage {
             </span>
           </div>
           <div class="view-workspace__header-right">
+            <div
+              class="view-workspace__model-selector"
+              .ref=${(el: HTMLElement | null) => { this._modelSelectorRef = el; }}
+            >
+              <button
+                class="view-workspace__model-btn"
+                @click=${this.handleModelBtnClick}
+              >
+                ${this.currentModel?.name || 'Select model'}
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style="transition: transform 0.15s; ${this.modelDropdownOpen ? 'transform: rotate(180deg);' : ''}">
+                  <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+              ${this.modelDropdownOpen ? this.renderModelDropdown() : ''}
+            </div>
             <button
               class="icon-btn ${this.chatExpanded ? 'icon-btn--active' : ''}"
               @click=${() => { this.chatExpanded = !this.chatExpanded; }}

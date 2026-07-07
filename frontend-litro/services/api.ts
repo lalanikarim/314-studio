@@ -1,3 +1,5 @@
+import type { Model } from '../types/index.js';
+
 const API_BASE = '/api';
 
 export interface DirNode {
@@ -85,13 +87,20 @@ export async function switchModel(sessionId: string, modelId: string, provider: 
   return resp.json();
 }
 
-export async function fetchModels(sessionId?: string) {
+export async function fetchModels(sessionId?: string): Promise<Model[]> {
   const url = sessionId
     ? `${API_BASE}/models/?session_id=${sessionId}`
     : `${API_BASE}/models/`;
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-  return resp.json();
+  const raw = await resp.json();
+  // API model objects lack a `name` field — derive it from provider + id so
+  // the model switcher dropdown and current-model button render correctly.
+  return raw.map((m: Record<string, any>) => ({
+    ...m,
+    name: `${m.provider ? m.provider.charAt(0).toUpperCase() + m.provider.slice(1) : 'Model'} – ${m.id}`,
+    maxTokens: m.maxTokens ?? 0,
+  }));
 }
 
 export async function browseDirectory(path: string) {
