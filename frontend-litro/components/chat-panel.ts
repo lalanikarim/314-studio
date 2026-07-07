@@ -1279,26 +1279,7 @@ export class ChatPanelElement extends LitElement {
 
         <!-- Messages Area -->
         <div class="chat-panel__messages">
-          ${this.displayMessages.length === 0 && !this.streamingContent
-            ? html`<div class="chat-panel__empty">
-                <div class="empty__icon">💬</div>
-                <h3 class="empty__title">Start a conversation</h3>
-                <p class="empty__description">
-                  Send a message to Pi and it will help you with your code.
-                </p>
-              </div>`
-            : html`
-                ${this.renderMessages()}
-                ${this.chatController.isStreaming
-                  ? html`
-                      <div class="chat-panel__streaming-indicator">
-                        <span class="chat-panel__typing"></span>
-                        Pi is typing...
-                      </div>
-                    `
-                  : ''}
-              `}
-        </div>
+          ${this.renderMessagesArea()}`
 
         <!-- Input Bar -->
         <chat-input
@@ -1313,6 +1294,31 @@ export class ChatPanelElement extends LitElement {
 
   private static _lastRenderMsgIds: string[] = [];
   private static _historyLoadedSessions = new Set<string>();
+
+  private renderMessagesArea() {
+    const hasMessages = this.displayMessages.length > 0;
+    console.debug('[ChatStream] RENDER AREA: displayMessages.length=', this.displayMessages.length, 'streamingContent=', !!this.streamingContent, '→ showing', hasMessages ? 'messages' : 'empty');
+    if (!hasMessages && !this.streamingContent) {
+      return html`<div class="chat-panel__empty">
+        <div class="empty__icon">💬</div>
+        <h3 class="empty__title">Start a conversation</h3>
+        <p class="empty__description">
+          Send a message to Pi and it will help you with your code.
+        </p>
+      </div>`;
+    }
+    return html`
+      ${this.renderMessages()}
+      ${this.chatController.isStreaming
+        ? html`
+            <div class="chat-panel__streaming-indicator">
+              <span class="chat-panel__typing"></span>
+              Pi is typing...
+            </div>
+          `
+        : ''}
+    `;
+  }
 
   private renderMessages() {
     const msgs = this.sortedMessages;
