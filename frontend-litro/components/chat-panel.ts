@@ -468,21 +468,16 @@ export class ChatPanelElement extends LitElement {
     if (this.queueDrainIndex >= messages.length) return;
 
     const newEventCount = messages.length - this.queueDrainIndex;
-    console.debug(
-      '[ChatStream] DRAIN START:',
-      newEventCount, 'new events (queueIdx:', this.queueDrainIndex, '→', messages.length, ')',
-    );
+    console.debug('[ChatStream] DRAIN:', newEventCount, 'new events (idx', this.queueDrainIndex, '→', messages.length, ')');
 
     let messageEnded = false;
     let turnEnded = false;
     let agentEnded = false;
-    let messageTerminal = false;
 
     for (let i = this.queueDrainIndex; i < messages.length; i++) {
       const msg = messages[i];
 
       if (msg.kind === 'rpc_response') {
-        console.debug('[ChatStream]   drain: rpc_response → processing');
         this.processRpcResponse(msg as InboundMessage);
         continue;
       }
@@ -490,79 +485,33 @@ export class ChatPanelElement extends LitElement {
       if (msg.kind !== 'rpc_event') continue;
 
       const event = (msg as any).event as Record<string, unknown>;
-      const eventType = event.type || 'unknown';
 
       // ── Streaming content accumulation ────────────────────────────
-      // Text deltas: REPLACE accumulator (deltas are not incremental, they
-      // contain the last word/phrase. The partial field has the full text).
       const text = extractText(event);
       if (text !== null) {
-        const prevLen = this.streamingTextAccum.length;
         this.streamingTextAccum = text;
         this.streamingContent = this.streamingTextAccum;
-
-        // Create or update the streaming message in displayMessages
         this.ensureStreamingMessage();
         this.updateStreamingMessageContent();
-
-        console.debug(
-          '[ChatStream]   drain:', eventType,
-          '→ text (REPLACE):', JSON.stringify(text),
-          '(was:', prevLen, '→ now', this.streamingTextAccum.length, ')',
-        );
       }
 
-      // Thinking deltas: REPLACE accumulator (same issue as text)
       const thinking = extractThinking(event);
       if (thinking !== null) {
-        const prevLen = this.streamingThinkingAccum.length;
         this.streamingThinkingAccum = thinking;
         this.streamingThinking = this.streamingThinkingAccum;
-
-        // Create or update the streaming message in displayMessages
         this.ensureStreamingMessage();
         this.updateStreamingMessageContent();
-
-        console.debug(
-          '[ChatStream]   drain:', eventType,
-          '→ thinking (REPLACE):', JSON.stringify(thinking),
-          '(was:', prevLen, '→ now', this.streamingThinkingAccum.length, ')',
-        );
-        console.debug(
-          '[ChatStream]   drain: FULL streaming state:',
-          'textLen=' + this.streamingTextAccum.length,
-          'thinkingLen=' + this.streamingThinkingAccum.length,
-          'toolCalls=' + this.streamingToolCalls.length,
-        );
       }
 
-      // Tool call deltas (incremental args)
       const toolCallDelta = extractToolCallDelta(event);
       if (toolCallDelta) {
-        console.debug(
-          '[ChatStream]   drain:', eventType,
-          '→ toolcall_delta:', JSON.stringify({
-            name: toolCallDelta.name,
-            id: toolCallDelta.id,
-            args: toolCallDelta.args,
-          }),
-        );
         this.upsertToolCall(toolCallDelta);
         this.ensureStreamingMessage();
         this.updateStreamingMessageContent();
       }
 
-      // Tool call end (FULL toolCall object — sets complete entry)
       const toolCallEnd = extractToolCallEnd(event);
       if (toolCallEnd) {
-        console.debug(
-          '[ChatStream]   drain:', eventType,
-          '→ toolcall_end (FULL):', JSON.stringify({
-            name: toolCallEnd.name,
-            id: toolCallEnd.id,
-            args: toolCallEnd.args,
-          }),
-        );
         const idx = this.streamingToolCalls.findIndex((tc) => tc.id === toolCallEnd.id);
         if (idx >= 0) {
           const updated = [...this.streamingToolCalls];
@@ -575,83 +524,35 @@ export class ChatPanelElement extends LitElement {
         this.updateStreamingMessageContent();
       }
 
-      // Tool call result — merge directly into the last assistant
-      // message's toolCall blocks by id. Works whether the message is
-      // still being live-previewed or has already been committed via
-      // message_end (accumulator approach fails after commit resets).
+      // Tool call result — merge directly into the last assistant message's toolCall blocks by id
       const toolResult = extractToolCallResult(event);
       if (toolResult) {
-        console.debug(
-          '[ChatStream]   drain:', eventType,
-          '→ merging tool_result:', JSON.stringify({
-            id: toolResult.id,
-            result: toolResult.result?.substring(0, 80),
-          }),
-        );
         this.mergeToolResultIntoLastMessage(toolResult.id!, toolResult.result);
       }
 
-      // Tool execution update — merge partial result directly into the
-      // last assistant message's toolCall blocks by id (no accumulator).
+      // Tool execution update — merge partial result directly into the last assistant message's toolCall blocks by id
       const toolExecUpdate = extractToolExecutionUpdate(event);
       if (toolExecUpdate) {
-        console.debug(
-          '[ChatStream]   drain:', eventType,
-          '→ merging tool_exec_update:', JSON.stringify({
-            id: toolExecUpdate.id,
-            partialText: toolExecUpdate.partialText?.substring(0, 80),
-          }),
-        );
         this.mergeToolResultIntoLastMessage(toolExecUpdate.id, toolExecUpdate.partialText);
       }
 
       // ── Finalization triggers ─────────────────────────────────────
-      // message_end carries the FULL finalized message via event.message —
-      // the same canonical AgentMessage shape that get_messages hydration
-      // reads. Use it directly instead of the accumulator-based
-      // reconstruction so the live view matches the persisted history.
       if (isMessageEnd(event)) {
-        console.debug('[ChatStream]   drain:', eventType, '→ applying finalized message from event.message');
         this.applyFinalizedAssistantMessage(event);
         messageEnded = true;
         continue;
       }
 
-      // Message terminal (done/error) — marks end of generation for this message
-      if (isMessageTerminal(event)) {
-        console.debug('[ChatStream]   drain:', eventType, '→ message terminal (no commit yet)');
-        messageTerminal = true;
-      }
-
-      // Fallback: turn_end — commit remaining accumulated content
-      if (isTurnEnd(event)) {
-        console.debug('[ChatStream]   drain:', eventType, '→ fallback commit trigger (messageEnded:', messageEnded, ')');
-        turnEnded = true;
-      }
-
-      // Fallback: agent_end — commit remaining accumulated content
-      if (isAgentEnd(event)) {
-        console.debug('[ChatStream]   drain:', eventType, '→ fallback commit trigger (messageEnded:', messageEnded, ')');
-        agentEnded = true;
-      }
-
-      // ALSO check for text_end — this signals the end of a text block
-      if (eventType === 'text_end' || eventType === 'thinking_end') {
-        console.debug('[ChatStream]   drain:', eventType, '→ text/thinking block ended (not committing full message)');
-      }
+      if (isTurnEnd(event)) turnEnded = true;
+      if (isAgentEnd(event)) agentEnded = true;
     }
 
     // Commit any remaining accumulated content if the run ended
-    // (turn_end or agent_end without a preceding message_end)
     if ((turnEnded || agentEnded) && !messageEnded) {
-      console.debug(
-        '[ChatStream] DRAIN END: committing remaining (text:', this.streamingTextAccum.length, 'chars, thinking:', this.streamingThinkingAccum.length, 'chars, tools:', this.streamingToolCalls.length, ')',
-      );
       this.commitStreamingMessage();
     }
 
     this.queueDrainIndex = messages.length;
-    console.debug('[ChatStream] DRAIN COMPLETE: queueIdx at', this.queueDrainIndex, '/', messages.length);
   }
 
   /**
@@ -721,15 +622,6 @@ export class ChatPanelElement extends LitElement {
     };
     this.displayMessages = [...this.displayMessages, newMsg];
     this.streamingMessageCreated = true;
-
-    console.debug(
-      '[ChatStream] ENSURE: created streaming message',
-      'id=' + newMsg.id,
-      'textLen=' + this.streamingTextAccum.length,
-      'thinkingLen=' + this.streamingThinkingAccum.length,
-      'toolCalls=' + this.streamingToolCalls.length,
-      'totalMessages=' + this.displayMessages.length,
-    );
   }
 
   /**
@@ -792,12 +684,6 @@ export class ChatPanelElement extends LitElement {
     this.streamingThinking = '';
     this.streamingToolCalls = [];
     this.streamingMessageCreated = false;
-
-    console.debug(
-      '[ChatStream] COMMITTED (fallback): displayMessages now has',
-      this.displayMessages.length,
-      'messages'
-    );
   }
 
   /**
@@ -824,16 +710,13 @@ export class ChatPanelElement extends LitElement {
 
     if (displayMsgs.length > 0) {
       if (isStreamingMsg) {
-        // Replace the live-preview streaming message with the finalized version
         const updated = [...this.displayMessages];
         updated[lastIdx] = displayMsgs[0];
         this.displayMessages = updated;
       } else {
-        // No streaming message — append (fallback; shouldn't normally happen)
         this.displayMessages = [...this.displayMessages, ...displayMsgs];
       }
     } else if (isStreamingMsg) {
-      // Empty finalized message — remove the placeholder
       this.displayMessages = this.displayMessages.slice(0, -1);
     }
 
@@ -844,12 +727,6 @@ export class ChatPanelElement extends LitElement {
     this.streamingThinking = '';
     this.streamingToolCalls = [];
     this.streamingMessageCreated = false;
-
-    console.debug(
-      '[ChatStream] FINALIZED:',
-      'blocks=' + (displayMsgs[0]?.content?.length ?? 0),
-      'totalMessages=' + this.displayMessages.length,
-    );
   }
 
   /**
@@ -968,16 +845,8 @@ export class ChatPanelElement extends LitElement {
       ((response as any)?.messages as any[]) ||
       [];
 
-    console.debug('[ChatStream] Hydrate: get_messages returned', messages.length, 'messages');
-    messages.forEach((m: any, i: number) => {
-      console.debug('[ChatStream]   msg', i, ':', m.role, 'contentBlocks:', Array.isArray(m.content) ? m.content.length : 0);
-    });
-
     const raw = messages.flatMap((m: any) => agentMessageToDisplay(m));
-    console.debug('[ChatStream] Hydrate: agentMessageToDisplay produced', raw.length, 'ChatMessages');
-
     const merged = this.mergeHistoryToolResults(raw);
-    console.debug('[ChatStream] Hydrate: mergeHistoryToolResults produced', merged.length, 'final messages');
 
     if (merged.length > 0) {
       this.displayMessages = [...this.displayMessages, ...merged];
