@@ -468,7 +468,6 @@ export class ChatPanelElement extends LitElement {
     if (this.queueDrainIndex >= messages.length) return;
 
     const newEventCount = messages.length - this.queueDrainIndex;
-    console.debug('[ChatStream] DRAIN:', newEventCount, 'new events (idx', this.queueDrainIndex, '→', messages.length, ')');
 
     let messageEnded = false;
     let turnEnded = false;
@@ -707,6 +706,11 @@ export class ChatPanelElement extends LitElement {
       lastIdx >= 0 &&
       typeof this.displayMessages[lastIdx].id === 'string' &&
       this.displayMessages[lastIdx].id.startsWith('assistant-streaming-');
+
+    // Debug: log when finalized message is empty and streaming msg exists
+    if (displayMsgs.length === 0 && isStreamingMsg) {
+      console.debug('[ChatStream] FINALIZED: empty displayMsgs but streaming msg exists — removing placeholder. msg.role=', (msg as any).role, 'msg.content=', JSON.stringify((msg as any).content)?.substring(0, 200));
+    }
 
     if (displayMsgs.length > 0) {
       if (isStreamingMsg) {
