@@ -4,26 +4,22 @@ import type {
   ConversationState,
   ExtensionUiRequestMessage,
   InboundMessage,
-  RpcEventMessage,
-  RpcResponseMessage,
 } from "../types/chat.js";
 
 /** Interactive extension UI methods that require user input */
 const INTERACTIVE_METHODS = new Set(["select", "confirm", "input", "editor"]);
 
 /**
- * SSE ReactiveController wrapping SSEClient for the ChatPanel.
+ * SSE ReactiveController — queue + transport layer.
  *
- * Adopts a Lit component as host, connects to SSE on mount, disconnects
- * on unmount, and calls `host.requestUpdate()` on every new event so the
- * component re-renders reactively.
+ * Responsibilities:
+ * - Manage SSE connection lifecycle (connect/disconnect/reconnect)
+ * - Append every incoming event to the `messages` queue
+ * - Track `isStreaming` based on event types (content-driven, not prevIsStreaming)
+ * - Notify the host component of every new event
  *
- * Separation of concerns:
- * - Controller owns transport logic (~200 lines)
- * - Component owns rendering logic (display messages, streaming content)
- *
- * This makes the controller reusable across different chat surfaces and
- * unit-testable independently of DOM rendering.
+ * The controller does NOT process event content. That is the component's job.
+ * This separation makes the controller unit-testable and reusable.
  */
 export class ChatStreamController implements ReactiveController {
   private host: ReactiveControllerHost;
@@ -31,10 +27,23 @@ export class ChatStreamController implements ReactiveController {
   private _sessionId = "";
   private disposed = false;
 
-  state: ConversationState = "idle";
+  /** Queue of all inbound messages (events + responses + extension UI) */
   messages: InboundMessage[] = [];
+
+  /** Whether the agent is currently streaming assistant content */
   isStreaming = false;
+
+  /** Set once streaming has ever occurred — used to keep thinking/tool
+   *  blocks expanded after a completed stream (hydration keeps them collapsed). */
+  hasEverStreamed = false;
+
+  /** Connection/lifecycle state */
+  state: ConversationState = "idle";
+
+  /** Error message (if any) */
   errorMessage: string | null = null;
+
+  /** Pending interactive extension UI request */
   pendingUiRequest: ExtensionUiRequestMessage | null = null;
 
   constructor(host: ReactiveControllerHost, sessionId: string) {
@@ -62,37 +71,32 @@ export class ChatStreamController implements ReactiveController {
     if (sessionId) this.connect();
   }
 
-  /** Send a prompt message to Pi */
+  // ── Public commands ──────────────────────────────────────────────────
+
   prompt(message: string) {
     return this.sse.prompt(message);
   }
 
-  /** Abort current Pi turn */
   abort() {
     return this.sse.abort();
   }
 
-  /** Compact conversation (reduce context size, session stays alive) */
   compact() {
     return this.sse.compact();
   }
 
-  /** Request current agent state */
   getState() {
     return this.sse.getState();
   }
 
-  /** Request chat history */
   getMessages() {
     return this.sse.getMessages();
   }
 
-  /** Switch the active model */
   setModel(modelId: string, provider: string) {
     return this.sse.setModel(modelId, provider);
   }
 
-  /** Reply to an extension UI interactive prompt */
   respondToUi(id: string, value: unknown, cancelled = false) {
     this.pendingUiRequest = null;
     return this.sse.respondToExtensionUI(id, value, cancelled);
@@ -124,7 +128,6 @@ export class ChatStreamController implements ReactiveController {
       return;
     }
 
-    // Reset error on successful connect
     this.state = "idle";
     this.errorMessage = null;
     this.host.requestUpdate();
@@ -136,25 +139,24 @@ export class ChatStreamController implements ReactiveController {
     this.sse.on("extension_ui_request", (data) =>
       this.handleExtensionUiRequest(data),
     );
-    this.sse.on("session_terminated", () => {
+    this.sse.on("session_terminated", (data?: { reason?: string }) => {
       if (this.disposed) return;
       this.isStreaming = false;
-      this.state = "disconnected";
-      this.errorMessage = "Session terminated";
+
+      // Normal EOF: Pi finished its response and exited. Stay idle so the user can prompt again.
+      const isNormalExit = data?.reason === "eof";
+
+      if (isNormalExit) {
+        this.state = "idle";
+        this.errorMessage = null;
+      } else {
+        this.state = "disconnected";
+        this.errorMessage = "Session terminated";
+      }
       this.host.requestUpdate();
     });
 
-    // EventSource error — don't change state (auto-reconnects),
-    // only set disconnected if truly closed.
-    const onError = () => {
-      if (this.disposed) return;
-      // EventSource auto-reconnects; state will be set when 'open' fires
-      // or when we explicitly close. Don't preempt.
-    };
-    // We don't have direct access to the EventSource's onerror from SSEClient,
-    // but SSEClient.onerror rejects the connect promise — already handled above.
-
-    // Auto-send get_state 300ms after connect (same as React hook)
+    // Auto-send get_state 300ms after connect
     setTimeout(() => {
       if (!this.disposed) {
         this.sse.getState().catch(() => {
@@ -164,53 +166,84 @@ export class ChatStreamController implements ReactiveController {
     }, 300);
   }
 
-  private pushMessage(msg: InboundMessage) {
+  private push(msg: InboundMessage) {
     if (this.disposed) return;
     this.messages.push(msg);
     this.host.requestUpdate();
   }
 
+  /**
+   * Update streaming state based on event type.
+   *
+   * Per Pi RPC protocol:
+   * - Streaming STARTS on: agent_start, turn_start, message_start
+   * - Streaming STOPS on:  message_end, turn_end, agent_end
+   *                       assistantMessageEvent.type === "done" or "error"
+   *
+   * Top-level lifecycle events (message_end/turn_end/agent_end) are the
+   * authoritative stop signals. Terminal assistantMessageEvent types
+   * (done/error inside a message_update) are a fallback: if the top-level
+   * message_end is missing or delayed, this still stops streaming.
+   *
+   * Checked AFTER the event is pushed to the queue so the component can
+   * process the event content before seeing the state change.
+   */
+  private updateStreamingState(eventPayload: Record<string, unknown>) {
+    const wasStreaming = this.isStreaming;
+    const eventType = eventPayload.type as string | undefined ?? "";
+    const ami = eventPayload.assistantMessageEvent as
+      | { type?: string }
+      | undefined;
+
+    if (
+      eventType === "agent_start" ||
+      eventType === "turn_start" ||
+      eventType === "message_start"
+    ) {
+      this.isStreaming = true;
+      this.hasEverStreamed = true;
+      if (this.state === "idle") this.state = "streaming";
+    }
+
+    if (
+      eventType === "message_end" ||
+      eventType === "turn_end" ||
+      eventType === "agent_end"
+    ) {
+      this.isStreaming = false;
+      if (this.state === "streaming") this.state = "idle";
+    }
+
+    // Terminal assistantMessageEvent inside a message_update — stop streaming
+    // even if the top-level message_end never arrives (e.g. stopReason
+    // "toolUse" / "length" where done signals completion).
+    if (ami && (ami.type === "done" || ami.type === "error")) {
+      this.isStreaming = false;
+      if (this.state === "streaming") this.state = "idle";
+    }
+  }
+
   private handleRpcEvent(data: Record<string, unknown>) {
     if (this.disposed) return;
 
-    const event = data as { event?: Record<string, unknown> };
-    const eventPayload = event.event ?? event;
-    const eventType = (eventPayload as Record<string, unknown>)?.type || "";
+    const eventPayload =
+      (data as { event?: Record<string, unknown> }).event ?? data;
 
-    // Debug: log event types
-    console.log('[SSE] rpc_event type:', eventType);
-    if (eventType === 'message_update') {
-      const ami = (eventPayload as any).assistantMessageEvent;
-      if (ami?.type) {
-        console.log('[SSE] message_update sub-type:', ami.type, 'delta:', String(ami.delta || '').substring(0, 50));
-      }
-    }
-
-    // Track streaming state based on event type
-    // message_update with text_delta/thinking_delta indicates streaming
-    if (eventType === "message_update") {
-      const ami = (eventPayload as any).assistantMessageEvent;
-      if (ami?.type === "text_delta" || ami?.type === "thinking_delta" || ami?.type === "text_start" || ami?.type === "thinking_start") {
-        this.isStreaming = true;
-        this.state = "streaming";
-      }
-    } else if (eventType === "agent_end" || eventType === "turn_end") {
-      // agent_end or turn_end signals end of streaming turn
-      this.isStreaming = false;
-      this.state = "idle";
-    }
-
-    this.pushMessage({
+    // Push the event to the queue first
+    this.push({
       kind: "rpc_event",
       event: eventPayload as Record<string, unknown>,
     });
+
+    // Then update streaming state (component reads queue next tick).
+    // Pass the full eventPayload so updateStreamingState can inspect
+    // assistantMessageEvent.type for terminal signals.
+    this.updateStreamingState(eventPayload as Record<string, unknown>);
   }
 
   private handleRpcResponse(data: Record<string, unknown>) {
     if (this.disposed) return;
-    const command = data.command || data.commandName || data.type || 'unknown';
-    console.log('[SSE] rpc_response command:', command);
-    this.pushMessage({
+    this.push({
       kind: "rpc_response",
       response: data as Record<string, unknown>,
     });

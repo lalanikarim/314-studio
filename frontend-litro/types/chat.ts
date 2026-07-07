@@ -4,14 +4,46 @@
  * These mirror the React ChatPanel types but are independent of React.
  */
 
-/** A single tool call (name + args + result) tracked during streaming */
+/** A single tool call (id + name + args + result) tracked during streaming */
 export interface ToolCallEntry {
+  /** Pi-assigned tool call id — used to match toolResult back to its toolCall */
+  id?: string;
   name: string;
   args?: string;
   result?: string;
 }
 
-/** A finalized message ready for rendering */
+/** A content block within a message — text, thinking, or tool call */
+export type MessageContentBlock =
+  | { kind: "text"; content: string }
+  | { kind: "thinking"; content: string }
+  | { kind: "toolCall"; name: string; args?: string; result?: string; id?: string };
+
+/** Mutable toolCall block — result can be updated during merge */
+export type MutableToolCallBlock = {
+  kind: "toolCall";
+  name: string;
+  args?: string;
+  result?: string;
+  id?: string;
+};
+
+/** A message with role, timestamp, and ordered content blocks */
+export interface ChatMessage {
+  id: string;
+  role: "user" | "assistant";
+  timestamp: number;
+  content: MessageContentBlock[];
+}
+
+/** Mutable version of ChatMessage for in-place merging */
+export type MutableChatMessage = {
+  [K in keyof ChatMessage]: K extends 'content'
+    ? MutableToolCallBlock[]
+    : ChatMessage[K];
+};
+
+/** Legacy DisplayMessage — kept for backward compatibility during migration */
 export interface DisplayMessage {
   id: string;
   role: "user" | "assistant";

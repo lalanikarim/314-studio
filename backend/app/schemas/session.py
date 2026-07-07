@@ -35,6 +35,7 @@ class SessionCreateRequest(BaseModel):
     """Request body for creating a new session."""
 
     name: Optional[str] = None
+    model_id: Optional[str] = None
 
 
 class SessionCloseResponse(BaseModel):

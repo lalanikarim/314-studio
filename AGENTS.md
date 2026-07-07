@@ -54,7 +54,7 @@ FastAPI backend + React (TypeScript) frontend for the Pi coding agent.
 │   ├── components/              # Reusable Lit components
 │   │   ├── project-tree.ts      # Recursive file tree
 │   │   ├── file-preview.ts      # File content viewer
-│   │   └── chat-panel.ts        # TODO: SSE streaming, markdown, tool calls
+│   │   └── chat-panel.ts        # SSE streaming, markdown, tool calls, model switch
 │   ├── services/api.ts          # API client (REST + SSE)
 │   ├── styles/shared.ts         # Shared button/component styles
 │   ├── public/theme.css         # Global dark theme (CSS vars)
@@ -129,19 +129,28 @@ FolderSelector ──open──→ ModelSelector ──switch──→ Workspace
 
 ### State Management
 
-Single React Context (`AppContext`) holds global state:
+**Legacy (React):** Single `AppContext` with `useApp()` hook.
+
+**Litro (current):** Per-component state (`@state()` on pages, `static properties` on sub-components)
+with cross-component communication via composed custom events:
 
 ```ts
-interface AppState {
-  view: 'folders' | 'models' | 'workspace';
-  selectedFolder: string | null;
-  selectedModel: Model | null;
-  currentModel: Model | null;
-  selectedFile: string | null;
-}
-```
+// Parent (workspace.ts) renders child with listener
+<chat-panel
+  .sessionId=${this.sessionId}
+  .currentModel=${this.currentModel}
+  @model-switch=${(e: CustomEvent<Model>) => this.handleModelSwitch(e)}
+></chat-panel>
 
-Access via `useApp()` hook throughout the component tree.
+// Child (chat-panel.ts) dispatches event to notify parent
+this.dispatchEvent(
+  new CustomEvent('model-switch', {
+    detail: this.currentModel,
+    bubbles: true,
+    composed: true,  // crosses shadow DOM boundary
+  }),
+);
+```
 
 ## Development
 
@@ -305,6 +314,55 @@ uv run python script.py    # ✅ correct
 python script.py           # ❌ wrong — uses system python, wrong env
 ```
 
+### Litro: Normal EOF session termination should not set error state
+
+When Pi finishes a response and exits normally, the generator sends `session_terminated` with `reason: "eof"`. The handler in `chat-stream-controller.ts` must check this reason:
+
+```typescript
+this.sse.on("session_terminated", (data?: { reason?: string }) => {
+  if (this.disposed) return;
+  this.isStreaming = false;
+
+  const isNormalExit = data?.reason === "eof";
+
+  if (isNormalExit) {
+    this.state = "idle";           // ← can prompt again
+    this.errorMessage = null;      // ← no red banner
+  } else {
+    this.state = "disconnected";
+    this.errorMessage = "Session terminated";
+  }
+  this.host.requestUpdate();
+});
+```
+
+Treating normal EOF as an error blocks the user from sending another prompt because the chat-panel thinks the session is disconnected.
+
+### Litro: Use `model.provider` not `extractProvider(model.id)` for model switching
+
+When switching models, always use `model.provider` from the API response instead of extracting it from `model.id`:
+
+```typescript
+// ❌ WRONG — falls back to "anthropic" for any model ID without "/"
+// qwen3.5:27b gets provider "anthropic" → Pi rejects: "Model not found: anthropic/qwen3.5:27b"
+const provider = extractProvider(model.id);
+
+// ✅ CORRECT — uses the provider field from the API response
+const provider = model.provider;
+```
+
+The `extractProvider` function splits on "/" and defaults to "anthropic" for IDs without a slash. Models like `qwen3.5:27b` (provider: `aurora`) get the wrong provider, causing Pi to fail with "Model not found".
+
+### Litro: Workspace model selector sync via custom events
+
+The workspace header model selector receives the current model from two sources:
+1. `fetchSessionData()` → reads `model_id` from `GET /api/projects/info`
+2. SSE `set_model` event → received by chat-panel when connecting
+
+If `fetchSessionData()` fails or returns null `model_id`, the workspace dropdown stays on "Select model" even though chat-panel has the correct model from SSE. Fix: chat-panel dispatches a `model-switch` custom event (composed + bubbled) when it receives `set_model` from SSE, and workspace listens for it.
+
+**Key pattern:** Events dispatched from inside a Lit component's shadow DOM must use `composed: true` to cross the shadow boundary and be caught by parent template listeners.
+
 ### Litro/Lit: Components using `@property`/`@state` MUST extend `LitElement`, not `HTMLElement`
 
 This is the #1 cause of `Uncaught TypeError: i.constructor.createProperty is not a function`.
@@ -353,6 +411,72 @@ private get folderPath(): string {
 ```
 
 **Rule of thumb:** Only access `window`/`document`/`localStorage` inside event handlers (`@click`, `@input`, etc.) or in `updated()` lifecycle — never in `render()` or getters called during `render()`.
+
+### Litro: SSR + dynamic content — multiple component instances during hydration
+
+The Litro router **replaces the SSR-rendered page with a new instance** on client hydration. This creates **multiple instances** of nested components:
+
+1. SSR renders `page-workspace` with nested `chat-panel` (instance #1, no session ID yet)
+2. Router navigates → creates new `page-workspace` with `chat-panel` (instance #2)
+3. Router may create ANOTHER `page-workspace` (instance #3)
+4. Instances #1 and #2 are disconnected, but their `setTimeout(loadChatHistory, 500)` may still fire
+5. The disconnected instance's `setTimeout` runs anyway, adding the session to the static guard set
+6. The visible instance (e.g., #3) is **blocked by the static guard** and never loads history
+
+**Symptom:** `updated()` shows `displayMessages.length= 2`, `DOM debug= 2` — but the final DOM shows `"0"` (empty placeholder). No `disconnectedCallback` log appears after `updated()`.
+
+**Diagnosis:** Add `console.debug` to `connectedCallback` and `disconnectedCallback` with instance IDs. Check which instance has `displayMessages.length= 2` and whether it matches the instance in the DOM (check via `document.querySelector('page-workspace').shadowRoot.querySelector('chat-panel')` in a headless browser).
+
+**Fix:**
+- **Check `this.isConnected` in `loadChatHistory`** — stale `setTimeout` callbacks from disconnected instances return early
+- **Clear the static guard in `disconnectedCallback`** — so the next instance can load history for the same session
+- **Use a unique identifier** (like a static counter) to track which instance is which
+
+```typescript
+private async loadChatHistory() {
+  if (!this.sessionId) return;
+  if (!this.isConnected) return;  // ← CRITICAL: don't load if disconnected
+  if (ChatPanelElement._historyLoadedSessions.has(this.sessionId)) return;
+  ChatPanelElement._historyLoadedSessions.add(this.sessionId);
+  // ...
+}
+
+disconnectedCallback() {
+  super.disconnectedCallback();
+  // Clear the static guard so the next instance can load history
+  if (this.sessionId) {
+    ChatPanelElement._historyLoadedSessions.delete(this.sessionId);
+  }
+  // ...
+}
+```
+
+**Rule of thumb:** When using `setTimeout` or `setInterval` with async operations, **always check `this.isConnected`** before proceeding. And **always clean up static guards in `disconnectedCallback`**.
+
+### Litro/Lit: `@state()` decorator not bundled in production builds
+
+The `@state()` decorator (equivalent to `@property({ state: true })`) is **not bundled** into the production client build by esbuild. This means:
+
+- Dev server works fine (resolves imports at runtime)
+- Production build crashes with `ReferenceError: property is not defined`
+- Or worse: the decorator silently fails, making properties **non-reactive** — changes don't trigger re-renders
+
+**Fix:** Use `static properties` block with `{ state: true }` for all reactive state:
+
+```typescript
+// ❌ WRONG — `@state()` not bundled in production builds
+@state() displayMessages: ChatMessage[] = [];
+@state() historyLoaded = false;
+
+// ✅ CORRECT — `static properties` block, no decorator import needed
+static properties = {
+  sessionId: { type: String },
+  displayMessages: { state: true },
+  historyLoaded: { state: true },
+};
+```
+
+**Rule of thumb:** Sub-components should use `static properties` block for ALL reactive properties. Pages (`LitroPage` subclasses) may use `@state()`. Never use `@property()` or `@state()` in sub-components.
 
 ### Litro: Backend API proxy — Nitro `routeRules` (not Vite proxy)
 
@@ -403,19 +527,6 @@ Lit components render inside **Shadow DOM**, which isolates them from document-l
 
 Don't try to style shadow content from a global stylesheet with element selectors (`page-home .folder-item { ... }`) — it will silently do nothing. Only `var(--*)` references and the component's own `static styles` work.
 
-### Litro: Kill old processes and verify port 3000 before starting
-
-Always kill stale Litro processes and verify port 3000 is free before starting the dev server:
-
-```bash
-# Kill any lingering node processes on 3000
-lsof -iTCP:3000 -sTCP:LISTEN -P -n | awk '$1 == "node" {print $2}' | xargs -r kill -9
-# Then start
-cd frontend-litro && bun run dev
-```
-
-If port 3000 is occupied, Litro prints an error and exits with code 1 — it will **not** roam to another port. This is intentional to avoid rogue listeners.
-
 ### Litro: `@property` decorator not bundled in production builds
 
 esbuild (configured via `tsconfigRaw.experimentalDecorators: true` in the Litro Vite adapter) uses legacy decorator transform. The `property` import from `lit/decorators.js` is **not bundled into the production client build**, even though the dev server works fine. This causes `ReferenceError: property is not defined` at runtime in production.
@@ -446,6 +557,19 @@ export class MyDialog extends LitElement {
 
 **Rule of thumb:** Pages (top-level route components) extend `LitroPage` and may use `@state()`. Sub-components (dialog, row, panel, etc.) should extend `LitElement` and use `static properties` block. Avoid `@property` decorator entirely — it only works in dev, not production.
 
+### Litro: Kill old processes and verify port 3000 before starting
+
+Always kill stale Litro processes and verify port 3000 is free before starting the dev server:
+
+```bash
+# Kill any lingering node processes on 3000
+lsof -iTCP:3000 -sTCP:LISTEN -P -n | awk '$1 == "node" {print $2}' | xargs -r kill -9
+# Then start
+cd frontend-litro && bun run dev
+```
+
+If port 3000 is occupied, Litro prints an error and exits with code 1 — it will **not** roam to another port. This is intentional to avoid rogue listeners.
+
 ## API Endpoints
 
 ### Projects
@@ -464,9 +588,13 @@ export class MyDialog extends LitElement {
 | `POST` | `/api/projects/{id}/delete` | Abort + terminate, no compact (`{session_id, compacted: false}`) |
 | `POST` | `/api/projects/{id}/model` | Switch model metadata (`?model_id=...&provider=...`) |
 
-> **Model switching** is a 2-step process:
-> 1. REST updates session metadata only (no RPC)
-> 2. Client subscribes to SSE — initial `set_model` event sent with configured `modelId`
+> **Model switching** is a dual approach:
+> 1. REST (`POST /api/projects/{id}/model`) updates session metadata for persistence
+> 2. REST command (`POST /api/projects/{id}/cmd` with `set_model`) sends RPC directly to Pi via stdin
+> 3. SSE `set_model` event on connect sends the configured `modelId` to the client
+>
+> The frontend uses `model.provider` from the API response (not extracted from `model.id`) to avoid
+> wrong provider assignment (e.g., `qwen3.5:27b` was getting `anthropic` instead of `aurora`).
 
 ### Files
 
@@ -558,7 +686,7 @@ All project-scoped endpoints use `project_path` as a query parameter, not a rout
 | **ProjectTree** | ✅ Complete — recursive, lazy loading, auto-expand dirs |
 | **FilePreview** | ✅ Complete — header + content display |
 | **File click → preview** | ✅ Complete — global state sharing |
-| **ChatPanel** | 🔲 Not started — SSE streaming, markdown, tool calls |
+| **ChatPanel** | ✅ Complete — SSE streaming, markdown, tool calls, model switch, history loading |
 
 ### Integration Tests (Backend)
 

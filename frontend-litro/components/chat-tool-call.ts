@@ -55,6 +55,13 @@ export class ChatToolCallElement extends LitElement {
         text-overflow: ellipsis;
         white-space: nowrap;
       }
+      .tool-call__id {
+        color: var(--text-muted);
+        font-family: var(--font-mono);
+        font-size: 0.6875rem;
+        margin-left: 0.5rem;
+        opacity: 0.6;
+      }
       pre {
         margin: 0;
         padding: 0.75rem;
@@ -75,18 +82,24 @@ export class ChatToolCallElement extends LitElement {
     name: { type: String },
     args: { type: String, attribute: false },
     result: { type: String, attribute: false },
+    id: { type: String, attribute: false },
+    /** When true, keeps <details> open so the user can watch the tool stream. */
+    isStreaming: { type: Boolean, attribute: false },
   };
 
   name: string = '';
   args?: string;
   result?: string;
+  id: string = '';
+  isStreaming = false;
 
   render() {
     const hasContent = this.args || this.result;
     return html`
-      <details ?open=${hasContent}>
+      <details ?open=${this.isStreaming}>
         <summary>
           <span class="tool-call__name">${this.name}</span>
+          ${this.id ? html`<span class="tool-call__id">${this.id}</span>` : ''}
           ${hasContent
             ? html`<span class="tool-call__truncated">
                 ${this.args ? this.args.slice(0, 50) : ''}${this.result ? `…${this.result.slice(0, 30)}` : ''}
