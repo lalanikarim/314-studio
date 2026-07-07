@@ -354,6 +354,72 @@ private get folderPath(): string {
 
 **Rule of thumb:** Only access `window`/`document`/`localStorage` inside event handlers (`@click`, `@input`, etc.) or in `updated()` lifecycle — never in `render()` or getters called during `render()`.
 
+### Litro: SSR + dynamic content — multiple component instances during hydration
+
+The Litro router **replaces the SSR-rendered page with a new instance** on client hydration. This creates **multiple instances** of nested components:
+
+1. SSR renders `page-workspace` with nested `chat-panel` (instance #1, no session ID yet)
+2. Router navigates → creates new `page-workspace` with `chat-panel` (instance #2)
+3. Router may create ANOTHER `page-workspace` (instance #3)
+4. Instances #1 and #2 are disconnected, but their `setTimeout(loadChatHistory, 500)` may still fire
+5. The disconnected instance's `setTimeout` runs anyway, adding the session to the static guard set
+6. The visible instance (e.g., #3) is **blocked by the static guard** and never loads history
+
+**Symptom:** `updated()` shows `displayMessages.length= 2`, `DOM debug= 2` — but the final DOM shows `"0"` (empty placeholder). No `disconnectedCallback` log appears after `updated()`.
+
+**Diagnosis:** Add `console.debug` to `connectedCallback` and `disconnectedCallback` with instance IDs. Check which instance has `displayMessages.length= 2` and whether it matches the instance in the DOM (check via `document.querySelector('page-workspace').shadowRoot.querySelector('chat-panel')` in a headless browser).
+
+**Fix:**
+- **Check `this.isConnected` in `loadChatHistory`** — stale `setTimeout` callbacks from disconnected instances return early
+- **Clear the static guard in `disconnectedCallback`** — so the next instance can load history for the same session
+- **Use a unique identifier** (like a static counter) to track which instance is which
+
+```typescript
+private async loadChatHistory() {
+  if (!this.sessionId) return;
+  if (!this.isConnected) return;  // ← CRITICAL: don't load if disconnected
+  if (ChatPanelElement._historyLoadedSessions.has(this.sessionId)) return;
+  ChatPanelElement._historyLoadedSessions.add(this.sessionId);
+  // ...
+}
+
+disconnectedCallback() {
+  super.disconnectedCallback();
+  // Clear the static guard so the next instance can load history
+  if (this.sessionId) {
+    ChatPanelElement._historyLoadedSessions.delete(this.sessionId);
+  }
+  // ...
+}
+```
+
+**Rule of thumb:** When using `setTimeout` or `setInterval` with async operations, **always check `this.isConnected`** before proceeding. And **always clean up static guards in `disconnectedCallback`**.
+
+### Litro/Lit: `@state()` decorator not bundled in production builds
+
+The `@state()` decorator (equivalent to `@property({ state: true })`) is **not bundled** into the production client build by esbuild. This means:
+
+- Dev server works fine (resolves imports at runtime)
+- Production build crashes with `ReferenceError: property is not defined`
+- Or worse: the decorator silently fails, making properties **non-reactive** — changes don't trigger re-renders
+
+**Fix:** Use `static properties` block with `{ state: true }` for all reactive state:
+
+```typescript
+// ❌ WRONG — `@state()` not bundled in production builds
+@state() displayMessages: ChatMessage[] = [];
+@state() historyLoaded = false;
+
+// ✅ CORRECT — `static properties` block, no decorator import needed
+static properties = {
+  sessionId: { type: String },
+  displayMessages: { state: true },
+  historyLoaded: { state: true },
+};
+```
+
+**Rule of thumb:** Sub-components should use `static properties` block for ALL reactive properties. Pages (`LitroPage` subclasses) may use `@state()`. Never use `@property()` or `@state()` in sub-components.
+
 ### Litro: Backend API proxy — Nitro `routeRules` (not Vite proxy)
 
 The Litro dev server runs through Nitro, **not** Vite's dev middleware. The custom `server/middleware/vite-dev.ts` creates Vite with inline config (it does **not** load `vite.config.ts`), so a `server.proxy` entry in `vite.config.ts` is never consulted. Configure the backend proxy in `nitro.config.ts` instead:
