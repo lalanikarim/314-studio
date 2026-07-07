@@ -1181,6 +1181,8 @@ export class ChatPanelElement extends LitElement {
   render() {
     // During SSR, return empty — chat panel content is fully dynamic (loaded via loadChatHistory on client)
     if (typeof window === 'undefined') return html``;
+    const renderId = Math.random().toString(36).substring(7);
+    console.debug('[ChatStream] render() instance', renderId, 'displayMessages.length=', this.displayMessages.length);
     return html`
       <div class="chat-panel">
         <!-- Header -->
