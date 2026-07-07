@@ -103,6 +103,15 @@ async def create_session(
             project_path=str(resolved),
             name=name,
         )
+        
+        # If a model_id was provided, set it in the session record so SSE
+        # can send the initial set_model event to the client.
+        if req.model_id:
+            provider = req.model_id.split("/")[0] if "/" in req.model_id else "anthropic"
+            await session_manager.switch_model(
+                record.session_id, req.model_id, provider
+            )
+        
         existing = session_manager.get_sessions(str(resolved))
         running_count = len([s for s in existing if s.status == "running"])
         return {**record.model_dump(), "running_count": running_count}
