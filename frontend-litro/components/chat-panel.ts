@@ -1179,6 +1179,8 @@ export class ChatPanelElement extends LitElement {
   // ========================================================================
 
   render() {
+    // Skip SSR — chat panel renders dynamically after client hydration
+    if (typeof window === 'undefined') return html``;
     return html`
       <div class="chat-panel">
         <!-- Header -->
@@ -1338,7 +1340,7 @@ export class ChatPanelElement extends LitElement {
       console.debug('[ChatStream] RENDER ids:', ids.join(', '));
       ChatPanelElement._lastRenderMsgIds = ids;
     }
-    return msgs.map(
+    const templates = msgs.map(
       (msg) => html`
         <chat-message
           .role=${msg.role}
@@ -1347,6 +1349,8 @@ export class ChatPanelElement extends LitElement {
         ></chat-message>
       `,
     );
+    console.debug('[ChatStream] RENDER returning', templates.length, 'templates');
+    return templates;
   }
 
   private renderModelDropdown() {
