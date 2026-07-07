@@ -1141,7 +1141,8 @@ export class ChatPanelElement extends LitElement {
 
     this.currentModel = model;
 
-    const provider = extractProvider(model.id);
+    // Use the model's provider field directly (from API), not extracted from ID
+    const provider = model.provider;
 
     switchModel(this.sessionId, model.id, provider).catch((err) => {
       console.error('Failed to switch model:', err);
