@@ -418,8 +418,6 @@ export class ChatPanelElement extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
-    this._instanceId = ++ChatPanelElement._instanceCounter;
-    console.debug('[ChatStream] connectedCallback called! instance=', this._instanceId, 'displayMessages.length=', this.displayMessages.length, 'sessionId=', this.sessionId);
     this.chatController = new ChatStreamController(this, this.sessionId);
     this.clickOutsideHandler = (e: Event) => {
       if (this.modelDropdownOpen && !this.shadowRoot?.contains(e.target as Node)) {
@@ -431,7 +429,6 @@ export class ChatPanelElement extends LitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    console.debug('[ChatStream] disconnectedCallback called! instance=', this._instanceId, 'displayMessages.length=', this.displayMessages.length);
     // Clear the static guard so a new instance can load history for this session
     if (this.sessionId) {
       ChatPanelElement._historyLoadedSessions.delete(this.sessionId);
@@ -443,8 +440,6 @@ export class ChatPanelElement extends LitElement {
   }
 
   updated(changedProperties: Map<string, unknown>) {
-    const debugEl = this.shadowRoot?.querySelector('#debug-msg-count');
-    console.debug('[ChatStream] updated: instance=', this._instanceId, 'displayMessages.length=', this.displayMessages.length, 'DOM debug=', debugEl?.textContent, 'hasUpdated=', this.hasUpdated);
     if (changedProperties.has('sessionId')) {
       this.chatController.setSessionId(this.sessionId);
       // Only reset if history hasn't been loaded yet (guard against Litro double-render)
@@ -492,8 +487,6 @@ export class ChatPanelElement extends LitElement {
   private drainQueue() {
     const messages = this.chatController.messages;
     if (this.queueDrainIndex >= messages.length) return;
-
-    console.debug('[ChatStream] drainQueue: processing', messages.length - this.queueDrainIndex, 'events, queueDrainIndex=', this.queueDrainIndex, 'messages.length=', messages.length, 'displayMessages.length=', this.displayMessages.length);
 
     let messageEnded = false;
     let turnEnded = false;
@@ -737,9 +730,9 @@ export class ChatPanelElement extends LitElement {
       typeof this.displayMessages[lastIdx].id === 'string' &&
       this.displayMessages[lastIdx].id.startsWith('assistant-streaming-');
 
-    // Debug: log when finalized message is empty and streaming msg exists
+    // Remove streaming placeholder if finalized message is empty
     if (displayMsgs.length === 0 && isStreamingMsg) {
-      console.debug('[ChatStream] FINALIZED: empty displayMsgs but streaming msg exists — removing placeholder. msg.role=', (msg as any).role, 'msg.content=', JSON.stringify((msg as any).content)?.substring(0, 200));
+      // No content to display — remove the streaming placeholder
     }
 
     if (displayMsgs.length > 0) {
@@ -866,7 +859,7 @@ export class ChatPanelElement extends LitElement {
     // Add to set synchronously BEFORE the await so concurrent calls are blocked
     if (ChatPanelElement._historyLoadedSessions.has(this.sessionId)) return;
     ChatPanelElement._historyLoadedSessions.add(this.sessionId);
-    console.debug('[ChatStream] loadChatHistory: LOADING for', this.sessionId, 'instance=', this._instanceId);
+    console.debug('[ChatStream] loadChatHistory: LOADING for', this.sessionId);
 
     try {
       const result = await sendCommand(this.sessionId, { command: 'get_messages' });
@@ -1006,7 +999,6 @@ export class ChatPanelElement extends LitElement {
   // ========================================================================
 
   private resetDisplayState() {
-    console.debug('[ChatStream] resetDisplayState called!', new Error().stack);
     this.displayMessages = [];
     this.streamingContent = '';
     this.streamingThinking = '';
@@ -1199,10 +1191,8 @@ export class ChatPanelElement extends LitElement {
   // ========================================================================
 
   render() {
-    if (this.displayMessages.length > 0) console.debug('[ChatStream] render() instance=', this._instanceId, 'displayMessages.length=', this.displayMessages.length);
     return html`
-      <div class="chat-panel" data-instance="${this._instanceId}">
-        <div style="display:none" id="debug-msg-count">${this.displayMessages.length}</div>
+      <div class="chat-panel">
         <!-- Header -->
         <div class="chat-panel__header">
           <div class="chat-panel__header-left">
@@ -1315,8 +1305,6 @@ export class ChatPanelElement extends LitElement {
     `;
   }
 
-  private static _instanceCounter = 0;
-  private _instanceId = 0;
   private static _lastRenderMsgIds: string[] = [];
   private static _historyLoadedSessions = new Set<string>();
 
@@ -1351,14 +1339,6 @@ export class ChatPanelElement extends LitElement {
     const added = ids.filter((id) => !prevIds.includes(id));
     const removed = prevIds.filter((id) => !ids.includes(id));
     if (added.length > 0 || removed.length > 0) {
-      for (const id of added) {
-        const msg = msgs.find((m) => m.id === id);
-        if (msg) console.debug('[ChatStream] RENDER +:', msg.role, msg.id, 'blocks=', msg.content.length, msg.content.map((b) => b.kind).join(','));
-      }
-      for (const id of removed) {
-        console.debug('[ChatStream] RENDER -:', id);
-      }
-      console.debug('[ChatStream] RENDER ids:', ids.join(', '));
       ChatPanelElement._lastRenderMsgIds = ids;
     }
     return msgs.map(
