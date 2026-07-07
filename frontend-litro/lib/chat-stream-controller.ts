@@ -156,30 +156,6 @@ export class ChatStreamController implements ReactiveController {
   private push(msg: InboundMessage) {
     if (this.disposed) return;
     this.messages.push(msg);
-
-    // Debug: log every event as it enters the queue
-    if (msg.kind === 'rpc_event') {
-      const event = (msg as any).event as Record<string, unknown>;
-      console.debug(
-        '[ChatStream] QUEUED event:',
-        event.type || 'unknown',
-        'queueLength:', this.messages.length,
-      );
-    } else if (msg.kind === 'rpc_response') {
-      const response = (msg as any).response as Record<string, unknown>;
-      console.debug(
-        '[ChatStream] QUEUED response:',
-        response.command || response.commandName || 'unknown',
-        'queueLength:', this.messages.length,
-      );
-    } else {
-      console.debug(
-        '[ChatStream] QUEUED extension_ui_request:',
-        (msg as any).method || 'unknown',
-        'queueLength:', this.messages.length,
-      );
-    }
-
     this.host.requestUpdate();
   }
 
@@ -203,9 +179,6 @@ export class ChatStreamController implements ReactiveController {
     ) {
       this.isStreaming = true;
       if (this.state === "idle") this.state = "streaming";
-      if (!wasStreaming) {
-        console.debug('[ChatStream] → Streaming STARTED');
-      }
     }
 
     if (
@@ -215,9 +188,6 @@ export class ChatStreamController implements ReactiveController {
     ) {
       this.isStreaming = false;
       if (this.state === "streaming") this.state = "idle";
-      if (wasStreaming) {
-        console.debug('[ChatStream] → Streaming STOPPED (event:', eventType, ')');
-      }
     }
   }
 
