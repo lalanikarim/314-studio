@@ -191,7 +191,9 @@ export class ChatMessageElement extends LitElement {
   @property({ type: String }) role = '';
   @property({ type: Number }) timestamp = 0;
   @property({ type: Array, attribute: false }) contentBlocks: MessageContentBlock[] = [];
-  /** When true, thinking <details> stay open so the user can see them stream. */
+  /** When true, keeps <details> open so the user can watch them stream.
+   *  Also true after streaming completes so they stay expanded.
+   *  False during initial hydration so collapsed by default. */
   @property({ type: Boolean, attribute: false }) isStreaming = false;
 
   private formatTime(timestamp: number): string {

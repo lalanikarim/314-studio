@@ -33,6 +33,10 @@ export class ChatStreamController implements ReactiveController {
   /** Whether the agent is currently streaming assistant content */
   isStreaming = false;
 
+  /** Set once streaming has ever occurred — used to keep thinking/tool
+   *  blocks expanded after a completed stream (hydration keeps them collapsed). */
+  hasEverStreamed = false;
+
   /** Connection/lifecycle state */
   state: ConversationState = "idle";
 
@@ -188,6 +192,7 @@ export class ChatStreamController implements ReactiveController {
       eventType === "message_start"
     ) {
       this.isStreaming = true;
+      this.hasEverStreamed = true;
       if (this.state === "idle") this.state = "streaming";
       console.debug('[ChatStream] START:', eventType);
     }

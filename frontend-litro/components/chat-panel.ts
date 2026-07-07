@@ -168,6 +168,9 @@ export class ChatPanelElement extends LitElement {
       .chat-panel__messages {
         flex: 1;
         overflow-y: auto;
+        overflow-anchor: auto;
+        scroll-padding-bottom: 1rem;
+        overflow-y: auto;
         padding: 1rem;
         display: flex;
         flex-direction: column;
@@ -1293,16 +1296,13 @@ export class ChatPanelElement extends LitElement {
     return [...this.displayMessages].sort((a, b) => a.timestamp - b.timestamp);
   }
 
-  private scrollToBottom() {
-    requestAnimationFrame(() => {
-      const messagesContainer = this.shadowRoot?.querySelector('.chat-panel__messages');
-      if (messagesContainer) {
-        messagesContainer.scrollTo({
-          top: messagesContainer.scrollHeight,
-          behavior: 'smooth',
-        });
-      }
-    });
+  private async scrollToBottom() {
+    // Wait for Lit to finish updating the DOM before scrolling.
+    await this.updateComplete;
+    const messagesContainer = this.shadowRoot?.querySelector('.chat-panel__messages');
+    if (messagesContainer) {
+      messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
   }
 
   private getModelName(): string {
@@ -1441,6 +1441,7 @@ export class ChatPanelElement extends LitElement {
         <!-- Messages Area -->
         <div class="chat-panel__messages">
           ${this.renderMessagesArea()}
+          <div id="scroll-anchor"></div>
         </div>
 
         <!-- Input Bar -->
@@ -1496,6 +1497,7 @@ export class ChatPanelElement extends LitElement {
           .role=${msg.role}
           .timestamp=${msg.timestamp}
           .contentBlocks=${msg.content}
+          .isStreaming=${this.chatController.isStreaming || this.chatController.hasEverStreamed}
         ></chat-message>
       `,
     );
