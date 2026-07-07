@@ -20,6 +20,7 @@ import { designTokens } from '../styles/design-tokens.js';
 import { buttonStyles } from '../styles/shared.js';
 import type { Model } from '../types/index.js';
 import type {
+  AgentMessage,
   ChatMessage,
   MessageContentBlock,
   ToolCallEntry,
@@ -568,58 +569,44 @@ export class ChatPanelElement extends LitElement {
         this.updateStreamingMessageContent();
       }
 
-      // Tool call result (from assistantMessageEvent or tool_execution_end)
+      // Tool call result — merge directly into the last assistant
+      // message's toolCall blocks by id. Works whether the message is
+      // still being live-previewed or has already been committed via
+      // message_end (accumulator approach fails after commit resets).
       const toolResult = extractToolCallResult(event);
       if (toolResult) {
         console.debug(
           '[ChatStream]   drain:', eventType,
-          '→ tool_result:', JSON.stringify({
+          '→ merging tool_result:', JSON.stringify({
             id: toolResult.id,
-            result: toolResult.result,
+            result: toolResult.result?.substring(0, 80),
           }),
         );
-        const idx = this.streamingToolCalls.findIndex((tc) => tc.id === toolResult.id);
-        if (idx >= 0) {
-          const updated = [...this.streamingToolCalls];
-          updated[idx] = { ...updated[idx], result: toolResult.result };
-          this.streamingToolCalls = updated;
-        }
-        this.ensureStreamingMessage();
-        this.updateStreamingMessageContent();
+        this.mergeToolResultIntoLastMessage(toolResult.id!, toolResult.result);
       }
 
-      // Tool execution update (accumulated output — replace display)
+      // Tool execution update — merge partial result directly into the
+      // last assistant message's toolCall blocks by id (no accumulator).
       const toolExecUpdate = extractToolExecutionUpdate(event);
       if (toolExecUpdate) {
         console.debug(
           '[ChatStream]   drain:', eventType,
-          '→ tool_exec_update:', JSON.stringify({
+          '→ merging tool_exec_update:', JSON.stringify({
             id: toolExecUpdate.id,
-            partialText: toolExecUpdate.partialText,
+            partialText: toolExecUpdate.partialText?.substring(0, 80),
           }),
         );
-        const idx = this.streamingToolCalls.findIndex((tc) => tc.id === toolExecUpdate.id);
-        if (idx >= 0) {
-          const updated = [...this.streamingToolCalls];
-          updated[idx] = { ...updated[idx], result: toolExecUpdate.partialText };
-          this.streamingToolCalls = updated;
-        } else {
-          this.streamingToolCalls = [...this.streamingToolCalls, {
-            id: toolExecUpdate.id,
-            name: 'tool',
-            result: toolExecUpdate.partialText,
-          }];
-        }
-        this.ensureStreamingMessage();
-        this.updateStreamingMessageContent();
+        this.mergeToolResultIntoLastMessage(toolExecUpdate.id, toolExecUpdate.partialText);
       }
 
       // ── Finalization triggers ─────────────────────────────────────
-      // Primary: message_end carries the FULL message — commit now
+      // message_end carries the FULL finalized message via event.message —
+      // the same canonical AgentMessage shape that get_messages hydration
+      // reads. Use it directly instead of the accumulator-based
+      // reconstruction so the live view matches the persisted history.
       if (isMessageEnd(event)) {
-        console.debug('[ChatStream]   drain:', eventType, '→ COMMITTING message (primary trigger)');
-        console.debug('[ChatStream]   drain:   textAccum:', this.streamingTextAccum.length, 'thinkingAccum:', this.streamingThinkingAccum.length, 'toolCalls:', this.streamingToolCalls.length);
-        this.commitStreamingMessage();
+        console.debug('[ChatStream]   drain:', eventType, '→ applying finalized message from event.message');
+        this.applyFinalizedAssistantMessage(event);
         messageEnded = true;
         continue;
       }
@@ -772,15 +759,16 @@ export class ChatPanelElement extends LitElement {
 
   /**
    * Commit accumulated streaming content to displayMessages.
-   * Called when message_end, turn_end, or agent_end arrives.
-   * The message should already exist in displayMessages from ensureStreamingMessage().
+   *
+   * Fallback path — used only when turn_end/agent_end arrive without a
+   * preceding message_end (should be rare). The normal commit path uses
+   * applyFinalizedAssistantMessage which reads event.message directly.
    */
   private commitStreamingMessage() {
     // Skip if there's no content to commit
     const textContent = this.streamingTextAccum.trim();
     const thinkingContent = this.streamingThinkingAccum.trim();
     if (!textContent && !thinkingContent && this.streamingToolCalls.length === 0) {
-      // Nothing to commit — just reset accumulators
       this.streamingTextAccum = '';
       this.streamingThinkingAccum = '';
       this.streamingContent = '';
@@ -790,17 +778,8 @@ export class ChatPanelElement extends LitElement {
       return;
     }
 
-    // Update the last message with final content
     this.updateStreamingMessageContent();
 
-    console.debug(
-      '[ChatStream] COMMITTED message:',
-      'textLen=' + textContent.length,
-      'thinkingLen=' + thinkingContent.length,
-      'toolCalls=' + this.streamingToolCalls.length,
-    );
-
-    // Reset accumulators
     this.streamingTextAccum = '';
     this.streamingThinkingAccum = '';
     this.streamingContent = '';
@@ -809,10 +788,92 @@ export class ChatPanelElement extends LitElement {
     this.streamingMessageCreated = false;
 
     console.debug(
-      '[ChatStream] COMMIT: displayMessages now has',
+      '[ChatStream] COMMITTED (fallback): displayMessages now has',
       this.displayMessages.length,
       'messages'
     );
+  }
+
+  /**
+   * Apply a finalized assistant message from a message_end event.
+   *
+   * Reads event.message directly — the same canonical AgentMessage shape
+   * that get_messages hydration reads — instead of the accumulator-based
+   * reconstruction. This ensures the live view matches the persisted
+   * history exactly.
+   *
+   * If a live-preview streaming message exists in displayMessages, it is
+   * replaced with the finalized version. Otherwise the message is appended.
+   */
+  private applyFinalizedAssistantMessage(event: Record<string, unknown>) {
+    const msg = (event as any).message;
+    if (!msg || typeof msg !== 'object') return;
+
+    const displayMsgs = agentMessageToDisplay(msg as AgentMessage);
+    const lastIdx = this.displayMessages.length - 1;
+    const isStreamingMsg =
+      lastIdx >= 0 &&
+      typeof this.displayMessages[lastIdx].id === 'string' &&
+      this.displayMessages[lastIdx].id.startsWith('assistant-streaming-');
+
+    if (displayMsgs.length > 0) {
+      if (isStreamingMsg) {
+        // Replace the live-preview streaming message with the finalized version
+        const updated = [...this.displayMessages];
+        updated[lastIdx] = displayMsgs[0];
+        this.displayMessages = updated;
+      } else {
+        // No streaming message — append (fallback; shouldn't normally happen)
+        this.displayMessages = [...this.displayMessages, ...displayMsgs];
+      }
+    } else if (isStreamingMsg) {
+      // Empty finalized message — remove the placeholder
+      this.displayMessages = this.displayMessages.slice(0, -1);
+    }
+
+    // Reset accumulators — the canonical message has replaced them
+    this.streamingTextAccum = '';
+    this.streamingThinkingAccum = '';
+    this.streamingContent = '';
+    this.streamingThinking = '';
+    this.streamingToolCalls = [];
+    this.streamingMessageCreated = false;
+
+    console.debug(
+      '[ChatStream] FINALIZED:',
+      'blocks=' + (displayMsgs[0]?.content?.length ?? 0),
+      'totalMessages=' + this.displayMessages.length,
+    );
+  }
+
+  /**
+   * Merge a tool call result (or partial result) into the last assistant
+   * message's toolCall blocks by id.
+   *
+   * Works regardless of whether the message is still being live-previewed
+   * or has already been committed via message_end — avoids the accumulator
+   * race condition where commitStreamingMessage resets streamingToolCalls
+   * before tool_execution_end can find its matching block.
+   */
+  private mergeToolResultIntoLastMessage(toolCallId: string, result: string) {
+    const lastIdx = this.displayMessages.length - 1;
+    if (lastIdx < 0 || this.displayMessages[lastIdx].role !== 'assistant') return;
+
+    const msg = this.displayMessages[lastIdx];
+    let changed = false;
+    const newContent = msg.content.map(block => {
+      if (block.kind === 'toolCall' && block.id === toolCallId && block.result !== result) {
+        changed = true;
+        return { ...block, result } as MutableToolCallBlock;
+      }
+      return block;
+    });
+
+    if (changed) {
+      const updated = [...this.displayMessages];
+      updated[lastIdx] = { ...msg, content: newContent };
+      this.displayMessages = updated;
+    }
   }
 
   /**
@@ -948,10 +1009,13 @@ export class ChatPanelElement extends LitElement {
         const turnBlocks: MessageContentBlock[] = [...msg.content];
         i++;
 
-        // Collect subsequent toolResult and assistant messages in the same turn
+        // Collect subsequent assistant messages in the same turn.
+        // Note: ChatMessage.role is 'user' | 'assistant' only — tool results
+        // have already been converted to toolCall content blocks by
+        // agentMessageToDisplay, so no 'toolResult' role exists here.
         while (i < messages.length && messages[i].role !== 'user') {
           const next = messages[i];
-          if (next.role === 'toolResult' || next.role === 'assistant') {
+          if (next.role === 'assistant') {
             turnBlocks.push(...next.content);
             i++;
           } else {
@@ -1003,13 +1067,16 @@ export class ChatPanelElement extends LitElement {
 
     // Second pass: rebuild blocks, filling in results
     for (const block of blocks) {
+      // Skip toolResults that already have result — they were used in
+      // the first pass to populate resultById. The matching toolCall
+      // (without result) is rebuilt below with the result filled in.
+      if (block.kind === 'toolCall' && block.result !== undefined && block.result !== '') {
+        continue;
+      }
       if (block.kind === 'toolCall' && block.id && resultById.has(block.id)) {
         const existing = block as MutableToolCallBlock;
         existing.result = resultById.get(block.id) ?? existing.result;
         result.push(existing);
-      } else if (block.kind === 'toolCall' && block.result !== undefined && block.result !== '') {
-        // Skip duplicate toolResults — they've been merged into the toolCall
-        continue;
       } else {
         result.push(block);
       }
