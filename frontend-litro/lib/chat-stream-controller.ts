@@ -164,13 +164,23 @@ export class ChatStreamController implements ReactiveController {
    *
    * Per Pi RPC protocol:
    * - Streaming STARTS on: agent_start, turn_start, message_start
-   * - Streaming STOPS on:  message_end, turn_end, agent_end, done, error
+   * - Streaming STOPS on:  message_end, turn_end, agent_end
+   *                       assistantMessageEvent.type === "done" or "error"
    *
-   * These are checked AFTER the event is pushed to the queue so the
-   * component can process the event content before seeing the state change.
+   * Top-level lifecycle events (message_end/turn_end/agent_end) are the
+   * authoritative stop signals. Terminal assistantMessageEvent types
+   * (done/error inside a message_update) are a fallback: if the top-level
+   * message_end is missing or delayed, this still stops streaming.
+   *
+   * Checked AFTER the event is pushed to the queue so the component can
+   * process the event content before seeing the state change.
    */
-  private updateStreamingState(eventType: string) {
+  private updateStreamingState(eventPayload: Record<string, unknown>) {
     const wasStreaming = this.isStreaming;
+    const eventType = eventPayload.type as string | undefined ?? "";
+    const ami = eventPayload.assistantMessageEvent as
+      | { type?: string }
+      | undefined;
 
     if (
       eventType === "agent_start" ||
@@ -191,6 +201,15 @@ export class ChatStreamController implements ReactiveController {
       if (this.state === "streaming") this.state = "idle";
       console.debug('[ChatStream] END:', eventType);
     }
+
+    // Terminal assistantMessageEvent inside a message_update — stop streaming
+    // even if the top-level message_end never arrives (e.g. stopReason
+    // "toolUse" / "length" where done signals completion).
+    if (ami && (ami.type === "done" || ami.type === "error")) {
+      this.isStreaming = false;
+      if (this.state === "streaming") this.state = "idle";
+      console.debug('[ChatStream] END (terminal ami):', ami.type);
+    }
   }
 
   private handleRpcEvent(data: Record<string, unknown>) {
@@ -198,9 +217,6 @@ export class ChatStreamController implements ReactiveController {
 
     const eventPayload =
       (data as { event?: Record<string, unknown> }).event ?? data;
-    const eventType =
-      (eventPayload as Record<string, unknown>)?.type as string | undefined ??
-      "";
 
     // Push the event to the queue first
     this.push({
@@ -208,8 +224,10 @@ export class ChatStreamController implements ReactiveController {
       event: eventPayload as Record<string, unknown>,
     });
 
-    // Then update streaming state (component reads queue next tick)
-    this.updateStreamingState(eventType);
+    // Then update streaming state (component reads queue next tick).
+    // Pass the full eventPayload so updateStreamingState can inspect
+    // assistantMessageEvent.type for terminal signals.
+    this.updateStreamingState(eventPayload as Record<string, unknown>);
   }
 
   private handleRpcResponse(data: Record<string, unknown>) {

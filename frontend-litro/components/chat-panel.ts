@@ -415,6 +415,7 @@ export class ChatPanelElement extends LitElement {
   private streamingToolCalls: ToolCallEntry[] = [];
   private streamingMessageCreated = false; // Track if message created for current turn
   private queueDrainIndex = 0;
+  private turnStartIndex = -1; // Index in displayMessages where current turn started
 
   connectedCallback() {
     super.connectedCallback();
@@ -489,6 +490,10 @@ export class ChatPanelElement extends LitElement {
     if (this.queueDrainIndex >= messages.length) return;
 
     let messageEnded = false;
+    // True when a terminal assistantMessageEvent (done/error) was seen but
+    // no message_end/turn_end/agent_end finalized the message. Used to avoid
+    // double-committing in the fallback path below.
+    let messageTerminal = false;
     let turnEnded = false;
     let agentEnded = false;
 
@@ -559,18 +564,69 @@ export class ChatPanelElement extends LitElement {
       }
 
       // ── Finalization triggers ─────────────────────────────────────
+
+      // Canonical message_end — use the event's message field as the
+      // authoritative content (matches history hydration).
       if (isMessageEnd(event)) {
         this.applyFinalizedAssistantMessage(event);
         messageEnded = true;
         continue;
       }
 
-      if (isTurnEnd(event)) turnEnded = true;
-      if (isAgentEnd(event)) agentEnded = true;
+      // Terminal assistantMessageEvent (done/error) inside a message_update.
+      // These signal that the assistant has finished generating content.
+      // If no top-level message_end arrived, flush the accumulator so the
+      // streaming message is committed and accumulators reset.
+      if (isMessageTerminal(event)) {
+        this.commitStreamingMessage();
+        messageTerminal = true;
+        continue;
+      }
+
+      // turn_start — mark the beginning of a new turn so we know which
+      // messages to merge at turn_end.
+      if (event.type === 'turn_start') {
+        this.turnStartIndex = this.displayMessages.length;
+        console.debug('[ChatPanel] turn_start → turnStartIndex=', this.turnStartIndex,
+          'displayMsgs=', this.displayMessages.map((m) => `${m.role}:${m.id?.toString().slice(0, 20)}`));
+      }
+
+      // turn_end — progressively merge ALL trailing assistant messages
+      // since the last user message into one coherent block. This collapses
+      // the current turn AND any previous turns in the same agent run,
+      // matching the behavior of get_messages hydration. Safe to call
+      // multiple times: after the first merge, the trailing section has
+      // only 1 message, so subsequent calls are a no-op.
+      if (isTurnEnd(event)) {
+        turnEnded = true;
+        this.displayMessages = this.mergeTrailingAssistantMessages(this.displayMessages);
+        this.turnStartIndex = -1;
+        // Reset accumulators in case the last message in the turn never
+        // received a message_end (streamingMessageCreated still true).
+        this.streamingTextAccum = '';
+        this.streamingThinkingAccum = '';
+        this.streamingContent = '';
+        this.streamingThinking = '';
+        this.streamingToolCalls = [];
+        this.streamingMessageCreated = false;
+        messageEnded = true;
+      }
+
+      // agent_end — collapse ALL trailing consecutive assistant messages
+      // (across all turns in this agent run) into one coherent message.
+      // This matches get_messages hydration behavior where all assistant
+      // content between user prompts is merged into a single message.
+      if (isAgentEnd(event)) {
+        agentEnded = true;
+        this.displayMessages = this.mergeTrailingAssistantMessages(this.displayMessages);
+        this.turnStartIndex = -1;
+      }
     }
 
-    // Commit any remaining accumulated content if the run ended
-    if ((turnEnded || agentEnded) && !messageEnded) {
+    // Commit any remaining accumulated content if the run ended (and no
+    // canonical message was already applied via message_end, turn_end, or
+    // terminal message_update).
+    if ((turnEnded || agentEnded) && !messageEnded && !messageTerminal) {
       this.commitStreamingMessage();
     }
 
@@ -723,7 +779,19 @@ export class ChatPanelElement extends LitElement {
     const msg = (event as any).message;
     if (!msg || typeof msg !== 'object') return;
 
+    // Safety: Pi sometimes emits message_end for the user's prompt message
+    // (role === 'user'). Skip it — the user message is already added by
+    // handleSend and should never be re-added from a streaming event.
+    const role = (msg as any).role;
+    if (role === 'user') {
+      console.debug('[ChatPanel] applyFinalized: skipping user message_end');
+      return;
+    }
+
     const displayMsgs = agentMessageToDisplay(msg as AgentMessage);
+    console.debug('[ChatPanel] applyFinalized: role=', role,
+      'displayMsgs.length=', displayMsgs.length,
+      'ids=', displayMsgs.map((m) => `${m.role}:${m.id?.toString().slice(0, 20)}`));
     const lastIdx = this.displayMessages.length - 1;
     const isStreamingMsg =
       lastIdx >= 0 &&
@@ -822,7 +890,14 @@ export class ChatPanelElement extends LitElement {
     const command = response.command || response.commandName;
 
     // ── get_messages: hydrate chat history ──────────────────────────
+    // Guard against duplicate loads: loadChatHistory calls sendCommand
+    // (REST) which returns inline, AND the same response flows through the
+    // SSE stream as an rpc_response. If we already loaded history, skip.
     if (command === 'get_messages') {
+      if (this.historyLoaded) {
+        console.debug('[ChatPanel] processRpcResponse: skipping duplicate get_messages');
+        return;
+      }
       this.applyHistoryResponse(response);
       this.historyLoaded = true;
       return;
@@ -954,6 +1029,57 @@ export class ChatPanelElement extends LitElement {
   }
 
   /**
+   * Merge trailing consecutive assistant messages into a single message.
+   *
+   * Only operates on messages after the last user message (the current turn),
+   * leaving hydrated history untouched. This is the live-streaming equivalent
+   * of mergeHistoryToolResults() — it ensures multiple assistant messages
+   * within one turn (thinking → tool call → follow-up text) render as one
+   * coherent message block, matching the behavior of get_messages hydration.
+   *
+   * If there is no user message, or only one assistant message after the last
+   * user message, returns the original array unchanged (no re-render).
+   */
+  private mergeTrailingAssistantMessages(messages: ChatMessage[]): ChatMessage[] {
+    // Find the last user message — it's the boundary between turns.
+    let lastUserIdx = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'user') {
+        lastUserIdx = i;
+        break;
+      }
+    }
+
+    // No user message found, or user message is the last message:
+    // nothing to merge. Return original array to avoid unnecessary re-render.
+    if (lastUserIdx === -1 || lastUserIdx === messages.length - 1) {
+      return messages;
+    }
+
+    const before = messages.slice(0, lastUserIdx + 1);
+    const after = messages.slice(lastUserIdx + 1);
+
+    // Only one assistant message in the current turn — no merge needed.
+    if (after.length <= 1) {
+      return messages;
+    }
+
+    // Merge all trailing assistant messages into one coherent turn block.
+    const turnBlocks: MessageContentBlock[] = [];
+    for (const msg of after) {
+      turnBlocks.push(...msg.content);
+    }
+
+    const merged = this.mergeToolResultsIntoAssistantBlocks(turnBlocks);
+    const firstMsg = after[0];
+
+    return [
+      ...before,
+      { ...firstMsg, content: merged },
+    ];
+  }
+
+  /**
    * Merge toolResult blocks into matching toolCall blocks by id.
    * Returns a new block array with results filled in.
    */
@@ -976,10 +1102,18 @@ export class ChatPanelElement extends LitElement {
 
     // Second pass: rebuild blocks, filling in results
     for (const block of blocks) {
-      // Skip toolResults that already have result — they were used in
-      // the first pass to populate resultById. The matching toolCall
-      // (without result) is rebuilt below with the result filled in.
+      // toolCall blocks that already have a result: in the history path
+      // there may be a duplicate toolCall (without result) that should
+      // receive this result. In the live path there is only one toolCall
+      // with result — it must be preserved.
       if (block.kind === 'toolCall' && block.result !== undefined && block.result !== '') {
+        const hasMatchingWithoutResult = blocks.some(
+          (b) => b !== block && b.kind === 'toolCall' && b.id === block.id && (!b.result || b.result === '')
+        );
+        if (hasMatchingWithoutResult) {
+          continue;  // Skip this one; the matching one will get the result
+        }
+        result.push(block);  // No duplicate without result, keep this one
         continue;
       }
       if (block.kind === 'toolCall' && block.id && resultById.has(block.id)) {
@@ -1007,6 +1141,7 @@ export class ChatPanelElement extends LitElement {
     this.streamingToolCalls = [];
     this.streamingMessageCreated = false;
     this.queueDrainIndex = 0;
+    this.turnStartIndex = -1;
     this.modelSetFromState = false;
     this.errorMessage = null;
   }
@@ -1031,17 +1166,18 @@ export class ChatPanelElement extends LitElement {
     this.streamingTextAccum = '';
     this.streamingThinkingAccum = '';
     this.streamingToolCalls = [];
+    this.turnStartIndex = -1;
 
     // Add user message to display
-    this.displayMessages = [
-      ...this.displayMessages,
-      {
-        id: `user-${Date.now()}`,
-        role: 'user',
-        timestamp: Date.now(),
-        content: [{ kind: 'text', content: message }],
-      },
-    ];
+    const userMsg: ChatMessage = {
+      id: `user-${Date.now()}`,
+      role: 'user',
+      timestamp: Date.now(),
+      content: [{ kind: 'text', content: message }],
+    };
+    this.displayMessages = [...this.displayMessages, userMsg];
+    console.debug('[ChatPanel] handleSend → added user msg, displayMsgs.length=', this.displayMessages.length,
+      'lastRole=', this.displayMessages[this.displayMessages.length - 1]?.role);
 
     this.chatController.prompt(message);
     this.scrollToBottom();

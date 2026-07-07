@@ -393,8 +393,9 @@ class SessionManager:
         """Mark a session as having an active SSE subscriber.
 
         Only one SSE connection is allowed per session. If a connection
-        already exists, it is closed and replaced (EventSource auto-reconnect
-        handles the client-side retry).
+        already exists (e.g. EventSource auto-reconnect), signal the stale
+        subscriber to stop and put a sentinel into the event buffer so it
+        wakes up, sees the cancel flag, and exits cleanly.
 
         Returns False if session not found or not running.
         """
@@ -402,6 +403,17 @@ class SessionManager:
             record = self._sessions.get(session_id)
             if not record or record.status != "running":
                 return False
+
+            # Signal the existing subscriber (if any) to stop.
+            if record.sse_connected:
+                record.sse_cancelled = True
+                # Wake the stale generator so it notices the cancel flag
+                # on its next loop iteration.
+                try:
+                    record.event_buffer.put_nowait(None)
+                except asyncio.QueueFull:
+                    pass
+
             record.sse_connected = True
             record.sse_cancelled = False
             return True
@@ -455,11 +467,30 @@ class SessionManager:
     # ------------------------------------------------------------------
 
     async def get_next_event(self, session_id: str) -> dict | None:
-        """Get next queued event from the session's event buffer. Blocks until one arrives."""
+        """Get next queued event from the session's event buffer. Blocks until
+        one arrives or the subscriber has been cancelled.
+
+        Polls with a 1-second timeout so a stale generator (replaced by a
+        new SSE connection) notices the cancel flag and exits cleanly instead
+        of blocking forever.
+        """
         record = self._sessions.get(session_id)
         if not record:
             return None
-        return await record.event_buffer.get()
+
+        while True:
+            if record.sse_cancelled:
+                return None
+            try:
+                event = await asyncio.wait_for(
+                    record.event_buffer.get(), timeout=1.0
+                )
+                if event is None:
+                    # Sentinel from subscriber replacement or EOF
+                    return None
+                return event
+            except asyncio.TimeoutError:
+                continue
 
     # ------------------------------------------------------------------
     # Internal: command sending
