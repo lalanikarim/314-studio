@@ -66,6 +66,7 @@ export class FilePreviewElement extends LitElement {
   private async loadFile() {
     if (!this.projectPath || !this.filePath) return;
     this.loading = true;
+    this.error = null;
     try {
       const content = await readFile(this.projectPath, this.filePath);
       this.content = content || '';
