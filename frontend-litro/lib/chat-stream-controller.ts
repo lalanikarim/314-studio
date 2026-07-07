@@ -179,6 +179,7 @@ export class ChatStreamController implements ReactiveController {
     ) {
       this.isStreaming = true;
       if (this.state === "idle") this.state = "streaming";
+      console.debug('[ChatStream] START:', eventType);
     }
 
     if (
@@ -188,6 +189,7 @@ export class ChatStreamController implements ReactiveController {
     ) {
       this.isStreaming = false;
       if (this.state === "streaming") this.state = "idle";
+      console.debug('[ChatStream] END:', eventType);
     }
   }
 

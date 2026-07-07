@@ -504,6 +504,8 @@ export class ChatPanelElement extends LitElement {
 
       const toolCallDelta = extractToolCallDelta(event);
       if (toolCallDelta) {
+        const isNew = this.streamingToolCalls.every((tc) => tc.id !== toolCallDelta.id);
+        if (isNew) console.debug('[ChatStream] TOOL START:', toolCallDelta.name, toolCallDelta.id);
         this.upsertToolCall(toolCallDelta);
         this.ensureStreamingMessage();
         this.updateStreamingMessageContent();
@@ -511,6 +513,7 @@ export class ChatPanelElement extends LitElement {
 
       const toolCallEnd = extractToolCallEnd(event);
       if (toolCallEnd) {
+        console.debug('[ChatStream] TOOL END:', toolCallEnd.name, toolCallEnd.id);
         const idx = this.streamingToolCalls.findIndex((tc) => tc.id === toolCallEnd.id);
         if (idx >= 0) {
           const updated = [...this.streamingToolCalls];
@@ -526,6 +529,7 @@ export class ChatPanelElement extends LitElement {
       // Tool call result — merge directly into the last assistant message's toolCall blocks by id
       const toolResult = extractToolCallResult(event);
       if (toolResult) {
+        console.debug('[ChatStream] TOOL RESULT:', toolResult.id, 'len=', toolResult.result?.length);
         this.mergeToolResultIntoLastMessage(toolResult.id!, toolResult.result);
       }
 
