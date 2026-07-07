@@ -1,5 +1,5 @@
 import { html, css, LitElement } from 'lit';
-import { customElement, state } from 'lit/decorators.js';
+import { customElement } from 'lit/decorators.js';
 import { ChatStreamController } from '../lib/chat-stream-controller.js';
 import {
   agentMessageToDisplay,
@@ -377,6 +377,15 @@ export class ChatPanelElement extends LitElement {
     models: { type: Array },
     currentModel: { type: Object },
     projectPath: { type: String },
+    displayMessages: { state: true },
+    streamingContent: { state: true },
+    streamingThinking: { state: true },
+    toolCalls: { state: true },
+    modelDropdownOpen: { state: true },
+    closingState: { state: true },
+    errorMessage: { state: true },
+    showClearConfirm: { state: true },
+    historyLoaded: { state: true },
   };
 
   sessionId = '';
@@ -384,15 +393,15 @@ export class ChatPanelElement extends LitElement {
   currentModel: Model | null = null;
   projectPath = '';
 
-  @state() displayMessages: ChatMessage[] = [];
-  @state() streamingContent = '';
-  @state() streamingThinking = '';
-  @state() toolCalls: ToolCallEntry[] = [];
-  @state() modelDropdownOpen = false;
-  @state() closingState: 'none' | 'compact' | 'delete' = 'none';
-  @state() errorMessage: string | null = null;
-  @state() showClearConfirm = false;
-  @state() historyLoaded = false;
+  displayMessages: ChatMessage[] = [];
+  streamingContent = '';
+  streamingThinking = '';
+  toolCalls: ToolCallEntry[] = [];
+  modelDropdownOpen = false;
+  closingState: 'none' | 'compact' | 'delete' = 'none';
+  errorMessage: string | null = null;
+  showClearConfirm = false;
+  historyLoaded = false;
 
   private chatController!: ChatStreamController;
   private modelSetFromState = false;
