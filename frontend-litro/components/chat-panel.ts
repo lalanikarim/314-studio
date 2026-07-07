@@ -1274,7 +1274,7 @@ export class ChatPanelElement extends LitElement {
                 </p>
               </div>`
             : html`
-                ${this.renderMessages()}`
+                ${this.renderMessages()}
                 ${this.chatController.isStreaming
                   ? html`
                       <div class="chat-panel__streaming-indicator">
