@@ -139,11 +139,20 @@ export class ChatStreamController implements ReactiveController {
     this.sse.on("extension_ui_request", (data) =>
       this.handleExtensionUiRequest(data),
     );
-    this.sse.on("session_terminated", () => {
+    this.sse.on("session_terminated", (data?: { reason?: string }) => {
       if (this.disposed) return;
       this.isStreaming = false;
-      this.state = "disconnected";
-      this.errorMessage = "Session terminated";
+
+      // Normal EOF: Pi finished its response and exited. Stay idle so the user can prompt again.
+      const isNormalExit = data?.reason === "eof";
+
+      if (isNormalExit) {
+        this.state = "idle";
+        this.errorMessage = null;
+      } else {
+        this.state = "disconnected";
+        this.errorMessage = "Session terminated";
+      }
       this.host.requestUpdate();
     });
 
