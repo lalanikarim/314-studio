@@ -841,19 +841,19 @@ export class ChatPanelElement extends LitElement {
 
   private async loadChatHistory() {
     if (!this.sessionId) return;
-    if (ChatPanelElement._historyLoadedSessions.has(this.sessionId)) {
-      console.debug('[ChatStream] loadChatHistory: SKIPPED (already loaded for', this.sessionId, ')');
-      return;
-    }
+    // Add to set synchronously BEFORE the await so concurrent calls are blocked
+    if (ChatPanelElement._historyLoadedSessions.has(this.sessionId)) return;
+    ChatPanelElement._historyLoadedSessions.add(this.sessionId);
     console.debug('[ChatStream] loadChatHistory: LOADING for', this.sessionId);
 
     try {
       const result = await sendCommand(this.sessionId, { command: 'get_messages' });
       const rpcResponse = (result as any)?.response ?? result;
       this.applyHistoryResponse(rpcResponse);
-      ChatPanelElement._historyLoadedSessions.add(this.sessionId);
       this.historyLoaded = true;
     } catch (err) {
+      // Remove from set on failure so retry is possible
+      ChatPanelElement._historyLoadedSessions.delete(this.sessionId);
       console.error('Failed to load chat history:', err);
     }
   }
