@@ -397,6 +397,7 @@ export class ChatPanelElement extends LitElement {
   private chatController!: ChatStreamController;
   private modelSetFromState = false;
   private clickOutsideHandler: ((e: Event) => void) | null = null;
+  private sendingMessage = false; // Guard against duplicate sends
 
   // Streaming accumulators — reset after commit to displayMessages
   private streamingTextAccum = '';
@@ -433,6 +434,11 @@ export class ChatPanelElement extends LitElement {
       if (this.sessionId) {
         setTimeout(() => this.loadChatHistory(), 500);
       }
+    }
+
+    // Reset sending guard when streaming starts (first streaming event received)
+    if (this.chatController.isStreaming && this.sendingMessage) {
+      this.sendingMessage = false;
     }
 
     // Drain ALL new messages from the queue — queue/drain architecture
@@ -1107,6 +1113,11 @@ export class ChatPanelElement extends LitElement {
   // ========================================================================
 
   private handleSend(message: string) {
+    // Guard against duplicate sends (race condition between prompt() and
+    // isStreaming becoming true — send button stays enabled during this window)
+    if (this.sendingMessage) return;
+    this.sendingMessage = true;
+
     // Commit any current streaming content before sending new message
     if (this.streamingTextAccum.trim() || this.streamingThinkingAccum.trim() || this.streamingToolCalls.length > 0) {
       this.commitStreamingMessage();
