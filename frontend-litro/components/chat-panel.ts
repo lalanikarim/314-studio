@@ -838,6 +838,15 @@ export class ChatPanelElement extends LitElement {
           const provider = extractProvider(modelId);
           this.currentModel = createMinimalModel(modelId, provider);
           this.modelSetFromState = true;
+
+          // Notify workspace so its header dropdown shows the current model
+          this.dispatchEvent(
+            new CustomEvent('model-switch', {
+              detail: this.currentModel,
+              bubbles: true,
+              composed: true,
+            }),
+          );
         }
       }
     }
