@@ -194,7 +194,6 @@ export class ChatStreamController implements ReactiveController {
       this.isStreaming = true;
       this.hasEverStreamed = true;
       if (this.state === "idle") this.state = "streaming";
-      console.debug('[ChatStream] START:', eventType);
     }
 
     if (
@@ -204,7 +203,6 @@ export class ChatStreamController implements ReactiveController {
     ) {
       this.isStreaming = false;
       if (this.state === "streaming") this.state = "idle";
-      console.debug('[ChatStream] END:', eventType);
     }
 
     // Terminal assistantMessageEvent inside a message_update — stop streaming
@@ -213,7 +211,6 @@ export class ChatStreamController implements ReactiveController {
     if (ami && (ami.type === "done" || ami.type === "error")) {
       this.isStreaming = false;
       if (this.state === "streaming") this.state = "idle";
-      console.debug('[ChatStream] END (terminal ami):', ami.type);
     }
   }
 

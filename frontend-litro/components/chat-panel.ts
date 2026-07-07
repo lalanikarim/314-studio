@@ -532,15 +532,13 @@ export class ChatPanelElement extends LitElement {
       const toolCallDelta = extractToolCallDelta(event);
       if (toolCallDelta) {
         const isNew = this.streamingToolCalls.every((tc) => tc.id !== toolCallDelta.id);
-        if (isNew) console.debug('[ChatStream] TOOL START:', toolCallDelta.name, toolCallDelta.id);
-        this.upsertToolCall(toolCallDelta);
+        if (isNew) this.upsertToolCall(toolCallDelta);
         this.ensureStreamingMessage();
         this.updateStreamingMessageContent();
       }
 
       const toolCallEnd = extractToolCallEnd(event);
       if (toolCallEnd) {
-        console.debug('[ChatStream] TOOL END:', toolCallEnd.name, toolCallEnd.id);
         const idx = this.streamingToolCalls.findIndex((tc) => tc.id === toolCallEnd.id);
         if (idx >= 0) {
           const updated = [...this.streamingToolCalls];
@@ -556,7 +554,6 @@ export class ChatPanelElement extends LitElement {
       // Tool call result — merge directly into the last assistant message's toolCall blocks by id
       const toolResult = extractToolCallResult(event);
       if (toolResult) {
-        console.debug('[ChatStream] TOOL RESULT:', toolResult.id, 'len=', toolResult.result?.length);
         this.mergeToolResultIntoLastMessage(toolResult.id!, toolResult.result);
       }
 
@@ -590,8 +587,6 @@ export class ChatPanelElement extends LitElement {
       // messages to merge at turn_end.
       if (event.type === 'turn_start') {
         this.turnStartIndex = this.displayMessages.length;
-        console.debug('[ChatPanel] turn_start → turnStartIndex=', this.turnStartIndex,
-          'displayMsgs=', this.displayMessages.map((m) => `${m.role}:${m.id?.toString().slice(0, 20)}`));
       }
 
       // turn_end — progressively merge ALL trailing assistant messages
@@ -787,14 +782,10 @@ export class ChatPanelElement extends LitElement {
     // handleSend and should never be re-added from a streaming event.
     const role = (msg as any).role;
     if (role === 'user') {
-      console.debug('[ChatPanel] applyFinalized: skipping user message_end');
       return;
     }
 
     const displayMsgs = agentMessageToDisplay(msg as AgentMessage);
-    console.debug('[ChatPanel] applyFinalized: role=', role,
-      'displayMsgs.length=', displayMsgs.length,
-      'ids=', displayMsgs.map((m) => `${m.role}:${m.id?.toString().slice(0, 20)}`));
     const lastIdx = this.displayMessages.length - 1;
     const isStreamingMsg =
       lastIdx >= 0 &&
@@ -898,7 +889,6 @@ export class ChatPanelElement extends LitElement {
     // SSE stream as an rpc_response. If we already loaded history, skip.
     if (command === 'get_messages') {
       if (this.historyLoaded) {
-        console.debug('[ChatPanel] processRpcResponse: skipping duplicate get_messages');
         return;
       }
       this.applyHistoryResponse(response);
@@ -937,7 +927,6 @@ export class ChatPanelElement extends LitElement {
     // Add to set synchronously BEFORE the await so concurrent calls are blocked
     if (ChatPanelElement._historyLoadedSessions.has(this.sessionId)) return;
     ChatPanelElement._historyLoadedSessions.add(this.sessionId);
-    console.debug('[ChatStream] loadChatHistory: LOADING for', this.sessionId);
 
     try {
       const result = await sendCommand(this.sessionId, { command: 'get_messages' });
@@ -1192,8 +1181,6 @@ export class ChatPanelElement extends LitElement {
       content: [{ kind: 'text', content: message }],
     };
     this.displayMessages = [...this.displayMessages, userMsg];
-    console.debug('[ChatPanel] handleSend → added user msg, displayMsgs.length=', this.displayMessages.length,
-      'lastRole=', this.displayMessages[this.displayMessages.length - 1]?.role);
 
     this.chatController.prompt(message);
     this.scrollToBottom();
