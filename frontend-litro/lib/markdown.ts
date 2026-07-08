@@ -1,11 +1,16 @@
-import { marked } from 'marked';
+import MarkdownIt from 'markdown-it';
 
-marked.use({ gfm: true });
+const md = new MarkdownIt({
+  html: false,
+  linkify: true,
+  typographer: false,
+  breaks: false,
+});
 
 /**
  * Render markdown source to an HTML string.
  *
- * GFM is enabled (tables, code blocks, strikethrough, task lists).
+ * GFM is enabled by default (tables, strikethrough).
  * The returned string is safe for binding via `unsafeHTML` in Lit.
  *
  * Source is trusted (Pi agent output, closed Shadow DOM).
@@ -16,5 +21,5 @@ marked.use({ gfm: true });
  */
 export function renderMarkdown(source: string): string {
   if (!source) return '';
-  return marked.parse(source, { async: false }) as string;
+  return md.render(source);
 }

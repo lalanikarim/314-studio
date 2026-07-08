@@ -1,7 +1,8 @@
 import { html, css, LitElement } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
+import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import { designTokens } from '../styles/design-tokens';
-import { marked } from 'marked';
+import { renderMarkdown } from '../lib/markdown';
 
 /**
  * Markdown file viewer with source/preview toggle.
@@ -186,8 +187,10 @@ export class FilePreviewMarkdownElement extends LitElement {
   fileName = '';
   viewMode: 'source' | 'preview' = 'source';
 
+  @state() private _renderedPreview = '';
+
   updated(changedProperties: Map<string, any>) {
-    if (changedProperties.has('content')) {
+    if (changedProperties.has('content') && this.content) {
       this._renderedPreview = this.renderPreview();
     }
   }
@@ -195,13 +198,11 @@ export class FilePreviewMarkdownElement extends LitElement {
   private renderPreview(): string {
     if (!this.content) return '';
     try {
-      return (marked.parse(this.content, { async: false }) as string) || '';
+      return renderMarkdown(this.content);
     } catch {
       return '';
     }
   }
-
-  @state() private _renderedPreview = '';
 
   render() {
     if (!this.content) {
@@ -210,7 +211,7 @@ export class FilePreviewMarkdownElement extends LitElement {
 
     if (this.viewMode === 'preview') {
       return html`
-        <div class="markdown-preview" innerHTML=${this._renderedPreview}></div>
+        <div class="markdown-preview">${unsafeHTML(this._renderedPreview)}</div>
       `;
     }
 
