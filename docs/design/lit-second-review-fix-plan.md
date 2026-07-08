@@ -12,7 +12,7 @@
 |----------|-----|------|--------|--------|
 | Critical 1 | Move `ChatStreamController` to constructor | `chat-panel.ts` | ✅ Done | `ed39a99` |
 | Critical 2 | Pass `idx` through `.map()` | `chat-message.ts` | ✅ Done | `ed39a99` |
-| Critical 3 | `.ref` → `ref()` directive | `workspace.ts` | ⬜ Pending | — |
+| Critical 3 | `.ref` → `ref()` directive | `workspace.ts` | ✅ Done | `90c27ff` |
 | High 4 | Move `fetchSessionData()` to `firstUpdated()` | `workspace.ts` | ⬜ Pending | — |
 | Medium 5A | Immutable block merge | `chat-panel.ts` | ⬜ Pending | — |
 | Medium 5B | Immutable toolCall result merge | `chat-panel.ts` | ⬜ Pending | — |
