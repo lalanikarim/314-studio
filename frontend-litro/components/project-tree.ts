@@ -122,6 +122,7 @@ export class TreeNodeComponent extends LitElement {
   }
 
   updated(changedProperties: Map<string, any>) {
+    super.updated();
     if (changedProperties.has('expanded') && this.expanded && !this.fetchCalled) {
       this.fetchCalled = true;
       this.loadChildren();
@@ -242,6 +243,7 @@ export class ProjectTreeComponent extends LitElement {
   private firstUpdate = true;
 
   updated(changedProperties: Map<string, any>) {
+    super.updated();
     // Load roots on first update when projectPath is available.
     if (this.firstUpdate && this.projectPath) {
       this.firstUpdate = false;

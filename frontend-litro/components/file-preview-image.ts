@@ -59,6 +59,7 @@ export class FilePreviewImageElement extends LitElement {
   private loadError = false;
 
   updated(changedProperties: Map<string, any>) {
+    super.updated();
     if (
       changedProperties.has('filePath') ||
       changedProperties.has('projectPath')

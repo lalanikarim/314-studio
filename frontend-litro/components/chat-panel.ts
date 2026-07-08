@@ -373,6 +373,7 @@ export class ChatPanelElement extends LitElement {
   }
 
   updated(changedProperties: Map<string, unknown>) {
+    super.updated();
     // Track message ID changes for transition logic (was in renderMessages)
     if (changedProperties.has('displayMessages')) {
       const ids = this.sortedMessages.map((m) => m.id);

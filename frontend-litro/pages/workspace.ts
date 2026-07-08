@@ -102,6 +102,20 @@ export class WorkspacePage extends LitroPage {
       .view-workspace__model-option--active:hover {
         background: var(--accent-hover);
       }
+      .view-workspace__model-option__name {
+        font-weight: 500;
+      }
+      .view-workspace__model-option__meta {
+        font-size: 0.75rem;
+        opacity: 0.7;
+        margin-top: 0.25rem;
+      }
+      .view-workspace__model-dropdown__empty {
+        padding: 0.75rem;
+        text-align: center;
+        color: var(--text-muted);
+        font-size: 0.8125rem;
+      }
       .view-workspace__project {
         margin-left: 8px;
         font-size: 14px;
@@ -283,7 +297,7 @@ export class WorkspacePage extends LitroPage {
   private renderModelDropdown() {
     if (this.models.length === 0) {
       return html`<div class="view-workspace__model-dropdown">
-        <div style="padding: 0.75rem; text-align: center; color: var(--text-muted); font-size: 0.8125rem;">
+        <div class="view-workspace__model-dropdown__empty">
           No models available
         </div>
       </div>`;
@@ -298,8 +312,8 @@ export class WorkspacePage extends LitroPage {
                 : ''}"
               @click=${() => this.handleModelSelect(model)}
             >
-              <div style="font-weight: 500;">${model.name}</div>
-              <div style="font-size: 0.75rem; opacity: 0.7; margin-top: 0.25rem;">
+              <div class="view-workspace__model-option__name">${model.name}</div>
+              <div class="view-workspace__model-option__meta">
                 ${model.provider} ${model.contextWindow > 0 ? `· ${model.contextWindow.toLocaleString()} ctx` : ''}
               </div>
             </button>

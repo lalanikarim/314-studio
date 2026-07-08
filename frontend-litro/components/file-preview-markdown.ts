@@ -191,6 +191,7 @@ export class FilePreviewMarkdownElement extends LitElement {
   _renderedPreview = '';
 
   updated(changedProperties: Map<string, any>) {
+    super.updated();
     if (changedProperties.has('content') && this.content) {
       this._renderedPreview = this.renderPreview();
     }

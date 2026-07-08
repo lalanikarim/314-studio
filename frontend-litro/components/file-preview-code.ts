@@ -163,6 +163,7 @@ export class FilePreviewCodeElement extends LitElement {
   private _cachedHighlighted = '';
 
   updated(changedProperties: Map<string, any>) {
+    super.updated();
     if (changedProperties.has('content') && this.content && this.language) {
       // Defer to next frame to ensure Prism is ready
       requestAnimationFrame(() => this.highlight());

@@ -1,6 +1,7 @@
 import { html, css, LitElement } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { closeSession, deleteSession } from '../services/api';
+import { designTokens } from '../styles/design-tokens';
 
 // ---------------------------------------------------------------------------
 // ShutdownDialog — reusable confirmation dialog for session shutdown
@@ -8,7 +9,10 @@ import { closeSession, deleteSession } from '../services/api';
 
 @customElement('shutdown-dialog')
 export class ShutdownDialog extends LitElement {
-  static styles = css`
+  static styles = [
+    designTokens,
+    css`
+
     :host {
       display: block;
     }
@@ -90,7 +94,8 @@ export class ShutdownDialog extends LitElement {
       font-weight: 400;
       opacity: 0.7;
     }
-  `;
+    `,
+  ];
 
   static properties = {
     sessionName: { type: String },

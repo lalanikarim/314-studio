@@ -134,6 +134,7 @@ export class FilePreviewElement extends LitElement {
   viewMode: 'source' | 'preview' = 'source';
 
   updated(changedProperties: Map<string, any>) {
+    super.updated();
     if (
       changedProperties.has('filePath') ||
       changedProperties.has('projectPath')

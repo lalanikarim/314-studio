@@ -1,6 +1,5 @@
-import { html, css, type TemplateResult, LitElement } from 'lit';
+import { html, css, LitElement } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
-import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import { LitroPage } from '@beatzball/litro/runtime';
 import { browseDirectories, fetchSessions, closeSession, deleteSession } from '../services/api';
 import type { SessionItem } from '../services/api';
@@ -260,14 +259,7 @@ export class HomePage extends LitroPage {
   }
 
   private async loadSessions() {
-    this.sessionsFetched = false;
     this.sessionLoadError = null;
-    // Reset for next time the sessions tab opens
-    if (this.sessionsFetched) {
-      this.sessionsFetched = true;
-      return;
-    }
-    this.sessionsFetched = true;
     try {
       const allSessions = await fetchSessions();
       // Only show running sessions
@@ -320,7 +312,7 @@ export class HomePage extends LitroPage {
     if (!q) return html`${name}`;
     const idx = name.toLowerCase().indexOf(q);
     if (idx < 0) return html`${name}`;
-    return html`${name.slice(0, idx)}${unsafeHTML(`<mark class="highlight-mark">${name.slice(idx, idx + this.search.length)}</mark>`)}${name.slice(idx + this.search.length)}`;
+    return html`${name.slice(0, idx)}<mark class="highlight-mark">${name.slice(idx, idx + this.search.length)}</mark>${name.slice(idx + this.search.length)}`;
   }
 
   // ── Render ────────────────────────────────────────────────────────────
