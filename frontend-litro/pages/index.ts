@@ -240,9 +240,8 @@ export class HomePage extends LitroPage {
 
   private sessionsFetched = false;
 
-  connectedCallback() {
-    super.connectedCallback();
-    if (typeof window !== 'undefined' && this.folders.length === 0) {
+  firstUpdated() {
+    if (this.folders.length === 0) {
       this.loadFolders();
     }
   }

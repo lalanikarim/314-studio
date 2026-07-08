@@ -117,16 +117,21 @@ export class FilePreviewElement extends LitElement {
   static properties = {
     projectPath: { type: String },
     filePath: { type: String },
+    content: { type: String },
+    fileName: { type: String },
+    loading: { type: Boolean },
+    error: { type: String, state: true },
+    viewMode: { type: String },
   };
 
   projectPath = '';
   filePath = '';
 
-  @state() content = '';
-  @state() fileName = '';
-  @state() loading = false;
-  @state() error: string | null = null;
-  @state() viewMode: 'source' | 'preview' = 'source';
+  content = '';
+  fileName = '';
+  loading = false;
+  error: string | null = null;
+  viewMode: 'source' | 'preview' = 'source';
 
   updated(changedProperties: Map<string, any>) {
     if (

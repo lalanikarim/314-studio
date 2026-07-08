@@ -1,5 +1,5 @@
 import { html, css, LitElement } from 'lit';
-import { customElement, state } from 'lit/decorators.js';
+import { customElement } from 'lit/decorators.js';
 import { listFiles } from '../services/api';
 import { buttonStyles } from '../styles/shared';
 import { designTokens } from '../styles/design-tokens';
@@ -98,30 +98,30 @@ export class TreeNodeComponent extends LitElement {
     depth: { type: Number },
     selectedPath: { type: String },
     projectRoot: { type: String },
+    expanded: { type: Boolean },
+    children: { type: Array },
+    loading: { type: Boolean },
   };
+
   node: TreeNodeData = { name: '', path: '', isDirectory: false, children: [] };
   depth = 0;
   selectedPath = '';
   projectRoot = '';
 
-  @state() expanded = false;
-  @state() children: TreeNodeData[] = [];
-  @state() loading = false;
+  expanded = false;
+  children: TreeNodeData[] = [];
+  loading = false;
 
   private fetchCalled = false;
-  private firstRender = true;
+
+  firstUpdated() {
+    // Auto-expand root directory nodes so folder contents load immediately.
+    if (this.depth === 0 && this.node?.isDirectory) {
+      this.expanded = true;
+    }
+  }
 
   updated(changedProperties: Map<string, any>) {
-    // Auto-expand directory nodes on first render so the folder contents load immediately.
-    if (this.firstRender) {
-      if (this.depth === 0 && !this.expanded && this.node?.isDirectory) {
-        this.expanded = true;
-        this.firstRender = false;
-        return;
-      }
-      this.firstRender = false;
-      return;
-    }
     if (changedProperties.has('expanded') && this.expanded && !this.fetchCalled) {
       this.fetchCalled = true;
       this.loadChildren();
@@ -236,8 +236,8 @@ export class ProjectTreeComponent extends LitElement {
   projectPath = '';
   selectedFile = '';
 
-  @state() roots: TreeNodeData[] = [];
-  @state() loading = false;
+  roots: TreeNodeData[] = [];
+  loading = false;
 
   private folderFetched = false;
   private firstUpdate = true;

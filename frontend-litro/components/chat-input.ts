@@ -108,9 +108,10 @@ export class ChatInputElement extends LitElement {
   static properties = {
     disabled: { type: Boolean },
     isStreaming: { type: Boolean },
+    value: { type: String, state: true },
   };
 
-  @state() private value = '';
+  value = '';
 
   disabled = false;
   isStreaming = false;

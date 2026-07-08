@@ -1,5 +1,5 @@
 import { html, css, LitElement } from 'lit';
-import { customElement, state } from 'lit/decorators.js';
+import { customElement } from 'lit/decorators.js';
 import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import { designTokens } from '../styles/design-tokens';
 import { renderMarkdown } from '../lib/markdown';
@@ -181,13 +181,14 @@ export class FilePreviewMarkdownElement extends LitElement {
     content: {},
     fileName: {},
     viewMode: { type: String },
+    _renderedPreview: { type: String, state: true },
   };
 
   content = '';
   fileName = '';
   viewMode: 'source' | 'preview' = 'source';
 
-  @state() private _renderedPreview = '';
+  _renderedPreview = '';
 
   updated(changedProperties: Map<string, any>) {
     if (changedProperties.has('content') && this.content) {

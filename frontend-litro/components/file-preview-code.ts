@@ -1,5 +1,5 @@
 import { html, css, LitElement } from 'lit';
-import { customElement, state } from 'lit/decorators.js';
+import { customElement } from 'lit/decorators.js';
 import { designTokens } from '../styles/design-tokens';
 
 // Make Prism available as a global before loading language components
@@ -150,13 +150,14 @@ export class FilePreviewCodeElement extends LitElement {
     content: {},
     language: { type: String },
     fileName: { type: String },
+    highlighted: { type: Boolean, attribute: false },
   };
 
   content = '';
   language = '';
   fileName = '';
 
-  @state() highlighted = false;
+  highlighted = false;
 
   private codeContainer: HTMLPreElement | null = null;
 

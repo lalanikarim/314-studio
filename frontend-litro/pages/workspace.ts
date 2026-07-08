@@ -189,6 +189,8 @@ export class WorkspacePage extends LitroPage {
   @state() currentModel: Model | null = null;
   @state() modelDropdownOpen = false;
 
+  pendingModelSwitch: Model | null = null;
+
   readonly selectionStore = new SelectionStore();
 
   private async fetchSessionData() {
@@ -247,11 +249,8 @@ export class WorkspacePage extends LitroPage {
   private handleModelSelect(model: Model) {
     this.modelDropdownOpen = false;
     this.currentModel = model;
-    // Forward to chat-panel to perform the actual switch (API + RPC)
-    const cp = this.shadowRoot?.querySelector('chat-panel');
-    if (cp && typeof (cp as any).handleSwitchModel === 'function') {
-      (cp as any).handleSwitchModel(model);
-    }
+    // Forward to chat-panel via property (avoids shadow DOM query)
+    this.pendingModelSwitch = model;
   }
 
   private handleOutsideModelClick = (e: Event) => {
@@ -392,6 +391,7 @@ export class WorkspacePage extends LitroPage {
               .sessionId=${this.sessionId}
               .models=${this.models}
               .currentModel=${this.currentModel}
+              .pendingModelSwitch=${this.pendingModelSwitch}
               .projectPath=${this.folderPath}
               @session-close=${() => this.handleSessionClose()}
               @session-delete=${() => this.handleSessionDelete()}

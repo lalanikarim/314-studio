@@ -279,9 +279,8 @@ export class ModelSelectorPage extends LitroPage {
   @state() selectedProviders: string[] = [];
   @state() switching = false;
 
-  connectedCallback() {
-    super.connectedCallback();
-    if (typeof window !== 'undefined') this.loadModels();
+  firstUpdated() {
+    this.loadModels();
   }
 
   private get folderPath(): string {

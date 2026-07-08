@@ -1,5 +1,5 @@
 import { css, html, LitElement } from 'lit';
-import { customElement, property } from 'lit/decorators.js';
+import { customElement } from 'lit/decorators.js';
 import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import { designTokens } from '../styles/design-tokens.js';
 import { renderMarkdown } from '../lib/markdown.js';
@@ -188,13 +188,20 @@ export class ChatMessageElement extends LitElement {
     `,
   ];
 
-  @property({ type: String }) role = '';
-  @property({ type: Number }) timestamp = 0;
-  @property({ type: Array, attribute: false }) contentBlocks: MessageContentBlock[] = [];
+  static properties = {
+    role: { type: String },
+    timestamp: { type: Number },
+    contentBlocks: { type: Array, attribute: false },
+    isStreaming: { type: Boolean, attribute: false },
+  };
+
+  role = '';
+  timestamp = 0;
+  contentBlocks: MessageContentBlock[] = [];
   /** When true, keeps <details> open so the user can watch them stream.
    *  Also true after streaming completes so they stay expanded.
    *  False during initial hydration so collapsed by default. */
-  @property({ type: Boolean, attribute: false }) isStreaming = false;
+  isStreaming = false;
 
   private formatTime(timestamp: number): string {
     return new Date(timestamp).toLocaleTimeString([], {

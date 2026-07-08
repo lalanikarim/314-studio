@@ -321,6 +321,7 @@ export class ChatPanelElement extends LitElement {
     sessionId: { type: String },
     models: { type: Array },
     currentModel: { type: Object },
+    pendingModelSwitch: { type: Object, attribute: false },
     projectPath: { type: String },
     displayMessages: { state: true },
     streamingContent: { state: true },
@@ -335,6 +336,7 @@ export class ChatPanelElement extends LitElement {
   sessionId = '';
   models: Model[] = [];
   currentModel: Model | null = null;
+  pendingModelSwitch: Model | null = null;
   projectPath = '';
 
   displayMessages: ChatMessage[] = [];
@@ -373,6 +375,10 @@ export class ChatPanelElement extends LitElement {
   }
 
   updated(changedProperties: Map<string, unknown>) {
+    if (changedProperties.has('pendingModelSwitch') && this.pendingModelSwitch) {
+      this.handleSwitchModel(this.pendingModelSwitch);
+      this.pendingModelSwitch = null;
+    }
     if (changedProperties.has('sessionId')) {
       this.chatController.setSessionId(this.sessionId);
       // Only reset if history hasn't been loaded yet (guard against Litro double-render)
@@ -655,9 +661,10 @@ export class ChatPanelElement extends LitElement {
       contentBlocks.push({ kind: 'text', content: this.streamingTextAccum });
     }
 
-    // Update the message in place (mutable)
-    (lastMsg as any).content = contentBlocks;
-    this.displayMessages = [...this.displayMessages]; // Trigger reactivity
+    // Immutable update — create new array with new message object
+    const updated = [...this.displayMessages];
+    updated[updated.length - 1] = { ...lastMsg, content: contentBlocks };
+    this.displayMessages = updated;
   }
 
   /**
