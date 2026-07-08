@@ -19,28 +19,28 @@ All fixes follow the patterns documented in `docs/kb/lit-best-practices.md` and 
 
 | # | Priority | Category | Issue | File(s) | Verified | Status |
 |---|----------|----------|-------|---------|----------|--------|
-| 1 | **P0** | Build/Crash | `@property` decorator in sub-component | `components/chat-message.ts:191-197` | ✅ Present | Open |
-| 2 | **P0** | Build/Crash | `@state` decorator in sub-components (6 files) | `project-tree.ts`, `file-preview-code.ts`, `chat-input.ts`, `file-preview-markdown.ts`, `file-preview.ts` | ✅ Present | Open |
-| 3 | **P0** | SSR/Hydration | Data loading in `connectedCallback()` causes hydration mismatch | `pages/index.ts:243-246`, `pages/models.ts:282-284` | ✅ Present | Open |
-| 4 | **P0** | SSR/Hydration | `tree-node` auto-expand in `updated()` boolean flag | `components/project-tree.ts:112-122` | ✅ Present | Open |
-| 5 | **P0** | Encapsulation | Parent reaches into child shadow DOM | `pages/workspace.ts:251-253` | ✅ Present | Open |
-| 6 | **P0** | Reactivity | Mutable object mutation in displayMessages | `components/chat-panel.ts:637-659` | ✅ Present | Open |
-| 7 | P1 | Reactivity | Static mutable state shared across instances | `components/chat-panel.ts:1378-1379` | ✅ Present | Open |
-| 8 | P1 | Reactivity | Side effects inside render path | `components/chat-panel.ts` (render→drainQueue) | ✅ Present | Open |
-| 9 | P1 | Performance | No batching on `drainQueue()` | `components/chat-panel.ts:420` | ✅ Present | Open |
-| 10 | P1 | Performance | Markdown rendered on every re-render | `components/chat-message.ts:243` | ✅ Present | Open |
-| 11 | P1 | Build/Crash | Imperative `.ref=` + `innerHTML` bypass | `components/file-preview-code.ts:205,215,229` | ✅ Present | Open |
-| 12 | P1 | Known Bug | `extractProvider` falls back to `"anthropic"` | `pages/workspace.ts:217` | ✅ Present | Open |
-| 13 | P2 | Lifecycle | `firstRender`/`firstUpdate` boolean anti-pattern | `components/project-tree.ts:112,243` | ✅ Present | Open |
-| 14 | P2 | API | `file-preview-image.ts` bypasses API service layer | `components/file-preview-image.ts:87` | ✅ Present | Open |
-| 15 | P2 | DOM Access | `querySelector` for `.chat-panel__messages` every call | `components/chat-panel.ts:1239` | ✅ Present | Open |
-| 16 | P2 | DOM Access | `stopPropagation` unnecessary in tree-node click | `components/project-tree.ts:157` | ✅ Present | Open |
-| 17 | P3 | Dead Code | `sessionsFetched` always-false dead code | `pages/index.ts:261-271` | ✅ Present | Open |
-| 18 | P3 | Style | `unsafeHTML` for controlled `<mark>` highlight | `pages/index.ts:324` | ✅ Present | Open |
-| 19 | P3 | Style | No inline `style` for layout in workspace model dropdown | `pages/workspace.ts` | ✅ Present | Open |
-| 20 | P3 | Defensive | Missing `super.updated()` in all components | All components | ✅ Present | Open |
-| 21 | P3 | Style | `designTokens` not imported in some components | `components/shutdown-dialog.ts` etc. | ✅ Present | Open |
-| 22 | P2 | Hydration | `workspace.ts` synchronous `sessionId` read before first render | `pages/workspace.ts:267-274` | ✅ Present | Open |
+| 1 | **P0** | Build/Crash | `@property` decorator in sub-component | `components/chat-message.ts:191-197` | ✅ Present | ✅ Fixed |
+| 2 | **P0** | Build/Crash | `@state` decorator in sub-components (6 files) | `project-tree.ts`, `file-preview-code.ts`, `chat-input.ts`, `file-preview-markdown.ts`, `file-preview.ts` | ✅ Present | ✅ Fixed |
+| 3 | **P0** | SSR/Hydration | Data loading in `connectedCallback()` causes hydration mismatch | `pages/index.ts:243-246`, `pages/models.ts:282-284` | ✅ Present | ✅ Fixed |
+| 4 | **P0** | SSR/Hydration | `tree-node` auto-expand in `updated()` boolean flag | `components/project-tree.ts:112-122` | ✅ Present | ✅ Fixed |
+| 5 | **P0** | Encapsulation | Parent reaches into child shadow DOM | `pages/workspace.ts:251-253` | ✅ Present | ✅ Fixed |
+| 6 | **P0** | Reactivity | Mutable object mutation in displayMessages | `components/chat-panel.ts:637-659` | ✅ Present | ✅ Fixed |
+| 7 | P1 | Reactivity | Static mutable state shared across instances | `components/chat-panel.ts:1378-1379` | ✅ Present | ✅ Fixed |
+| 8 | P1 | Reactivity | Side effects inside render path | `components/chat-panel.ts` (render→drainQueue) | ✅ Present | ✅ Fixed |
+| 9 | P1 | Performance | No batching on `drainQueue()` | `components/chat-panel.ts:420` | ✅ Present | ✅ Fixed |
+| 10 | P1 | Performance | Markdown rendered on every re-render | `components/chat-message.ts:243` | ✅ Present | ✅ Fixed |
+| 11 | P1 | Build/Crash | Imperative `.ref=` + `innerHTML` bypass | `components/file-preview-code.ts:205,215,229` | ✅ Present | ✅ Fixed |
+| 12 | P1 | Known Bug | `extractProvider` falls back to `"anthropic"` | `pages/workspace.ts:217` | ✅ Present | ✅ Fixed |
+| 13 | P2 | Lifecycle | `firstRender`/`firstUpdate` boolean anti-pattern | `components/project-tree.ts:112,243` | ✅ Present | ✅ Fixed |
+| 14 | P2 | API | `file-preview-image.ts` bypasses API service layer | `components/file-preview-image.ts:87` | ✅ Present | ✅ Fixed |
+| 15 | P2 | DOM Access | `querySelector` for `.chat-panel__messages` every call | `components/chat-panel.ts:1239` | ✅ Present | ✅ Fixed |
+| 16 | P2 | DOM Access | `stopPropagation` unnecessary in tree-node click | `components/project-tree.ts:157` | ✅ Present | ✅ Fixed |
+| 17 | P3 | Dead Code | `sessionsFetched` always-false dead code | `pages/index.ts:261-271` | ✅ Present | ✅ Fixed |
+| 18 | P3 | Style | `unsafeHTML` for controlled `<mark>` highlight | `pages/index.ts:324` | ✅ Present | ✅ Fixed |
+| 19 | P3 | Style | No inline `style` for layout in workspace model dropdown | `pages/workspace.ts` | ✅ Present | ✅ Fixed |
+| 20 | P3 | Defensive | Missing `super.updated()` in all components | All components | ✅ Present | ✅ Fixed |
+| 21 | P3 | Style | `designTokens` not imported in some components | `components/shutdown-dialog.ts` etc. | ✅ Present | ✅ Fixed |
+| 22 | P2 | Hydration | `workspace.ts` synchronous `sessionId` read before first render | `pages/workspace.ts:267-274` | ✅ Present | ✅ Fixed |
 
 ---
 
@@ -698,33 +698,43 @@ static styles = [
 
 ## Execution Order
 
-Execute fixes in priority order. Each P0 fix should be tested independently (build + dev server check) before proceeding:
+Execute fixes in priority order. Each P0 fix should be tested independently (build + dev server check) before proceeding.
+
+**All 22 fixes completed on 2026-07-07.** Four commit batches:
+- `fix(litro): P0 fixes` — 10 files, decorators + SSR + encapsulation + reactivity
+- `fix(litro): P1 fixes` — 4 files, reactivity + performance + build safety
+- `fix(litro): P2 fixes` — 5 files, API abstraction + DOM refs + lifecycle
+- `fix(litro): P3 cleanup` — 9 files, dead code + inline styles + super.updated() + designTokens
 
 ```
-Phase 1 (P0 — Do first, verify each):
-  1. Fix #1: chat-message.ts @property → static properties
-  2. Fix #2: All @state sub-components → static properties
-  3. Fix #3: index.ts + models.ts connectedCallback → firstUpdated
-  4. Fix #4: project-tree.ts auto-expand → firstUpdated
-  5. Fix #5: workspace.ts → chat-panel property/event pattern
-  6. Fix #6: chat-panel.ts immutable message updates
+Phase 1 (P0):
+  1. ✅ Fix #1: chat-message.ts @property → static properties
+  2. ✅ Fix #2: All @state sub-components → static properties
+  3. ✅ Fix #3: index.ts + models.ts connectedCallback → firstUpdated
+  4. ✅ Fix #4: project-tree.ts auto-expand → firstUpdated
+  5. ✅ Fix #5: workspace.ts → chat-panel property/event pattern
+  6. ✅ Fix #6: chat-panel.ts immutable message updates
 
-Phase 2 (P1 — After P0 verified):
-  7. Fix #7: Static guards → instance-level
-  8. Fix #8: Render side effects → updated()
-  9. Fix #9: drainQueue batching
-  10. Fix #10: Markdown caching
-  11. Fix #11: file-preview-code.ts unsafeHTML
-  12. Fix #12: extractProvider → model lookup
+Phase 2 (P1):
+  7. ✅ Fix #7: Static guards → instance-level
+  8. ✅ Fix #8: Render side effects → updated()
+  9. ✅ Fix #9: drainQueue batching
+  10. ✅ Fix #10: Markdown caching
+  11. ✅ Fix #11: file-preview-code.ts unsafeHTML
+  12. ✅ Fix #12: extractProvider → model lookup
 
-Phase 3 (P2 — After P1 verified):
-  13. Fix #13: readFileBlob API helper
-  14. Fix #14: @query / ref directives
-  15. Fix #15: Remove stopPropagation
-  16. Fix #16: sessionId timing
+Phase 3 (P2):
+  13. ✅ Fix #13: readFileBlob API helper
+  14. ✅ Fix #14: ref directive
+  15. ✅ Fix #15: Remove stopPropagation
+  16. ✅ Fix #16: sessionId timing
 
-Phase 4 (P3 — Cleanup):
-  17-21: Dead code, inline styles, super.updated(), designTokens
+Phase 4 (P3):
+  17. ✅ Fix #17: Dead code removal
+  18. ✅ Fix #18: Plain html for <mark>
+  19. ✅ Fix #19: CSS classes for dropdown
+  20. ✅ Fix #20: super.updated() everywhere
+  21. ✅ Fix #21: designTokens import
 ```
 
 ---
