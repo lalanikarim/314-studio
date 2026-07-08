@@ -359,6 +359,7 @@ export class ChatPanelElement extends LitElement {
   private streamingToolCalls: ToolCallEntry[] = [];
   private streamingMessageCreated = false; // Track if message created for current turn
   private queueDrainIndex = 0;
+  private _drainQueued = false;
   private turnStartIndex = -1; // Index in displayMessages where current turn started
 
   connectedCallback() {
@@ -368,13 +369,18 @@ export class ChatPanelElement extends LitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    // Clear the static guard so a new instance can load history for this session
-    if (this.sessionId) {
-      ChatPanelElement._historyLoadedSessions.delete(this.sessionId);
-    }
   }
 
   updated(changedProperties: Map<string, unknown>) {
+    // Track message ID changes for transition logic (was in renderMessages)
+    if (changedProperties.has('displayMessages')) {
+      const ids = this.sortedMessages.map((m) => m.id);
+      const added = ids.filter((id) => !this._prevMessageIds.includes(id));
+      const removed = this._prevMessageIds.filter((id) => !ids.includes(id));
+      this._prevMessageIds = ids;
+      // Transition logic (scroll, animation) can be added here if needed
+    }
+
     if (changedProperties.has('pendingModelSwitch') && this.pendingModelSwitch) {
       this.handleSwitchModel(this.pendingModelSwitch);
       this.pendingModelSwitch = null;
@@ -386,10 +392,6 @@ export class ChatPanelElement extends LitElement {
         this.resetDisplayState();
       }
       this.historyLoaded = false;
-      // Clear the static guard for the old session so a new session can load
-      if (this._prevSessionId && this._prevSessionId !== this.sessionId) {
-        ChatPanelElement._historyLoadedSessions.delete(this._prevSessionId);
-      }
       this._prevSessionId = this.sessionId;
 
       if (this.sessionId) {
@@ -402,8 +404,15 @@ export class ChatPanelElement extends LitElement {
       this.sendingMessage = false;
     }
 
-    // Drain ALL new messages from the queue — queue/drain architecture
-    this.drainQueue();
+    // Batch drain with microtask to avoid multiple synchronous drains
+    // during rapid SSE event processing
+    if (!this._drainQueued) {
+      this._drainQueued = true;
+      queueMicrotask(() => {
+        this._drainQueued = false;
+        this.drainQueue();
+      });
+    }
 
     // Auto-scroll to bottom while streaming so the user always sees
     // the latest content (whether thinking, tool calls, or text).
@@ -881,18 +890,15 @@ export class ChatPanelElement extends LitElement {
   private async loadChatHistory() {
     if (!this.sessionId) return;
     if (!this.isConnected) return; // Don't load if disconnected (stale setTimeout)
-    // Add to set synchronously BEFORE the await so concurrent calls are blocked
-    if (ChatPanelElement._historyLoadedSessions.has(this.sessionId)) return;
-    ChatPanelElement._historyLoadedSessions.add(this.sessionId);
+    if (this._historyLoadedForSession === this.sessionId) return;
 
     try {
       const result = await sendCommand(this.sessionId, { command: 'get_messages' });
       const rpcResponse = (result as any)?.response ?? result;
       this.applyHistoryResponse(rpcResponse);
       this.historyLoaded = true;
+      this._historyLoadedForSession = this.sessionId;
     } catch (err) {
-      // Remove from set on failure so retry is possible
-      ChatPanelElement._historyLoadedSessions.delete(this.sessionId);
       console.error('Failed to load chat history:', err);
     }
   }
@@ -1382,8 +1388,8 @@ export class ChatPanelElement extends LitElement {
     `;
   }
 
-  private static _lastRenderMsgIds: string[] = [];
-  private static _historyLoadedSessions = new Set<string>();
+  private _prevMessageIds: string[] = [];
+  private _historyLoadedForSession: string | null = null;
 
   private renderMessagesArea() {
     const hasMessages = this.displayMessages.length > 0;
@@ -1411,13 +1417,6 @@ export class ChatPanelElement extends LitElement {
 
   private renderMessages() {
     const msgs = this.sortedMessages;
-    const ids = msgs.map((m) => m.id);
-    const prevIds = ChatPanelElement._lastRenderMsgIds;
-    const added = ids.filter((id) => !prevIds.includes(id));
-    const removed = prevIds.filter((id) => !ids.includes(id));
-    if (added.length > 0 || removed.length > 0) {
-      ChatPanelElement._lastRenderMsgIds = ids;
-    }
     return msgs.map(
       (msg) => html`
         <chat-message

@@ -1,5 +1,6 @@
 import { html, css, LitElement } from 'lit';
 import { customElement } from 'lit/decorators.js';
+import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import { designTokens } from '../styles/design-tokens';
 
 // Make Prism available as a global before loading language components
@@ -159,7 +160,7 @@ export class FilePreviewCodeElement extends LitElement {
 
   highlighted = false;
 
-  private codeContainer: HTMLPreElement | null = null;
+  private _cachedHighlighted = '';
 
   updated(changedProperties: Map<string, any>) {
     if (changedProperties.has('content') && this.content && this.language) {
@@ -179,7 +180,7 @@ export class FilePreviewCodeElement extends LitElement {
         // Fallback: show raw text
         this.highlightedLines = [this.escapeHtml(this.content)];
         this.highlighted = true;
-        this.renderCodeDOM();
+        this._cachedHighlighted = this.highlightedLines.join('\n');
         return;
       }
 
@@ -192,22 +193,13 @@ export class FilePreviewCodeElement extends LitElement {
       });
 
       this.highlighted = true;
-      this.renderCodeDOM();
+      this._cachedHighlighted = this.highlightedLines.join('\n');
     } catch {
       // Fallback: show raw text
       this.highlightedLines = [this.escapeHtml(this.content)];
       this.highlighted = true;
-      this.renderCodeDOM();
+      this._cachedHighlighted = this.highlightedLines.join('\n');
     }
-  }
-
-  private renderCodeDOM() {
-    if (!this.codeContainer || !this.highlightedLines.length) return;
-    this.codeContainer.innerHTML = this.highlightedLines.join('\n');
-  }
-
-  private refCodeContainer(el: HTMLPreElement | null) {
-    this.codeContainer = el;
   }
 
   private escapeHtml(text: string): string {
@@ -227,7 +219,9 @@ export class FilePreviewCodeElement extends LitElement {
 
     return html`
       <div class="code-container">
-        <pre class="code-container__pre" .ref=${this.refCodeContainer}></pre>
+        <pre class="code-container__pre">
+          <code>${unsafeHTML(this._cachedHighlighted)}</code>
+        </pre>
       </div>
     `;
   }

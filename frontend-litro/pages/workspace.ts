@@ -4,7 +4,7 @@ import { LitroPage } from '@beatzball/litro/runtime';
 import { SelectionStore } from '../lib/selection-store';
 import { buttonStyles } from '../styles/shared';
 import { fetchModels, fetchProjectInfo } from '../services/api.js';
-import { createMinimalModel, extractProvider } from '../lib/model.js';
+import { createMinimalModel } from '../lib/model.js';
 import type { Model } from '../types/index.js';
 
 @customElement('page-workspace')
@@ -214,10 +214,8 @@ export class WorkspacePage extends LitroPage {
             (s) => s.session_id === this.sessionId
           );
           if (session?.model_id) {
-            this.currentModel = createMinimalModel(
-              session.model_id,
-              extractProvider(session.model_id)
-            );
+            const model = this.models.find(m => m.id === session.model_id);
+            this.currentModel = model ?? createMinimalModel(session.model_id, 'unknown');
           }
         } catch {
           // Ignore — chat-panel will get model from SSE state

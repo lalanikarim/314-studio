@@ -203,6 +203,16 @@ export class ChatMessageElement extends LitElement {
    *  False during initial hydration so collapsed by default. */
   isStreaming = false;
 
+  private _renderedBlocks: (string | null)[] = [];
+
+  willUpdate(changed: Map<string, unknown>) {
+    if (changed.has('contentBlocks')) {
+      this._renderedBlocks = this.contentBlocks.map(b =>
+        b.kind === 'text' ? renderMarkdown(b.content) : null
+      );
+    }
+  }
+
   private formatTime(timestamp: number): string {
     return new Date(timestamp).toLocaleTimeString([], {
       hour: '2-digit',
@@ -247,7 +257,7 @@ export class ChatMessageElement extends LitElement {
       case 'text':
         return isUser
           ? html`<p>${block.content}</p>`
-          : html`${unsafeHTML(renderMarkdown(block.content))}`;
+          : html`${unsafeHTML(this._renderedBlocks[idx] ?? '')}`;
       case 'thinking':
         return html`
           <div class="message__thinking">
