@@ -154,7 +154,6 @@ export class TreeNodeComponent extends LitElement {
   }
 
   private handleClick(e: Event) {
-    e.stopPropagation();
     if (this.node.isDirectory) {
       this.expanded = !this.expanded;
     } else {

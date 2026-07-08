@@ -125,6 +125,14 @@ export async function readFile(projectPath: string, filePath: string) {
   return await resp.text();
 }
 
+export async function readFileBlob(projectPath: string, filePath: string) {
+  const resp = await fetch(
+    `${API_BASE}/projects/files/read?project_path=${encodeURIComponent(projectPath)}&file_path=${encodeURIComponent(filePath)}`
+  );
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp.blob();
+}
+
 // Send a command to a session via the REST cmd endpoint.
 // The backend expects `session_id` as a query param and a JSON body whose
 // top-level `command` field names the RPC command; remaining fields are the

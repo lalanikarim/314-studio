@@ -1,6 +1,7 @@
 import { html, css, LitElement } from 'lit';
 import { customElement } from 'lit/decorators.js';
 import { designTokens } from '../styles/design-tokens';
+import { readFileBlob } from '../services/api';
 
 /**
  * Image viewer for the file preview panel.
@@ -84,11 +85,7 @@ export class FilePreviewImageElement extends LitElement {
     }
 
     try {
-      const resp = await fetch(
-        `/api/projects/files/read?project_path=${encodeURIComponent(this.projectPath)}&file_path=${encodeURIComponent(this.filePath)}`,
-      );
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const blob = await resp.blob();
+      const blob = await readFileBlob(this.projectPath, this.filePath);
       this.imageUrl = URL.createObjectURL(blob);
     } catch {
       this.loadError = true;

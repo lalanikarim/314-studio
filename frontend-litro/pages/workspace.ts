@@ -193,15 +193,24 @@ export class WorkspacePage extends LitroPage {
 
   readonly selectionStore = new SelectionStore();
 
+  private _urlSessionId = '';
+
+  connectedCallback() {
+    super.connectedCallback();
+    // Read URL params synchronously — doesn't change render structure
+    if (typeof window !== 'undefined') {
+      this._urlSessionId = new URLSearchParams(window.location.search).get('session_id') || '';
+    }
+    this.addController(this.selectionStore.controller(this));
+    document.addEventListener('click', this.handleOutsideModelClick);
+    this.fetchSessionData();
+  }
+
   private async fetchSessionData() {
     if (!this.folderPath) return;
 
     try {
-      // Read session_id from URL params
-      if (typeof window !== 'undefined') {
-        const params = new URLSearchParams(window.location.search);
-        this.sessionId = params.get('session_id') || '';
-      }
+      this.sessionId = this._urlSessionId;
 
       // Fetch available models
       this.models = await fetchModels(this.sessionId || undefined);
@@ -260,13 +269,6 @@ export class WorkspacePage extends LitroPage {
   };
 
   private _modelSelectorRef: HTMLElement | null = null;
-
-  connectedCallback() {
-    super.connectedCallback();
-    this.addController(this.selectionStore.controller(this));
-    document.addEventListener('click', this.handleOutsideModelClick);
-    this.fetchSessionData();
-  }
 
   disconnectedCallback() {
     super.disconnectedCallback();

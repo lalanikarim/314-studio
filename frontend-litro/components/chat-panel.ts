@@ -1,5 +1,6 @@
 import { html, css, LitElement } from 'lit';
 import { customElement } from 'lit/decorators.js';
+import { ref } from 'lit/directives/ref.js';
 import { ChatStreamController } from '../lib/chat-stream-controller.js';
 import {
   agentMessageToDisplay,
@@ -1246,12 +1247,13 @@ export class ChatPanelElement extends LitElement {
     return [...this.displayMessages].sort((a, b) => a.timestamp - b.timestamp);
   }
 
+  private _messagesContainer: HTMLElement | null = null;
+
   private async scrollToBottom() {
     // Wait for Lit to finish updating the DOM before scrolling.
     await this.updateComplete;
-    const messagesContainer = this.shadowRoot?.querySelector('.chat-panel__messages');
-    if (messagesContainer) {
-      messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    if (this._messagesContainer) {
+      this._messagesContainer.scrollTop = this._messagesContainer.scrollHeight;
     }
   }
 
@@ -1372,7 +1374,7 @@ export class ChatPanelElement extends LitElement {
           : ''}
 
         <!-- Messages Area -->
-        <div class="chat-panel__messages">
+        <div class="chat-panel__messages" ${ref((el) => { this._messagesContainer = el; })}>
           ${this.renderMessagesArea()}
           <div id="scroll-anchor"></div>
         </div>
