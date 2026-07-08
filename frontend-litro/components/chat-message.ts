@@ -240,7 +240,7 @@ export class ChatMessageElement extends LitElement {
       case 'text':
         return isUser
           ? html`<p>${block.content}</p>`
-          : unsafeHTML(renderMarkdown(block.content));
+          : html`${unsafeHTML(renderMarkdown(block.content))}`;
       case 'thinking':
         return html`
           <div class="message__thinking">

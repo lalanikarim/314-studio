@@ -1,6 +1,5 @@
 import { html, css, LitElement } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
-import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import { designTokens } from '../styles/design-tokens';
 
 // Make Prism available as a global before loading language components
@@ -55,6 +54,14 @@ export class FilePreviewCodeElement extends LitElement {
         height: 100%;
         overflow: auto;
         padding: 1rem;
+        counter-reset: line;
+      }
+      .code-container__pre {
+        margin: 0;
+        font-family: var(--font-mono, 'SF Mono', 'JetBrains Mono', Monaco, Menlo, Consolas, monospace);
+        font-size: 0.875rem;
+        line-height: 1.6;
+        tab-size: 2;
         counter-reset: line;
       }
       pre {
@@ -150,7 +157,8 @@ export class FilePreviewCodeElement extends LitElement {
   fileName = '';
 
   @state() highlighted = false;
-  @state() _renderedCode = '';
+
+  private codeContainer: HTMLPreElement | null = null;
 
   updated(changedProperties: Map<string, any>) {
     if (changedProperties.has('content') && this.content && this.language) {
@@ -170,6 +178,7 @@ export class FilePreviewCodeElement extends LitElement {
         // Fallback: show raw text
         this.highlightedLines = [this.escapeHtml(this.content)];
         this.highlighted = true;
+        this.renderCodeDOM();
         return;
       }
 
@@ -182,11 +191,22 @@ export class FilePreviewCodeElement extends LitElement {
       });
 
       this.highlighted = true;
+      this.renderCodeDOM();
     } catch {
       // Fallback: show raw text
       this.highlightedLines = [this.escapeHtml(this.content)];
       this.highlighted = true;
+      this.renderCodeDOM();
     }
+  }
+
+  private renderCodeDOM() {
+    if (!this.codeContainer || !this.highlightedLines.length) return;
+    this.codeContainer.innerHTML = this.highlightedLines.join('\n');
+  }
+
+  private refCodeContainer(el: HTMLPreElement | null) {
+    this.codeContainer = el;
   }
 
   private escapeHtml(text: string): string {
@@ -204,14 +224,9 @@ export class FilePreviewCodeElement extends LitElement {
       return html`<div class="code-container">Loading…</div>`;
     }
 
-    // Render the highlighted lines
-    const codeContent = this.highlightedLines.length > 0
-      ? html`${this.highlightedLines.map(line => html`<span class="line">${unsafeHTML(line)}</span>`)}`
-      : html`${this.escapeHtml(this.content)}`;
-
     return html`
       <div class="code-container">
-        <pre><code class="language-${this.language}">${codeContent}</code></pre>
+        <pre class="code-container__pre" .ref=${this.refCodeContainer}></pre>
       </div>
     `;
   }

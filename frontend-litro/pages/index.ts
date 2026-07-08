@@ -1,5 +1,6 @@
 import { html, css, type TemplateResult, LitElement } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
+import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import { LitroPage } from '@beatzball/litro/runtime';
 import { browseDirectories, fetchSessions, closeSession, deleteSession } from '../services/api';
 import type { SessionItem } from '../services/api';
@@ -320,15 +321,17 @@ export class HomePage extends LitroPage {
     if (!q) return html`${name}`;
     const idx = name.toLowerCase().indexOf(q);
     if (idx < 0) return html`${name}`;
-    return html`${name.slice(0, idx)}<mark class="highlight-mark">${name.slice(
-      idx,
-      idx + this.search.length,
-    )}</mark>${name.slice(idx + this.search.length)}`;
+    return html`${name.slice(0, idx)}${unsafeHTML(`<mark class="highlight-mark">${name.slice(idx, idx + this.search.length)}</mark>`)}${name.slice(idx + this.search.length)}`;
   }
 
   // ── Render ────────────────────────────────────────────────────────────
 
   render() {
+    // Single template for both SSR and client. The digest is computed from
+    // template strings (not rendered output), so the same html`` template
+    // produces matching digests even though @lit-labs/ssr strips @click / .value
+    // from the HTML output. The Litro router creates a fresh element on the
+    // client which renders the full template with event handlers.
     return html`
       <div class="view-folder">
         <div class="view-folder__inner">
