@@ -244,13 +244,14 @@ export class ChatMessageElement extends LitElement {
 
     return html`
       <div class="message__content">
-        ${this.contentBlocks.map((block) => this.renderBlock(block, isUser))}
+        ${this.contentBlocks.map((block, idx) => this.renderBlock(block, idx, isUser))}
       </div>
     `;
   }
 
   private renderBlock(
     block: MessageContentBlock,
+    idx: number,
     isUser: boolean,
   ) {
     switch (block.kind) {

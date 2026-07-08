@@ -349,7 +349,7 @@ export class ChatPanelElement extends LitElement {
   showClearConfirm = false;
   historyLoaded = false;
 
-  private chatController!: ChatStreamController;
+  private chatController: ChatStreamController;
   private modelSetFromState = false;
   private sendingMessage = false; // Guard against duplicate sends
   private _prevSessionId = ''; // Track previous session for static guard cleanup
@@ -363,9 +363,13 @@ export class ChatPanelElement extends LitElement {
   private _drainQueued = false;
   private turnStartIndex = -1; // Index in displayMessages where current turn started
 
+  constructor() {
+    super();
+    this.chatController = new ChatStreamController(this, this.sessionId);
+  }
+
   connectedCallback() {
     super.connectedCallback();
-    this.chatController = new ChatStreamController(this, this.sessionId);
   }
 
   disconnectedCallback() {
