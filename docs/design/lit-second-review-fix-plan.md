@@ -6,6 +6,21 @@
 
 ---
 
+## Current Status
+
+| Priority | Fix | File | Status | Commit |
+|----------|-----|------|--------|--------|
+| Critical 1 | Move `ChatStreamController` to constructor | `chat-panel.ts` | ✅ Done | `ed39a99` |
+| Critical 2 | Pass `idx` through `.map()` | `chat-message.ts` | ✅ Done | `ed39a99` |
+| Critical 3 | `.ref` → `ref()` directive | `workspace.ts` | ⬜ Pending | — |
+| High 4 | Move `fetchSessionData()` to `firstUpdated()` | `workspace.ts` | ⬜ Pending | — |
+| Medium 5A | Immutable block merge | `chat-panel.ts` | ⬜ Pending | — |
+| Medium 5B | Immutable toolCall result merge | `chat-panel.ts` | ⬜ Pending | — |
+| Medium 6 | `''` → `nothing` | All 6 template files | ⬜ Pending | — |
+| Medium 7 | Cache in `willUpdate()` | `file-preview-markdown.ts` | ⬜ Pending | — |
+
+---
+
 ## Task Scaffold
 
 Before any edit, the following scaffold defines the exact sequence, error boundaries, and validation.
@@ -68,6 +83,8 @@ Before any edit, the following scaffold defines the exact sequence, error bounda
 
 **Verification:** Dev server starts without SSR crash. Chat renders with empty state on initial page load.
 
+**Committed:** `ed39a99` — `fix: resolve Critical 1 & 2 from lit second review`
+
 ---
 
 ### Critical 2: `chat-message.ts` — `idx` is not defined in `renderBlock()`
@@ -83,6 +100,8 @@ Before any edit, the following scaffold defines the exact sequence, error bounda
 - ~253: `block: MessageContentBlock, isUser: boolean,` → `block: MessageContentBlock, idx: number, isUser: boolean,`
 
 **Verification:** Assistant messages with text render correctly. No console errors.
+
+**Committed:** `ed39a99` — `fix: resolve Critical 1 & 2 from lit second review`
 
 ---
 
