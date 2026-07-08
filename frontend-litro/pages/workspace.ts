@@ -1,4 +1,5 @@
 import { html, css } from 'lit';
+import { ref } from 'lit/directives/ref.js';
 import { customElement, state } from 'lit/decorators.js';
 import { LitroPage } from '@beatzball/litro/runtime';
 import { SelectionStore } from '../lib/selection-store';
@@ -353,7 +354,7 @@ export class WorkspacePage extends LitroPage {
           <div class="view-workspace__header-right">
             <div
               class="view-workspace__model-selector"
-              .ref=${(el: HTMLElement | null) => { this._modelSelectorRef = el; }}
+              ${ref((el: HTMLElement | null) => { this._modelSelectorRef = el; })}
             >
               <button
                 class="view-workspace__model-btn"
